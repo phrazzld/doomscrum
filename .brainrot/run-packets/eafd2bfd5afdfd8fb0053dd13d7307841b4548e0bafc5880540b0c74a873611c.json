@@ -1,0 +1,22 @@
+{
+  "id": "eafd2bfd5afdfd8fb0053dd13d7307841b4548e0bafc5880540b0c74a873611c",
+  "prdId": "a86401120db2e5ae84b956cf49670e23a62ccf95932e3642f4bd02b9188d170a",
+  "prdSha256": "a86401120db2e5ae84b956cf49670e23a62ccf95932e3642f4bd02b9188d170a",
+  "repoPath": "/Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app",
+  "objective": "Implement the PRD: Cache Chaos Exorcism",
+  "allowedCommands": [
+    "npm test",
+    "npm run typecheck",
+    "npm run lint"
+  ],
+  "timeoutSec": 180,
+  "budgetUsd": 5,
+  "branchName": "agent/a86401120d-cache-chaos-exorcism",
+  "acceptanceCriteria": [
+    "Gallery refresh shows the newest render after generation.",
+    "Old render JSON is preserved for audit.",
+    "No source PRD file is modified."
+  ],
+  "status": "created",
+  "createdAt": "2026-06-06T16:15:23.738Z"
+}

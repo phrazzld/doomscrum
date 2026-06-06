@@ -1,0 +1,48 @@
+{
+  "id": "62a4ab103ecdccca0d44a94bc40a3e1eaf5accd1da3d17a8265981bd0bc8c80a",
+  "prdId": "02c99428d27137e832bb859ef8ee28554cd9db22e7fbd76589b0c09877115e89",
+  "prdSha256": "02c99428d27137e832bb859ef8ee28554cd9db22e7fbd76589b0c09877115e89",
+  "briefHash": "0960d062963a2e80d6e9b0f3344dfc4805ea069c96424a407b4fb2bee323ee7f",
+  "tone": "brainrot_v0",
+  "targetDurationSec": 24,
+  "aspectRatio": "9:16",
+  "beats": [
+    {
+      "label": "Hook",
+      "specPayload": "Make the needs-spec gesture record generated clarification questions and block run-intent until explicitly overridden.",
+      "visualPrompt": "A chaotic vertical short where a software PRD bursts into frame like cursed breaking news: Make the needs-spec gesture record generated clarification questions and block run-intent until explicitly overridden.",
+      "caption": "Needs Spec Confessional just entered the chat"
+    },
+    {
+      "label": "Stake",
+      "specPayload": "Operator triaging unclear PRDs.",
+      "visualPrompt": "A local operator cockpit gets flooded with markdown files, neon warning stickers, and absurd meme captions.",
+      "caption": "User: Operator triaging unclear PRDs."
+    },
+    {
+      "label": "Payload",
+      "specPayload": "Needs-spec appends a durable event.",
+      "visualPrompt": "Fast jump cuts show the first acceptance criterion as giant karaoke subtitles over glitchy terminal chaos.",
+      "caption": "Needs-spec appends a durable event."
+    },
+    {
+      "label": "Risk Chaos Check",
+      "specPayload": "No explicit risk recorded.",
+      "visualPrompt": "The clip becomes a fake safety PSA about not letting vague PRDs drive agent work without receipts.",
+      "caption": "Risk: unlisted"
+    },
+    {
+      "label": "Decision",
+      "specPayload": "Inspect, skip, needs-spec, or create a bounded run packet.",
+      "visualPrompt": "End card with four exaggerated swipe choices, all pointing back to the source PRD hash.",
+      "caption": "Swipe like you mean it"
+    }
+  ],
+  "providerPrompt": "Generate a vertical 9:16 shortform video under 60 seconds with native audio.\nTone: goofy, anti-corporate, meme culture, high-energy, but keep all spec claims accurate.\nTitle: Needs Spec Confessional\nGoal: Make the needs-spec gesture record generated clarification questions and block run-intent until explicitly overridden.\nAcceptance: Needs-spec appends a durable event. | Active feed status changes to needs-spec. | Run-intent is blocked unless an override flag is present.\nDo not invent shipped features, metrics, customer names, or implementation details.",
+  "prohibitedClaims": [
+    "Do not claim the PRD has already shipped.",
+    "Do not claim tests pass.",
+    "Do not describe files not present in the PRD.",
+    "Do not turn missing acceptance criteria into fake acceptance criteria."
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "319e91402f22ddb391d9d1a8962f7062986d35f8b250f32d17d0a5a9cd2e11c9",
+  "prdId": "a86401120db2e5ae84b956cf49670e23a62ccf95932e3642f4bd02b9188d170a",
+  "prdSha256": "a86401120db2e5ae84b956cf49670e23a62ccf95932e3642f4bd02b9188d170a",
+  "briefHash": "2a801577285e704a29b19dfce29429f74ebc19610e9adb6697e98fce9160228c",
+  "tone": "brainrot_v0",
+  "targetDurationSec": 24,
+  "aspectRatio": "9:16",
+  "beats": [
+    {
+      "label": "Hook",
+      "specPayload": "Add a cache busting path for generated render metadata so the gallery always shows the latest MP4 provenance.",
+      "visualPrompt": "A chaotic vertical short where a software PRD bursts into frame like cursed breaking news: Add a cache busting path for generated render metadata so the gallery always shows the latest MP4 provenance.",
+      "caption": "Cache Chaos Exorcism just entered the chat"
+    },
+    {
+      "label": "Stake",
+      "specPayload": "Operators reviewing agent-delivered web app changes.",
+      "visualPrompt": "A local operator cockpit gets flooded with markdown files, neon warning stickers, and absurd meme captions.",
+      "caption": "User: Operators reviewing agent-delivered web app changes."
+    },
+    {
+      "label": "Payload",
+      "specPayload": "Gallery refresh shows the newest render after generation.",
+      "visualPrompt": "Fast jump cuts show the first acceptance criterion as giant karaoke subtitles over glitchy terminal chaos.",
+      "caption": "Gallery refresh shows the newest render after generation."
+    },
+    {
+      "label": "Risk Chaos Check",
+      "specPayload": "No explicit risk recorded.",
+      "visualPrompt": "The clip becomes a fake safety PSA about not letting vague PRDs drive agent work without receipts.",
+      "caption": "Risk: unlisted"
+    },
+    {
+      "label": "Decision",
+      "specPayload": "Inspect, skip, needs-spec, or create a bounded run packet.",
+      "visualPrompt": "End card with four exaggerated swipe choices, all pointing back to the source PRD hash.",
+      "caption": "Swipe like you mean it"
+    }
+  ],
+  "providerPrompt": "Generate a vertical 9:16 shortform video under 60 seconds with native audio.\nTone: goofy, anti-corporate, meme culture, high-energy, but keep all spec claims accurate.\nTitle: Cache Chaos Exorcism\nGoal: Add a cache busting path for generated render metadata so the gallery always shows the latest MP4 provenance.\nAcceptance: Gallery refresh shows the newest render after generation. | Old render JSON is preserved for audit. | No source PRD file is modified.\nDo not invent shipped features, metrics, customer names, or implementation details.",
+  "prohibitedClaims": [
+    "Do not claim the PRD has already shipped.",
+    "Do not claim tests pass.",
+    "Do not describe files not present in the PRD.",
+    "Do not turn missing acceptance criteria into fake acceptance criteria."
+  ]
+}

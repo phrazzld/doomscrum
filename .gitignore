@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build-server/
+playwright-report/
+test-results/
+.pi/
+.DS_Store
+

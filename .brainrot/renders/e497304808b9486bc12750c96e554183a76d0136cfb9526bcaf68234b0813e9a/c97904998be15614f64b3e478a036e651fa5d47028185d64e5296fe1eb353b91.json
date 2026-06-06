@@ -1,0 +1,19 @@
+{
+  "id": "c97904998be15614f64b3e478a036e651fa5d47028185d64e5296fe1eb353b91",
+  "prdId": "e497304808b9486bc12750c96e554183a76d0136cfb9526bcaf68234b0813e9a",
+  "prdSha256": "e497304808b9486bc12750c96e554183a76d0136cfb9526bcaf68234b0813e9a",
+  "storyboardId": "f1b1a9bacd045eeba6b5c9f85d4a5c3e89bc295db2354a154438459b5f84f830",
+  "storyboardHash": "92c8d05d56089aaaae2552b9154a90877b0ccb0e472dacedb2061d95b3fb46ff",
+  "provider": "fake-local",
+  "model": "ffmpeg-native-audio-fixture",
+  "nativeAudioRequested": true,
+  "audioMode": "native",
+  "status": "ready",
+  "assetPath": "/Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app/.brainrot/renders/e497304808b9486bc12750c96e554183a76d0136cfb9526bcaf68234b0813e9a/c97904998be15614f64b3e478a036e651fa5d47028185d64e5296fe1eb353b91.mp4",
+  "assetUrl": "/media/e497304808b9486bc12750c96e554183a76d0136cfb9526bcaf68234b0813e9a/c97904998be15614f64b3e478a036e651fa5d47028185d64e5296fe1eb353b91.mp4",
+  "providerJobId": "fake-c97904998b",
+  "costEstimateUsd": 0,
+  "actualCostUsd": 0,
+  "latencyMs": 0,
+  "createdAt": "2026-06-06T16:15:12.451Z"
+}
