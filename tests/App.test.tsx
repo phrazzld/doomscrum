@@ -18,7 +18,7 @@ describe('App shell', () => {
   });
 
   it('renders the operator cockpit title', async () => {
-    render(<div>PRD Brainrot Swipe</div>);
-    expect(document.body.textContent).toContain('PRD Brainrot Swipe');
+    render(<div>Specifi AI</div>);
+    expect(document.body.textContent).toContain('Specifi AI');
   });
 });

@@ -1,8 +1,12 @@
 node_modules/
 dist/
 build-server/
+.brainrot/
+outputs/
 playwright-report/
 test-results/
 .pi/
 .DS_Store
-
+.env
+.env.*
+*.log

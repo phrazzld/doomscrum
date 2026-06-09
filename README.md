@@ -1,8 +1,12 @@
-# PRD Brainrot Swipe
+# Specifi AI
 
-Local-first prototype for triaging PRD-shaped agent work as shortform video.
+Local desktop prototype for triaging PRD-shaped agent work as shortform video.
 
-## Run
+Specifi AI reads markdown PRDs from `backlog.d/`, turns them into goofy vertical
+AI videos, and lets you inspect, skip, mark needs-spec, or launch a bounded
+local Codex run.
+
+## Quick Start
 
 ```bash
 npm install
@@ -13,32 +17,34 @@ npm run serve
 
 Open `http://127.0.0.1:4173`.
 
-## Backlog
+## Real Video
 
-Each markdown file in `backlog.d/` is one PRD. Generated state is written under `.brainrot/`:
-
-- `storyboards/` contains extracted shortform beats and provider prompts.
-- `renders/` contains MP4 files and render provenance JSON.
-- `events.ndjson` contains inspect, skip, needs-spec, and run-intent decisions.
-- `run-packets/` contains bounded agent run intents.
-
-## Provider Modes
-
-The default provider is `fake-local`, which uses `ffmpeg` to create repeatable MP4 fixtures with native-audio metadata for local QA.
-
-For real AI video, add a FAL key to your environment or `~/.secrets`:
+Put a FAL key in your shell environment or `~/.secrets`:
 
 ```bash
 export FAL_API_KEY=...
 ```
 
-Then use the app's `Generate AI video` button, or run a one-item smoke:
+Then use `Generate AI video` in the app, or run a one-item smoke:
 
 ```bash
+npm run build:server
 node build-server/generate.js --real-provider --limit=1
 ```
 
-Remote provider calls send PRD-derived prompts outside the machine and should be treated as explicit disclosure events.
+Remote video generation sends PRD-derived prompts to the provider. Treat it as
+an explicit disclosure event.
+
+## Backlog
+
+Each markdown file in `backlog.d/` is one PRD. Runtime artifacts are written to
+the ignored `.brainrot/` directory:
+
+- `storyboards/` for extracted shortform beats and provider prompts.
+- `renders/` for MP4 files and render provenance JSON.
+- `events.ndjson` for inspect, skip, needs-spec, and run-intent decisions.
+- `run-packets/` for bounded agent intents.
+- `launches/` for local Codex launch receipts and logs.
 
 ## Backlog Config
 
@@ -61,16 +67,21 @@ Remote provider calls send PRD-derived prompts outside the machine and should be
 }
 ```
 
-Right-swipe creates a run packet and launches local Codex when `agentMode` is `local-codex`. Use `BRAINROT_AGENT_LAUNCH_MODE=dry-run` for test runs that should not start a real agent.
+Right-swipe launches local Codex when `agentMode` is `local-codex`. Use
+`BRAINROT_AGENT_LAUNCH_MODE=dry-run` for tests or demos that should not spawn a
+real agent.
 
 ## Verification
 
 ```bash
 npm run build
-npm run brainrot:generate
-npm test
+BRAINROT_AGENT_LAUNCH_MODE=dry-run npm test
 npm run typecheck
 npm run lint
-npm run test:e2e
+BRAINROT_AGENT_LAUNCH_MODE=dry-run npm run test:e2e
 npm run brainrot:report
 ```
+
+## Docs
+
+- [MVP spec](docs/final-mvp-spec.md)

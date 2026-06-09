@@ -50,7 +50,7 @@ function App(): React.ReactElement {
   const [selectedId, setSelectedId] = useState<string>('');
   const [inspectOpen, setInspectOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Booting the slop cannon...');
+  const [message, setMessage] = useState('Booting the spec feed...');
 
   async function load(): Promise<void> {
     const next = await api<AppState>('/api/state');
@@ -142,10 +142,10 @@ function App(): React.ReactElement {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="mark">BR</div>
+          <div className="mark">SP</div>
           <div>
-            <h1>PRD Brainrot Swipe</h1>
-            <p>local backlog.d triage</p>
+            <h1>Specifi AI</h1>
+            <p>PRD brainrot triage</p>
           </div>
         </div>
         <button className="primary-action" onClick={renderReal} disabled={busy || !selected || !state.providerConfigured}>

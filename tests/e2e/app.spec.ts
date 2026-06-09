@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('feed plays generated MP4 and records decisions', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'PRD Brainrot Swipe' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Specifi AI' })).toBeVisible();
   await expect(page.getByTestId('video-card')).toBeVisible();
   await expect(page.locator('video')).toBeVisible();
 

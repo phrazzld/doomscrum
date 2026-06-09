@@ -130,7 +130,7 @@ dt,
 .secondary-action {
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
+  color: #f7f7fb;
   min-height: 42px;
   margin-bottom: 14px;
   border-radius: 8px;
