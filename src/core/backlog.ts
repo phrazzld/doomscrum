@@ -4,6 +4,7 @@ import { backlogDir, eventsPath, indexPath } from '../lib/paths';
 import { readJson, writeJson } from '../lib/fs-utils';
 import { sha256 } from '../lib/hash';
 import type { FeedDecision, PrdSource, PrdStatus } from '../shared/types';
+import { readBacklogConfig } from './config';
 
 type IndexState = {
   firstSeen: Record<string, string>;
@@ -50,6 +51,7 @@ async function loadEvents(): Promise<FeedDecision[]> {
 export async function scanBacklog(): Promise<PrdSource[]> {
   await fs.mkdir(backlogDir, { recursive: true });
   const index = await readJson<IndexState>(indexPath, { firstSeen: {} });
+  const config = await readBacklogConfig();
   const decisions = await loadEvents();
   const files = (await fs.readdir(backlogDir)).filter((file) => file.endsWith('.md')).sort();
   const prds: PrdSource[] = [];
@@ -68,6 +70,9 @@ export async function scanBacklog(): Promise<PrdSource[]> {
       path: path.relative(process.cwd(), fullPath),
       sha256: hash,
       title: extractTitle(raw, file),
+      repoPath: path.resolve(process.cwd(), config.items?.[file]?.repoPath || config.defaults.repoPath),
+      allowedCommands: config.items?.[file]?.allowedCommands || config.defaults.allowedCommands,
+      agentMode: config.items?.[file]?.agentMode || config.defaults.agentMode,
       discoveredAt: index.firstSeen[hash],
       status: statusFromDecisions(hash, decisions),
       raw

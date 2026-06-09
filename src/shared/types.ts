@@ -5,6 +5,9 @@ export type PrdSource = {
   path: string;
   sha256: string;
   title: string;
+  repoPath: string;
+  allowedCommands: string[];
+  agentMode: 'local-codex' | 'packet-only';
   discoveredAt: string;
   status: PrdStatus;
   raw: string;
@@ -86,7 +89,33 @@ export type AgentRunPacket = {
   branchName: string;
   acceptanceCriteria: string[];
   status: 'created' | 'blocked' | 'launched' | 'completed' | 'failed';
+  launch?: AgentLaunchReceipt;
   createdAt: string;
+};
+
+export type AgentLaunchReceipt = {
+  id: string;
+  mode: 'local-codex' | 'dry-run';
+  status: 'launched' | 'completed' | 'failed';
+  command: string[];
+  cwd: string;
+  outputPath: string;
+  pid?: number;
+  exitCode?: number;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+};
+
+export type BacklogConfig = {
+  defaults: {
+    repoPath: string;
+    allowedCommands: string[];
+    agentMode: 'local-codex' | 'packet-only';
+    renderProvider: 'fal' | 'fake';
+    maxRenderSpendUsd: number;
+  };
+  items?: Record<string, Partial<Pick<PrdSource, 'repoPath' | 'allowedCommands' | 'agentMode'>>>;
 };
 
 export type AppState = {
@@ -95,4 +124,6 @@ export type AppState = {
   renders: VideoRender[];
   decisions: FeedDecision[];
   runPackets: AgentRunPacket[];
+  providerConfigured: boolean;
+  config: BacklogConfig;
 };

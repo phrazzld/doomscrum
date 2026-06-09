@@ -1,0 +1,16 @@
+{
+  "id": "469b0962b0c5470f19740670ee472985a17e730b1f3aa59157c74e933f570656",
+  "mode": "dry-run",
+  "status": "completed",
+  "command": [
+    "codex",
+    "exec",
+    "--cd",
+    "/Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app",
+    "Implement this PRD on branch agent/a86401120d-cache-chaos-exorcism.\n\nTarget repo: /Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app\nObjective: Implement the PRD: Cache Chaos Exorcism\nAllowed validation commands: npm test, npm run typecheck, npm run lint\nTimeout budget: 180s\n\nSource PRD:\n# Cache Chaos Exorcism\n\n## User\nOperators reviewing agent-delivered web app changes.\n\n## Problem\nThe local preview sometimes shows stale render data after a provider smoke.\n\n## Goal\nAdd a cache busting path for generated render metadata so the gallery always shows the latest MP4 provenance.\n\n## Acceptance Criteria\n- Gallery refresh shows the newest render after generation.\n- Old render JSON is preserved for audit.\n- No source PRD file is modified.\n\n## Risk\nCould hide a provider failure if stale successful render data remains selected.\n\n\nStop after implementation and validation. Leave a concise receipt in your final response."
+  ],
+  "cwd": "/Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app",
+  "outputPath": "/Users/phaedrus/Documents/Codex/2026-06-05/hey-can-we-prototype-an-app/.brainrot/launches/469b0962b0c5470f19740670ee472985a17e730b1f3aa59157c74e933f570656.jsonl",
+  "startedAt": "2026-06-09T22:15:50.216Z",
+  "completedAt": "2026-06-09T22:15:50.216Z"
+}

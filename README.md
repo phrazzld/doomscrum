@@ -26,13 +26,42 @@ Each markdown file in `backlog.d/` is one PRD. Generated state is written under 
 
 The default provider is `fake-local`, which uses `ffmpeg` to create repeatable MP4 fixtures with native-audio metadata for local QA.
 
-For a real provider smoke:
+For real AI video, add a FAL key to your environment or `~/.secrets`:
 
 ```bash
-FAL_KEY=... FAL_VIDEO_MODEL=fal-ai/veo3.1/fast npm run smoke:provider
+export FAL_API_KEY=...
+```
+
+Then use the app's `Generate AI video` button, or run a one-item smoke:
+
+```bash
+node build-server/generate.js --real-provider --limit=1
 ```
 
 Remote provider calls send PRD-derived prompts outside the machine and should be treated as explicit disclosure events.
+
+## Backlog Config
+
+`backlog.config.json` binds PRDs to execution targets:
+
+```json
+{
+  "defaults": {
+    "repoPath": ".",
+    "allowedCommands": ["npm test", "npm run typecheck", "npm run lint"],
+    "agentMode": "local-codex",
+    "renderProvider": "fal",
+    "maxRenderSpendUsd": 20
+  },
+  "items": {
+    "001-cache-chaos-exorcism.md": {
+      "repoPath": "."
+    }
+  }
+}
+```
+
+Right-swipe creates a run packet and launches local Codex when `agentMode` is `local-codex`. Use `BRAINROT_AGENT_LAUNCH_MODE=dry-run` for test runs that should not start a real agent.
 
 ## Verification
 
@@ -45,4 +74,3 @@ npm run lint
 npm run test:e2e
 npm run brainrot:report
 ```
-

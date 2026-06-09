@@ -2,8 +2,10 @@ import { scanBacklog } from '../core/backlog';
 import { getProvider, renderPrd } from '../core/pipeline';
 
 const useRealProvider = process.argv.includes('--real-provider') || process.env.RUN_PROVIDER_SMOKE === '1';
+const limitArg = process.argv.find((arg) => arg.startsWith('--limit='));
+const limit = limitArg ? Number(limitArg.replace('--limit=', '')) : undefined;
 const provider = getProvider(useRealProvider ? 'fal' : 'fake');
-const prds = await scanBacklog();
+const prds = (await scanBacklog()).slice(0, limit);
 
 if (prds.length === 0) {
   throw new Error('No PRDs found under backlog.d/.');

@@ -9,7 +9,18 @@ const emptyState: AppState = {
   storyboards: [],
   renders: [],
   decisions: [],
-  runPackets: []
+  runPackets: [],
+  providerConfigured: false,
+  config: {
+    defaults: {
+      repoPath: '.',
+      allowedCommands: [],
+      agentMode: 'packet-only',
+      renderProvider: 'fake',
+      maxRenderSpendUsd: 0
+    },
+    items: {}
+  }
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -26,7 +37,8 @@ function short(hash: string): string {
 }
 
 function latestRender(prd: PrdSource, renders: VideoRender[]): VideoRender | undefined {
-  return renders.find((render) => render.prdId === prd.id && render.status === 'ready');
+  const ready = renders.filter((render) => render.prdId === prd.id && render.status === 'ready');
+  return ready.find((render) => render.provider !== 'fake-local') || ready[0];
 }
 
 function storyboardFor(prd: PrdSource, storyboards: Storyboard[]): Storyboard | undefined {
@@ -55,7 +67,7 @@ function App(): React.ReactElement {
   const render = selected ? latestRender(selected, state.renders) : undefined;
   const storyboard = selected ? storyboardFor(selected, state.storyboards) : undefined;
 
-  async function renderAll(): Promise<void> {
+  async function renderFake(): Promise<void> {
     setBusy(true);
     setMessage('Generating fake native-audio MP4s...');
     try {
@@ -64,6 +76,27 @@ function App(): React.ReactElement {
       setMessage('Fake provider renders are ready');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Render failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function renderReal(): Promise<void> {
+    if (!selected) {
+      return;
+    }
+    setBusy(true);
+    setMessage(`Generating AI video for ${selected.title}...`);
+    try {
+      await api('/api/render/real', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prdId: selected.id })
+      });
+      await load();
+      setMessage(`AI video ready for ${selected.title}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'AI render failed');
     } finally {
       setBusy(false);
     }
@@ -115,9 +148,13 @@ function App(): React.ReactElement {
             <p>local backlog.d triage</p>
           </div>
         </div>
-        <button className="primary-action" onClick={renderAll} disabled={busy}>
+        <button className="primary-action" onClick={renderReal} disabled={busy || !selected || !state.providerConfigured}>
+          <Sparkles size={16} />
+          Generate AI video
+        </button>
+        <button className="secondary-action" onClick={renderFake} disabled={busy}>
           <RefreshCw size={16} />
-          Generate fake MP4s
+          QA fixture MP4s
         </button>
         <div className="list" data-testid="prd-list">
           {state.prds.map((prd) => (
@@ -142,7 +179,7 @@ function App(): React.ReactElement {
       <section className="stage">
         <div className="topline">
           <span>{message}</span>
-          <span className="remote-warning"><Shield size={15} /> remote provider calls require explicit config</span>
+          <span className="remote-warning"><Shield size={15} /> {state.providerConfigured ? 'FAL provider configured' : 'FAL_API_KEY required for AI video'}</span>
         </div>
 
         <div className="phone-frame" data-testid="video-card">
@@ -152,7 +189,7 @@ function App(): React.ReactElement {
             <div className="empty-video">
               <Film size={56} />
               <strong>No MP4 yet</strong>
-              <span>Generate fake native-audio renders to load the feed.</span>
+              <span>Generate an AI video or QA fixture to load the feed.</span>
             </div>
           )}
           <div className="caption-stack">
@@ -173,7 +210,7 @@ function App(): React.ReactElement {
             <ArrowDown size={18} /> Skip
           </button>
           <button className="run" onClick={() => void decision('run_intent')} disabled={!selected || busy}>
-            <ArrowRight size={18} /> Run packet
+            <ArrowRight size={18} /> Launch Codex
           </button>
         </div>
 

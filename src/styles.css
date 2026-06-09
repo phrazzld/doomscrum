@@ -127,6 +127,27 @@ dt,
   font-weight: 800;
 }
 
+.secondary-action {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  min-height: 42px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.secondary-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .primary-action:disabled,
 .gesture-bar button:disabled {
   cursor: not-allowed;

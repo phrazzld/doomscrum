@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runPacketsDir } from '../lib/paths';
 import type { AgentRunPacket, AppState } from '../shared/types';
+import { readBacklogConfig } from './config';
+import { getSecret } from '../lib/secrets';
 
 async function readRunPackets(): Promise<AgentRunPacket[]> {
   try {
@@ -21,13 +23,22 @@ async function readRunPackets(): Promise<AgentRunPacket[]> {
 }
 
 export async function getAppState(): Promise<AppState> {
-  const [prds, storyboards, renders, decisions, runPackets] = await Promise.all([
+  const [prds, storyboards, renders, decisions, runPackets, config] = await Promise.all([
     scanBacklog(),
     readStoryboards(),
     readRenders(),
     readEvents(),
-    readRunPackets()
+    readRunPackets(),
+    readBacklogConfig()
   ]);
 
-  return { prds, storyboards, renders, decisions, runPackets };
+  return {
+    prds,
+    storyboards,
+    renders,
+    decisions,
+    runPackets,
+    providerConfigured: Boolean(getSecret('FAL_API_KEY', 'FAL_KEY')),
+    config
+  };
 }

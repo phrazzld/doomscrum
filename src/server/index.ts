@@ -8,7 +8,12 @@ import { getAppState } from '../core/state';
 import { readRenders } from '../core/render-store';
 import { distDir, rendersDir } from '../lib/paths';
 import { FakeVideoProvider } from '../providers/fake';
+import { FalVideoProvider } from '../providers/fal';
 import type { FeedDecision } from '../shared/types';
+import { readBacklogConfig } from '../core/config';
+import { launchLocalCodex } from '../agents/local-codex';
+import { runPacketsDir } from '../lib/paths';
+import { writeJson } from '../lib/fs-utils';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void>;
 
@@ -79,6 +84,29 @@ const handlers: Record<string, Handler> = {
     }
     sendJson(res, 200, { renders });
   },
+  'POST /api/render/real': async (req, res) => {
+    const { prdId } = await readBody<{ prdId?: string }>(req);
+    const config = await readBacklogConfig();
+    const prds = await scanBacklog();
+    const selected = prdId ? prds.filter((item) => item.id === prdId) : prds;
+    if (selected.length === 0) {
+      sendJson(res, 404, { error: 'PRD not found.' });
+      return;
+    }
+    const provider = new FalVideoProvider();
+    const estimatedCost = selected.length * provider.estimate({ targetDurationSec: 8 } as never).costUsd;
+    if (estimatedCost > config.defaults.maxRenderSpendUsd) {
+      sendJson(res, 402, {
+        error: `Estimated render cost ${estimatedCost} exceeds configured maxRenderSpendUsd ${config.defaults.maxRenderSpendUsd}.`
+      });
+      return;
+    }
+    const renders = [];
+    for (const prd of selected) {
+      renders.push(await renderPrd(prd, provider));
+    }
+    sendJson(res, 200, { renders });
+  },
   'POST /api/decision': async (req, res) => {
     const body = await readBody<Partial<FeedDecision>>(req);
     if (!body.prdId || !body.prdSha256 || !body.decision) {
@@ -108,6 +136,12 @@ const handlers: Record<string, Handler> = {
     }
     const render = (await readRenders()).find((item) => item.id === renderId);
     const packet = await createRunPacket(prd, render);
+    if (prd.agentMode === 'local-codex') {
+      const launch = await launchLocalCodex(packet, prd);
+      packet.launch = launch;
+      packet.status = launch.status === 'launched' ? 'launched' : packet.status;
+      await writeJson(path.join(runPacketsDir, `${packet.id}.json`), packet);
+    }
     sendJson(res, 200, { packet });
   }
 };

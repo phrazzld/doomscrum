@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
+process.env.BRAINROT_AGENT_LAUNCH_MODE = 'dry-run';
 
 function run(command, args) {
   execFileSync(command, args, { cwd: root, stdio: 'pipe' });
@@ -44,8 +45,10 @@ for (const dir of renderDirs) {
     }
   }
 }
-assert.equal(renderJson.length, 5, 'expected five render provenance files');
-for (const render of renderJson) {
+assert.ok(renderJson.length >= 5, 'expected at least five render provenance files');
+const fakeRenders = renderJson.filter((render) => render.provider === 'fake-local');
+assert.equal(fakeRenders.length, 5, 'expected five fake-local render provenance files');
+for (const render of fakeRenders) {
   assert.equal(render.audioMode, 'native');
   assert.equal(render.nativeAudioRequested, true);
   assert.equal(render.provider, 'fake-local');
@@ -84,6 +87,7 @@ try {
     body: JSON.stringify({ prdId: first.id, renderId: firstRender.id })
   }).then((response) => response.json());
   assert.equal(runIntent.packet.status, 'created');
+  assert.equal(runIntent.packet.launch.mode, 'dry-run');
   assert.equal(runIntent.packet.timeoutSec, 180);
   assert.deepEqual(runIntent.packet.allowedCommands, ['npm test', 'npm run typecheck', 'npm run lint']);
   const packetPath = path.join(root, '.brainrot', 'run-packets', `${runIntent.packet.id}.json`);

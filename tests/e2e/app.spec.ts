@@ -12,6 +12,6 @@ test('feed plays generated MP4 and records decisions', async ({ page }) => {
   await page.getByRole('button', { name: /Needs spec/ }).click();
   await expect(page.getByText(/needs spec recorded/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /Run packet/ }).click();
+  await page.getByRole('button', { name: /Launch Codex/ }).click();
   await expect(page.getByText(/Run packet created/i)).toBeVisible();
 });
