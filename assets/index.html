@@ -291,6 +291,7 @@
     const cardSig = JSON.stringify([
       idx, items.length, item && item.prd.id,
       item && item.render && item.render.id,
+      item && item.render && item.render.asset_url,
       item && item.dispatch && item.dispatch.pr_url,
       window.__falConfigured,
     ]);

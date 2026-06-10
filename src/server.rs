@@ -14,7 +14,10 @@ use crate::config::Config;
 use crate::dispatch::{load_receipts, DispatchKind, Dispatcher};
 use crate::distill::{compile_storyboard, distill};
 use crate::events;
-use crate::providers::{fake::FakeProvider, fal::FalProvider, load_renders, Provider, VideoRender};
+use crate::providers::{
+    compare_render_freshness, fake::FakeProvider, fal::FalProvider, load_renders, Provider,
+    VideoRender,
+};
 use crate::secrets;
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
@@ -118,17 +121,13 @@ pub fn total_spend(renders: &[VideoRender]) -> f64 {
         .sum()
 }
 
-/// Latest render for a spec, preferring real provider output over fixtures.
+/// Latest ready render for a spec.
 fn latest_render(prd_id: &str, renders: &[VideoRender]) -> Option<VideoRender> {
-    let ready: Vec<&VideoRender> = renders
+    renders
         .iter()
         .filter(|r| r.prd_id == prd_id && r.status == "ready")
-        .collect();
-    ready
-        .iter()
-        .find(|r| r.provider != "fake-local")
-        .or_else(|| ready.first())
-        .map(|r| (*r).clone())
+        .max_by(|a, b| compare_render_freshness(a, b))
+        .cloned()
 }
 
 async fn api_state(State(ctx): State<AppCtx>) -> Response {
@@ -177,18 +176,21 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         })
         .collect();
 
-    Json(json!({
-        "items": items,
-        "video_provider": ctx.cfg.video.provider,
-        "fal_configured": ctx.fal_key().is_some(),
-        "max_items": ctx.cfg.feed.max_items,
-        "spend": {
-            "total_usd": total_spend(&renders),
-            "cap_usd": ctx.cfg.video.max_total_spend_usd,
-            "price_per_render_usd": crate::providers::fal::unit_cost(&ctx.cfg.video),
-        },
-    }))
-    .into_response()
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(json!({
+            "items": items,
+            "video_provider": ctx.cfg.video.provider,
+            "fal_configured": ctx.fal_key().is_some(),
+            "max_items": ctx.cfg.feed.max_items,
+            "spend": {
+                "total_usd": total_spend(&renders),
+                "cap_usd": ctx.cfg.video.max_total_spend_usd,
+                "price_per_render_usd": crate::providers::fal::unit_cost(&ctx.cfg.video),
+            },
+        })),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize, Default)]
@@ -432,7 +434,28 @@ async fn media(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_byte_range;
+    use super::{latest_render, parse_byte_range};
+    use crate::providers::VideoRender;
+
+    fn render(id: &str, provider: &str, status: &str, created_at: &str) -> VideoRender {
+        let asset_file = format!("{id}.mp4");
+        VideoRender {
+            id: id.into(),
+            prd_id: "prd-1".into(),
+            prd_sha256: "sha-1".into(),
+            storyboard_id: format!("{id}-storyboard"),
+            provider: provider.into(),
+            model: "test-model".into(),
+            native_audio: true,
+            status: status.into(),
+            asset_url: format!("/media/sha-1/{asset_file}"),
+            asset_file,
+            provider_job_id: Some(format!("{id}-job")),
+            cost_estimate_usd: 0.0,
+            latency_ms: 1,
+            created_at: created_at.into(),
+        }
+    }
 
     #[test]
     fn byte_ranges_cover_browser_patterns() {
@@ -444,5 +467,36 @@ mod tests {
         assert_eq!(parse_byte_range("bytes=5-2", 100), None);
         assert_eq!(parse_byte_range("garbage", 100), None);
         assert_eq!(parse_byte_range("bytes=0-", 0), None);
+    }
+
+    #[test]
+    fn latest_render_selects_newest_ready_even_when_fixture_beats_real_provider() {
+        let renders = vec![
+            render("old-real", "fal", "ready", "2026-01-01T00:00:00.000Z"),
+            render(
+                "new-fixture",
+                "fake-local",
+                "ready",
+                "2026-01-01T00:00:01.000Z",
+            ),
+        ];
+
+        let selected = latest_render("prd-1", &renders).unwrap();
+
+        assert_eq!(selected.id, "new-fixture");
+        assert_eq!(selected.provider, "fake-local");
+    }
+
+    #[test]
+    fn latest_render_ignores_failed_renders_and_ties_by_render_id() {
+        let renders = vec![
+            render("000-old", "fal", "ready", "2026-01-01T00:00:00.000Z"),
+            render("999-new", "fal", "ready", "2026-01-01T00:00:00.000Z"),
+            render("latest-failed", "fal", "failed", "2026-01-01T00:00:01.000Z"),
+        ];
+
+        let selected = latest_render("prd-1", &renders).unwrap();
+
+        assert_eq!(selected.id, "999-new");
     }
 }

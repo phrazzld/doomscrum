@@ -4,8 +4,8 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::distill::Storyboard;
-use crate::providers::{save_render, VideoRender};
-use crate::util::{now_rfc3339, sha256_hex};
+use crate::providers::{cache_distinct_render_id, save_render, VideoRender};
+use crate::util::now_rfc3339;
 
 /// Embedded 2s 9:16 h264+aac fixture, generated once with ffmpeg.
 /// Keeps tests and offline dev deterministic with zero runtime dependencies.
@@ -16,7 +16,8 @@ pub struct FakeProvider;
 impl FakeProvider {
     pub fn render(&self, storyboard: &Storyboard, renders_dir: &Path) -> Result<VideoRender> {
         let started = Instant::now();
-        let id = sha256_hex(format!("{}:fake-local", storyboard.id).as_bytes());
+        let created_at = now_rfc3339();
+        let id = cache_distinct_render_id(&format!("{}:fake-local", storyboard.id));
         let dir = renders_dir.join(&storyboard.prd_sha256);
         std::fs::create_dir_all(&dir)?;
         let asset_file = format!("{id}.mp4");
@@ -35,7 +36,7 @@ impl FakeProvider {
             provider_job_id: Some(format!("fake-{}", crate::util::short(&id))),
             cost_estimate_usd: 0.0,
             latency_ms: started.elapsed().as_millis() as u64,
-            created_at: now_rfc3339(),
+            created_at,
         };
         save_render(renders_dir, &render)?;
         Ok(render)
@@ -47,6 +48,7 @@ mod tests {
     use super::*;
     use crate::backlog::PrdSource;
     use crate::distill::{compile_storyboard, distill};
+    use crate::util::sha256_hex;
     use std::path::PathBuf;
 
     #[test]
@@ -79,5 +81,36 @@ mod tests {
         .unwrap();
         assert!(provenance.contains(&prd.sha256));
         assert!(provenance.contains("fake-local"));
+    }
+
+    #[test]
+    fn repeated_fixture_renders_preserve_distinct_provenance() {
+        let raw = "# Spec\n\n## Goal\nDo a thing.\n";
+        let prd = PrdSource {
+            id: sha256_hex(raw.as_bytes()),
+            sha256: sha256_hex(raw.as_bytes()),
+            rel_path: "backlog.d/spec.md".into(),
+            abs_path: PathBuf::from("backlog.d/spec.md"),
+            title: "Spec".into(),
+            priority: 0,
+            raw: raw.into(),
+        };
+        let storyboard = compile_storyboard(&prd, &distill(&prd), 8);
+        let dir = tempfile::tempdir().unwrap();
+
+        let first = FakeProvider.render(&storyboard, dir.path()).unwrap();
+        let second = FakeProvider.render(&storyboard, dir.path()).unwrap();
+
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.asset_url, second.asset_url);
+        let render_dir = dir.path().join(&prd.sha256);
+        assert!(render_dir.join(format!("{}.json", first.id)).exists());
+        assert!(render_dir.join(format!("{}.json", second.id)).exists());
+        let json_count = std::fs::read_dir(render_dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            .count();
+        assert_eq!(json_count, 2);
     }
 }

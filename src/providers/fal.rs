@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::distill::Storyboard;
-use crate::providers::{save_render, VideoRender};
-use crate::util::{now_rfc3339, sha256_hex};
+use crate::providers::{cache_distinct_render_id, save_render, VideoRender};
+use crate::util::now_rfc3339;
 
 /// Client for fal.ai's queue API. Generating a video sends spec-derived
 /// prompt text to a remote provider — an explicit disclosure event.
@@ -195,7 +195,8 @@ impl FalProvider {
             .bytes()
             .await?;
 
-        let id = sha256_hex(format!("{}:fal:{}:{}", storyboard.id, self.model, url).as_bytes());
+        let created_at = now_rfc3339();
+        let id = cache_distinct_render_id(&format!("{}:fal:{}:{}", storyboard.id, self.model, url));
         let dir = renders_dir.join(&storyboard.prd_sha256);
         std::fs::create_dir_all(&dir)?;
         let asset_file = format!("{id}.mp4");
@@ -215,7 +216,7 @@ impl FalProvider {
             provider_job_id: result.request_id.or(Some(url)),
             cost_estimate_usd: self.render_cost(storyboard),
             latency_ms: started.elapsed().as_millis() as u64,
-            created_at: now_rfc3339(),
+            created_at,
         };
         save_render(renders_dir, &render)?;
         Ok(render)

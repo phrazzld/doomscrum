@@ -102,9 +102,12 @@ that can take a prompt and edit a worktree.
 
 The source spec stays authoritative. Every render records provider, model,
 spec sha256, storyboard hash, latency, and job id in
-`.doomscrum/renders/<spec-sha>/<render-id>.json`. Every decision (skip,
-dispatch) is appended to `.doomscrum/events.ndjson`. Deleting `.doomscrum/`
-destroys only generated state — never specs.
+`.doomscrum/renders/<spec-sha>/<render-id>.json`. Render IDs and media URLs
+are cache-distinct for each successful generation, and the feed selects the
+newest ready provenance for a spec while leaving older JSON readable for
+audit. Every decision (skip, dispatch) is appended to
+`.doomscrum/events.ndjson`. Deleting `.doomscrum/` destroys only generated
+state — never specs.
 
 ## Development
 

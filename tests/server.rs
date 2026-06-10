@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use serde_json::{json, Value};
 use doomscrum::config::Config;
+use doomscrum::providers::{save_render, VideoRender};
 use doomscrum::server::{router, AppCtx};
+use serde_json::{json, Value};
 
 struct TestApp {
     addr: SocketAddr,
@@ -158,6 +159,32 @@ impl TestApp {
     }
 }
 
+fn render_fixture(
+    prd_id: &str,
+    prd_sha256: &str,
+    id: &str,
+    provider: &str,
+    created_at: &str,
+) -> VideoRender {
+    let asset_file = format!("{id}.mp4");
+    VideoRender {
+        id: id.into(),
+        prd_id: prd_id.into(),
+        prd_sha256: prd_sha256.into(),
+        storyboard_id: format!("{id}-storyboard"),
+        provider: provider.into(),
+        model: "test-model".into(),
+        native_audio: true,
+        status: "ready".into(),
+        asset_url: format!("/media/{prd_sha256}/{asset_file}"),
+        asset_file,
+        provider_job_id: Some(format!("{id}-job")),
+        cost_estimate_usd: 0.0,
+        latency_ms: 1,
+        created_at: created_at.into(),
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn feed_renders_and_serves_video() {
     let app = spawn_app().await;
@@ -187,6 +214,105 @@ async fn feed_renders_and_serves_video() {
     // Regenerate is idempotent unless forced.
     let (_, body) = app.post("/api/generate", json!({})).await;
     assert_eq!(body["renders"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn state_selects_newest_ready_render_even_when_fixture_is_newer_than_real() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = &state["items"][0]["prd"];
+    let prd_id = prd["id"].as_str().unwrap();
+    let prd_sha256 = prd["sha256"].as_str().unwrap();
+
+    save_render(
+        &app.root.join(".doomscrum/renders"),
+        &render_fixture(
+            prd_id,
+            prd_sha256,
+            "old-real-render",
+            "fal",
+            "2026-01-01T00:00:00.000Z",
+        ),
+    )
+    .unwrap();
+    save_render(
+        &app.root.join(".doomscrum/renders"),
+        &render_fixture(
+            prd_id,
+            prd_sha256,
+            "new-fixture-render",
+            "fake-local",
+            "2026-01-01T00:00:01.000Z",
+        ),
+    )
+    .unwrap();
+
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"][0]["render"]["id"], "new-fixture-render");
+    assert_eq!(state["items"][0]["render"]["provider"], "fake-local");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forced_regeneration_preserves_old_json_and_updates_gallery_metadata() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = &state["items"][0]["prd"];
+    let prd_id = prd["id"].as_str().unwrap().to_string();
+    let prd_sha256 = prd["sha256"].as_str().unwrap().to_string();
+    let prd_path = prd["path"].as_str().unwrap();
+    let source_path = app.root.join(prd_path);
+    let source_before = std::fs::read(&source_path).unwrap();
+
+    let (status, first_body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id }),
+        )
+        .await;
+    assert_eq!(status, 200, "first generate failed: {first_body}");
+    let first = &first_body["renders"][0];
+    let first_id = first["id"].as_str().unwrap().to_string();
+    let first_url = first["asset_url"].as_str().unwrap().to_string();
+
+    let (status, second_body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id, "force": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "forced generate failed: {second_body}");
+    let second = &second_body["renders"][0];
+    let second_id = second["id"].as_str().unwrap().to_string();
+    let second_url = second["asset_url"].as_str().unwrap().to_string();
+
+    assert_ne!(first_id, second_id);
+    assert_ne!(first_url, second_url);
+
+    let render_dir = app.root.join(".doomscrum/renders").join(&prd_sha256);
+    let mut json_files: Vec<_> = std::fs::read_dir(&render_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            (path.extension().is_some_and(|ext| ext == "json")).then_some(path)
+        })
+        .collect();
+    json_files.sort();
+    assert_eq!(json_files.len(), 2, "render JSON files: {json_files:?}");
+    assert!(render_dir.join(format!("{first_id}.json")).exists());
+    assert!(render_dir.join(format!("{second_id}.json")).exists());
+
+    let source_after = std::fs::read(&source_path).unwrap();
+    assert_eq!(source_before, source_after);
+
+    let (_, refreshed) = app.get("/api/state").await;
+    assert_eq!(refreshed["items"][0]["render"]["id"], second_id);
+    assert_eq!(refreshed["items"][0]["render"]["asset_url"], second_url);
+}
+
+#[test]
+fn gallery_card_signature_tracks_render_media_url() {
+    let html = include_str!("../assets/index.html");
+    assert!(html.contains("item && item.render && item.render.asset_url"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
