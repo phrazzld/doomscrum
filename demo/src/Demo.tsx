@@ -17,17 +17,18 @@ const sec = (s: number) => Math.round(s * FPS);
 // ----- scene timing (seconds) ---------------------------------------------
 // Clip scenes are sized from each render's measured speech-end (whisper
 // transcript) + a held beat, so the demo never cuts a line mid-sentence.
+// Seedance hero clips run 12s and speak title + goal + acceptance criterion.
 const T = {
-  coldOpen: 7.4, // fruit drama: speech ends 6.75s
-  beat: 3.0,
-  title: 3.5,
-  clipA: 6.8, // genz: speech ends 6.11s
-  clipB: 6.1, // cryptid: speech ends 5.39s
-  clipC: 5.8, // italian: speech ends 5.07s
-  swipe: 3.0,
-  pr: 7.0,
-  clipD: 6.6, // street interview: speech ends 5.95s
-  close: 6.5,
+  coldOpen: 10.6, // fruit drama: speech ends 9.97s
+  beat: 2.5,
+  title: 3.0,
+  clipA: 11.8, // genz: speech ends 11.15s
+  clipB: 11.5, // cryptid: speech ends 10.89s
+  clipC: 10.7, // italian: speech ends 10.03s
+  swipe: 2.5,
+  pr: 6.5,
+  clipD: 10.9, // street interview: speech ends 10.27s
+  close: 6.0,
 };
 const ORDER: (keyof typeof T)[] = [
   "coldOpen",
@@ -412,7 +413,7 @@ const Close: React.FC = () => {
         DoomScrum
       </div>
       <div style={{ fontFamily: MONO, fontSize: 38, color: INK, letterSpacing: "0.1em" }}>
-        built in rust · videos by sora · agents by codex
+        built in rust · videos by seedance · agents by codex
       </div>
       <div
         style={{

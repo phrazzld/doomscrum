@@ -463,10 +463,10 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
                 None => " Vine boom at the end.".to_string(),
             };
             format!(
-                "Unhinged gen-z talking-head explainer. A twentysomething with a ring light films a \
+                "Chaotic gen-z talking-head explainer. A twentysomething with a ring light films a \
                  vertical selfie video in their bedroom, talking fast straight into the camera with \
                  punch-in zooms and big bold captions appearing word by word. \
-                 They say, deadly serious: \"{hook} {goal}\"{tail}"
+                 They say, completely serious: \"{hook} {goal}\"{tail}"
             )
         }
         BrainrotFormat::CryptidVlog => {
@@ -490,7 +490,8 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
                 "Italian brainrot creature reveal. A surreal hybrid creature — a giant espresso cup \
                  with muscular human legs and a crocodile head — strikes heroic poses on a marble \
                  plaza, camera orbiting, renaissance lighting, fully cinematic. A bombastic \
-                 pseudo-Italian opera narrator bellows over orchestral hits: \"{hook} {goal}\"{tail} \
+                 opera narrator with a slight Italian flair bellows over orchestral hits, every \
+                 English word crisp and clearly intelligible: \"{hook} {goal}\"{tail} \
                  Deadpan, epic, absurd."
             )
         }
