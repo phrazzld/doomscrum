@@ -15,16 +15,18 @@ export const FPS = 30;
 const sec = (s: number) => Math.round(s * FPS);
 
 // ----- scene timing (seconds) ---------------------------------------------
+// Clip scenes are sized from each render's measured speech-end (whisper
+// transcript) + a held beat, so the demo never cuts a line mid-sentence.
 const T = {
-  coldOpen: 4.5,
+  coldOpen: 7.4, // fruit drama: speech ends 6.75s
   beat: 3.0,
   title: 3.5,
-  clipA: 7.0, // genz
-  clipB: 7.0, // cryptid
-  clipC: 6.0, // italian
+  clipA: 6.8, // genz: speech ends 6.11s
+  clipB: 6.1, // cryptid: speech ends 5.39s
+  clipC: 5.8, // italian: speech ends 5.07s
   swipe: 3.0,
   pr: 7.0,
-  clipD: 5.5, // street interview
+  clipD: 6.6, // street interview: speech ends 5.95s
   close: 6.5,
 };
 const ORDER: (keyof typeof T)[] = [
@@ -410,7 +412,7 @@ const Close: React.FC = () => {
         DoomScrum
       </div>
       <div style={{ fontFamily: MONO, fontSize: 38, color: INK, letterSpacing: "0.1em" }}>
-        built in rust · videos by veo · agents by codex
+        built in rust · videos by sora · agents by codex
       </div>
       <div
         style={{
