@@ -148,8 +148,12 @@ pub fn format_for(priority: usize) -> BrainrotFormat {
     BrainrotFormat::ALL[priority % BrainrotFormat::ALL.len()]
 }
 
+/// Count spoken words: tokens with no alphanumeric content (a lone "—",
+/// stray punctuation) take no time to say and don't count.
 fn words(text: &str) -> usize {
-    text.split_whitespace().count()
+    text.split_whitespace()
+        .filter(|t| t.chars().any(char::is_alphanumeric))
+        .count()
 }
 
 /// Keep the first `max_words` words, dropping any trailing period.
@@ -162,11 +166,13 @@ pub fn clip_words(text: &str, max_words: usize) -> String {
         .join(" ")
 }
 
-/// How many spoken words fit in a clip: an energetic AI voiceover lands
-/// around 2.4 words/sec, and we reserve a 1.5s ending beat so the dialogue
-/// never cuts mid-sentence.
+/// How many spoken words fit in a clip. Measured against real veo3.1
+/// renders: characters pace nearer 2 words/sec than the 2.4 we first
+/// assumed, and they idle for a beat before the first line — so we budget
+/// 2.0 words/sec against a 2s reserve. The previous 2.4 w/s × 1.5s-reserve
+/// budget produced clips that cut off mid-script.
 pub fn word_budget(duration_sec: u32) -> usize {
-    (((duration_sec as f64) - 1.5) * 2.4).max(6.0) as usize
+    (((duration_sec as f64) - 2.0) * 2.0).max(5.0) as usize
 }
 
 /// Words a compressed line must never end on — a clipped line that trails
@@ -174,31 +180,38 @@ pub fn word_budget(duration_sec: u32) -> usize {
 /// we're eliminating.
 const DANGLERS: &[&str] = &[
     "so", "and", "or", "but", "the", "a", "an", "to", "of", "for", "on", "in", "with", "by",
-    "that", "which", "until", "when", "while", "as", "is", "are", "its", "their", "it",
+    "that", "which", "until", "when", "while", "as", "is", "are", "its", "their", "it", "what",
+    "who", "how", "why", "where", "whether", "every", "each", "instead", "without", "via",
+    "from", "into", "than", "then", "also", "does", "do", "did", "can", "cannot", "could",
+    "should", "would", "will", "must", "may", "might", "has", "have", "had", "be", "been",
+    "was", "were", "not", "never",
 ];
 
-/// Compress spec prose into a coherent spoken line: keep the head clause
-/// (cut subordinate "so/because/..." tails), clip to the word budget, then
-/// drop trailing connectives so the line ends on a real word.
-pub fn tighten(text: &str, max_words: usize) -> String {
-    let text = text.trim();
-    let head = [" so ", " because ", " such that ", " in order to "]
-        .iter()
-        .filter_map(|d| text.find(d).map(|i| &text[..i]))
-        .min_by_key(|s| s.len())
-        .unwrap_or(text);
-    let mut words: Vec<&str> = head
-        .trim_end_matches('.')
-        .split_whitespace()
-        .take(max_words.max(1))
-        .collect();
-    while words.len() > 3 {
+/// Words that can open a mid-sentence clause run and still read like the
+/// start of a sentence (articles, demonstratives, pronouns, quantifiers).
+const RUN_STARTERS: &[&str] = &[
+    "the", "a", "an", "this", "that", "these", "those", "it", "we", "you", "they", "no",
+    "every", "each", "all", "our", "your", "its",
+];
+
+/// Words that open a subordinate intro phrase ("After a swipe, …"): a
+/// clause run starting here is not a sentence on its own.
+const INTRO_SUBORDINATORS: &[&str] = &[
+    "after", "before", "when", "while", "once", "if", "as", "until", "during", "upon",
+    "without", "unless", "since",
+];
+
+/// Strip trailing connectives and punctuation so a line ends on a word
+/// that can carry a full stop.
+fn strip_danglers(text: &str) -> String {
+    let mut words: Vec<&str> = text.split_whitespace().collect();
+    while words.len() > 2 {
         let last = words
             .last()
             .unwrap()
             .trim_matches(|c: char| !c.is_alphanumeric())
             .to_lowercase();
-        if DANGLERS.contains(&last.as_str()) {
+        if last.is_empty() || DANGLERS.contains(&last.as_str()) {
             words.pop();
         } else {
             break;
@@ -206,8 +219,115 @@ pub fn tighten(text: &str, max_words: usize) -> String {
     }
     words
         .join(" ")
-        .trim_end_matches([',', ';', ':'])
+        .trim_end_matches([',', ';', ':', '—', ' '])
+        .trim_end()
         .to_string()
+}
+
+/// Remove em-dash asides ("— like this —"): parentheticals read fine on
+/// the page but burn spoken-word budget without carrying the core clause.
+fn remove_asides(text: &str) -> String {
+    let mut out = text.to_string();
+    loop {
+        let Some(first) = out.find('—') else { break };
+        let Some(second_rel) = out[first + '—'.len_utf8()..].find('—') else {
+            break;
+        };
+        let second = first + '—'.len_utf8() + second_rel;
+        let mut next = out[..first].trim_end().to_string();
+        next.push(' ');
+        next.push_str(out[second + '—'.len_utf8()..].trim_start());
+        out = next;
+    }
+    out.trim().to_string()
+}
+
+/// The longest contiguous run of clause segments that fits the budget.
+/// A whole clause reads like a sentence; a word-clipped fragment reads
+/// like a cutoff — which is the artifact we're eliminating. Runs may span
+/// weak boundaries (commas, em-dashes) but never strong ones (periods,
+/// colons, semicolons): "state: renders" is not a spoken phrase.
+fn best_clause_run(text: &str, max_words: usize) -> Option<String> {
+    let mut best: Option<(usize, &str)> = None;
+    for zone in text.split(['.', ';', ':']) {
+        let mut segments: Vec<(usize, usize)> = Vec::new();
+        let mut start = 0usize;
+        for (i, c) in zone.char_indices() {
+            if matches!(c, ',' | '—') {
+                if zone[start..i].trim().chars().any(char::is_alphanumeric) {
+                    segments.push((start, i));
+                }
+                start = i + c.len_utf8();
+            }
+        }
+        if zone[start..].trim().chars().any(char::is_alphanumeric) {
+            segments.push((start, zone.len()));
+        }
+        for i in 0..segments.len() {
+            // A run may only start mid-sentence if it begins like a noun
+            // phrase — "the operator sees…" reads fine, "merges without…"
+            // is a beheaded verb.
+            let first = zone[segments[i].0..segments[i].1]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+            if i != 0 && !RUN_STARTERS.contains(&first.as_str()) {
+                continue;
+            }
+            // "After a swipe" alone is an intro phrase, not a sentence.
+            if INTRO_SUBORDINATORS.contains(&first.as_str()) {
+                continue;
+            }
+            for j in i..segments.len() {
+                let run = zone[segments[i].0..segments[j].1].trim();
+                let count = words(run);
+                if count > max_words {
+                    break;
+                }
+                if count >= 3 && best.is_none_or(|(b, _)| count > b) {
+                    best = Some((count, run));
+                }
+            }
+        }
+    }
+    best.map(|(_, run)| run.to_string())
+}
+
+/// Compress spec prose into a coherent spoken line: drop em-dash asides,
+/// cut subordinate "so/because/..." tails, then prefer whole clause runs
+/// over word clipping, and always end on a real word.
+pub fn tighten(text: &str, max_words: usize) -> String {
+    let text = remove_asides(text.trim());
+    let head = [" so ", " because ", " such that ", " in order to "]
+        .iter()
+        .filter_map(|d| text.find(d).map(|i| &text[..i]))
+        .min_by_key(|s| s.len())
+        .unwrap_or(&text)
+        .trim_end_matches('.');
+    if words(head) <= max_words {
+        return strip_danglers(head);
+    }
+    if let Some(run) = best_clause_run(head, max_words) {
+        return strip_danglers(&run);
+    }
+    let clipped = head
+        .split_whitespace()
+        .take(max_words.max(1))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut out = strip_danglers(&clipped);
+    // A clip that lands just after a conjunction ("…drain a wallet or
+    // fork-bomb") amputated a coordination; drop the stump.
+    let tail: Vec<&str> = out.split_whitespace().collect();
+    if tail.len() > 3 {
+        let second_last = tail[tail.len() - 2].to_lowercase();
+        if second_last == "and" || second_last == "or" {
+            out = strip_danglers(&tail[..tail.len() - 2].join(" "));
+        }
+    }
+    out
 }
 
 /// The complete spoken script for one clip, guaranteed to fit the word
@@ -234,10 +354,11 @@ impl SpokenScript {
 
 pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) -> SpokenScript {
     let budget = word_budget(duration_sec);
-    // The hook never eats the whole budget: the goal always gets ≥2 words.
+    // The hook is a short title fragment; the goal line is the payload and
+    // gets the bulk of the budget — the spec must come through clearly.
     let hook = format!(
         "{}.",
-        clip_words(title, budget.saturating_sub(2).clamp(1, 6))
+        tighten(title, budget.saturating_sub(2).clamp(1, 4))
     );
     let mut used = words(&hook);
     let goal_line = format!(
@@ -332,12 +453,15 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
         }
     };
     let pacing = format!(
-        "The complete spoken script is exactly the quoted text above — {} words total. \
-         Every word must be spoken at a natural energetic pace and FINISHED by second {} of the \
-         video, ending on a held reaction shot or visual beat. Never cut off mid-sentence; \
-         the clip must feel like one complete unit. Full script for reference: \"{}\"",
+        "Dialogue starts within the first second — no silent intro. The complete spoken \
+         script is exactly the quoted text above — {} words total. Every word must be \
+         spoken at a natural energetic pace and FINISHED by second {} of the {}-second \
+         video, leaving the last moments for a held reaction shot or visual beat. \
+         Never cut off mid-sentence; the clip must feel like one complete unit. \
+         Full script for reference: \"{}\"",
         script.word_count(),
-        duration_sec.saturating_sub(1),
+        duration_sec.saturating_sub(2).max(1),
+        duration_sec,
         script.full_text(),
     );
     let guardrail = "All spoken lines must stay faithful to the quoted script. Do not invent \
@@ -475,7 +599,11 @@ mod tests {
         assert!(sb
             .provider_prompt
             .contains("Always show the latest provenance"));
-        assert!(sb.provider_prompt.contains("Refresh shows newest render"));
+        // At 8s the budget is too tight for the criterion line; a longer
+        // clip speaks it.
+        assert!(!sb.provider_prompt.contains("Refresh shows newest render"));
+        let long = compile_storyboard(&p, &brief, 12);
+        assert!(long.provider_prompt.contains("Refresh shows newest render"));
         assert!(sb.provider_prompt.contains("Do not invent"));
         assert!(sb.provider_prompt.contains("9:16"));
         assert!(sb.provider_prompt.contains("native audio"));
@@ -520,8 +648,10 @@ mod tests {
                 sb.provider_prompt
             );
             assert!(
-                sb.provider_prompt.contains("Refresh shows newest render"),
-                "{format:?} must speak the first acceptance criterion"
+                compile_with_format(&p, &brief, 12, format)
+                    .provider_prompt
+                    .contains("Refresh shows newest render"),
+                "{format:?} must speak the first acceptance criterion when the budget allows"
             );
             assert!(sb.provider_prompt.contains("native audio"), "{format:?}");
             assert!(sb.provider_prompt.contains("Do not invent"), "{format:?}");
@@ -560,6 +690,50 @@ mod tests {
         );
         // Short coherent lines pass through.
         assert_eq!(tighten("Ship it.", 11), "Ship it");
+    }
+
+    /// Regressions caught on the real backlog: word-clipping produced
+    /// fragments like "Stand up CI: every." — a clause run must win.
+    #[test]
+    fn tighten_prefers_whole_clauses_over_fragments() {
+        assert_eq!(
+            tighten("Stand up CI: every PR gated by fmt, clippy, tests", 4),
+            "Stand up CI"
+        );
+        assert_eq!(
+            tighten("Garbage-collect generated state: renders, worktrees, media", 4),
+            "Garbage-collect generated state"
+        );
+        // No clause boundary: clip, then drop danglers like "every".
+        assert_eq!(
+            tighten("Throttle and budget every money path", 4),
+            "Throttle and budget"
+        );
+        assert_eq!(
+            tighten("Stream media instead of buffering whole files in memory", 4),
+            "Stream media"
+        );
+        // A mid-sentence clause run that fits beats a clipped opening.
+        assert_eq!(
+            tighten(
+                "After a swipe, the operator sees what the agent is doing",
+                8
+            ),
+            "the operator sees what the agent is doing"
+        );
+        // Em-dash asides are dropped whole: the core clause survives.
+        assert_eq!(
+            tighten("No branch — human or agent — merges without review", 7),
+            "No branch merges without review"
+        );
+        // A clip landing right after a conjunction drops the stump.
+        assert_eq!(
+            tighten(
+                "No user action can drain a wallet or fork-bomb the machine",
+                9
+            ),
+            "No user action can drain a wallet"
+        );
     }
 
     #[test]
@@ -607,7 +781,8 @@ mod tests {
         let p = prd(SAMPLE);
         let brief = distill(&p);
         let sb = compile_storyboard(&p, &brief, 8);
-        assert!(sb.provider_prompt.contains("FINISHED by second 7"));
+        assert!(sb.provider_prompt.contains("FINISHED by second 6"));
+        assert!(sb.provider_prompt.contains("Dialogue starts within the first second"));
         assert!(sb.provider_prompt.contains("Never cut off mid-sentence"));
         assert!(sb.provider_prompt.contains("words total"));
     }

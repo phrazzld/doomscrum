@@ -50,6 +50,16 @@ impl Provider {
             Provider::Fal(p) => p.render(storyboard, renders_dir).await,
         }
     }
+
+    /// The clip length this provider will actually produce for a requested
+    /// duration. Storyboards must be compiled with this value so the script's
+    /// word budget and "finish by second N" pacing match the real clip.
+    pub fn clip_duration(&self, target_sec: u32) -> u32 {
+        match self {
+            Provider::Fake(_) => target_sec,
+            Provider::Fal(p) => fal::clip_duration(&p.model, target_sec),
+        }
+    }
 }
 
 pub fn save_render(renders_dir: &Path, render: &VideoRender) -> Result<()> {

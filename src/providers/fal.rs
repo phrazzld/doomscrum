@@ -41,6 +41,55 @@ struct StatusResponse {
     status: Option<String>,
 }
 
+/// Per-second prices (720p, audio on) for models we have verified on fal,
+/// checked 2026-06-10. Unknown models fall back to the configured
+/// `price_per_second_usd` so spend tracking never silently reads $0.
+pub fn model_price_per_second(model: &str) -> Option<f64> {
+    if model.contains("veo3.1/fast") {
+        Some(0.15)
+    } else if model.contains("sora-2") {
+        Some(0.10)
+    } else if model.contains("kling-video/v2.6/pro") {
+        Some(0.14)
+    } else if model.contains("seedance-2.0/fast") {
+        Some(0.2419)
+    } else if model.contains("seedance-2.0") {
+        Some(0.3034)
+    } else {
+        None
+    }
+}
+
+/// Snap a requested duration to the model's supported values, preferring
+/// the next longer clip so the script never loses breathing room.
+/// (sora-2 takes 4/8/12, kling only 5/10, seedance any 4–15, veo 4/6/8.)
+pub fn clip_duration(model: &str, target: u32) -> u32 {
+    let snap_up = |allowed: &[u32]| {
+        allowed
+            .iter()
+            .copied()
+            .find(|&d| d >= target)
+            .unwrap_or_else(|| *allowed.last().unwrap())
+    };
+    if model.contains("sora-2") {
+        snap_up(&[4, 8, 12])
+    } else if model.contains("kling-video") {
+        snap_up(&[5, 10])
+    } else if model.contains("seedance") {
+        target.clamp(4, 15)
+    } else {
+        snap_up(&[4, 6, 8])
+    }
+}
+
+/// Estimated cost of one render under this config: snapped clip duration ×
+/// the model's per-second price. The wallet gates and /api/state both quote
+/// this, so the number shown is the number billed.
+pub fn unit_cost(cfg: &crate::config::VideoConfig) -> f64 {
+    f64::from(clip_duration(&cfg.fal_model, cfg.max_duration_sec))
+        * model_price_per_second(&cfg.fal_model).unwrap_or(cfg.price_per_second_usd)
+}
+
 impl FalProvider {
     pub fn from_config(cfg: &crate::config::VideoConfig, api_key: String) -> Self {
         Self {
@@ -48,17 +97,67 @@ impl FalProvider {
             base_url: cfg.fal_base_url.clone(),
             api_key,
             max_duration_sec: cfg.max_duration_sec,
-            price_per_second_usd: cfg.price_per_second_usd,
+            price_per_second_usd: model_price_per_second(&cfg.fal_model)
+                .unwrap_or(cfg.price_per_second_usd),
             poll_interval: Duration::from_secs(1),
             max_polls: 180,
         }
     }
 
-    /// Billed seconds × price: duration is capped the same way the submit
-    /// request caps it, so the estimate matches what fal actually charges.
+    /// Billed seconds × price: duration is snapped the same way the submit
+    /// request snaps it, so the estimate matches what fal actually charges.
     pub fn render_cost(&self, storyboard: &Storyboard) -> f64 {
-        f64::from(storyboard.target_duration_sec.min(self.max_duration_sec))
-            * self.price_per_second_usd
+        f64::from(self.effective_duration(storyboard)) * self.price_per_second_usd
+    }
+
+    fn effective_duration(&self, storyboard: &Storyboard) -> u32 {
+        clip_duration(
+            &self.model,
+            storyboard.target_duration_sec.min(self.max_duration_sec.max(
+                // snap-up may legitimately exceed the configured max (kling
+                // only does 5s/10s); never snap *down* below the storyboard.
+                storyboard.target_duration_sec,
+            )),
+        )
+    }
+
+    /// Each model family has its own request schema (verified against fal's
+    /// OpenAPI 2026-06-10): sora-2 wants an integer duration + resolution,
+    /// kling a "5"/"10" string, seedance a "4".."15" string + resolution,
+    /// and veo a "{n}s" suffixed string.
+    fn request_body(&self, storyboard: &Storyboard) -> serde_json::Value {
+        let duration = self.effective_duration(storyboard);
+        let prompt = &storyboard.provider_prompt;
+        if self.model.contains("sora-2") {
+            json!({
+                "prompt": prompt,
+                "aspect_ratio": "9:16",
+                "resolution": "720p",
+                "duration": duration,
+            })
+        } else if self.model.contains("kling-video") {
+            json!({
+                "prompt": prompt,
+                "aspect_ratio": "9:16",
+                "duration": duration.to_string(),
+                "generate_audio": true,
+            })
+        } else if self.model.contains("seedance") {
+            json!({
+                "prompt": prompt,
+                "aspect_ratio": "9:16",
+                "resolution": "720p",
+                "duration": duration.to_string(),
+                "generate_audio": true,
+            })
+        } else {
+            json!({
+                "prompt": prompt,
+                "aspect_ratio": "9:16",
+                "duration": format!("{duration}s"),
+                "generate_audio": true,
+            })
+        }
     }
 
     pub async fn render(&self, storyboard: &Storyboard, renders_dir: &Path) -> Result<VideoRender> {
@@ -126,12 +225,7 @@ impl FalProvider {
         let response = client
             .post(&submit_url)
             .header("authorization", format!("Key {}", self.api_key))
-            .json(&json!({
-                "prompt": storyboard.provider_prompt,
-                "aspect_ratio": "9:16",
-                "duration": format!("{}s", storyboard.target_duration_sec.min(self.max_duration_sec)),
-                "generate_audio": true,
-            }))
+            .json(&self.request_body(storyboard))
             .send()
             .await?;
         if !response.status().is_success() {

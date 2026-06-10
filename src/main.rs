@@ -44,6 +44,14 @@ enum Command {
         /// Re-render even when a render already exists.
         #[arg(long, default_value_t = false)]
         force: bool,
+        /// Override the fal model for this run
+        /// (e.g. fal-ai/sora-2/text-to-video).
+        #[arg(long)]
+        model: Option<String>,
+        /// Only render specs whose title or id contains this substring
+        /// (case-insensitive).
+        #[arg(long)]
+        spec: Option<String>,
     },
     /// Print a summary of specs, renders, and dispatches.
     Report,
@@ -70,18 +78,29 @@ async fn main() -> Result<()> {
             provider,
             limit,
             force,
+            model,
+            spec,
         } => {
             if let Some(limit) = limit {
                 cfg.feed.max_items = limit;
+            }
+            if let Some(model) = model {
+                cfg.video.fal_model = model;
             }
             let provider_name = provider.unwrap_or_else(|| cfg.video.provider.clone());
             let ctx = AppCtx::new(root, cfg);
             let provider = ctx.provider(&provider_name)?;
             let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
 
+            let spec_filter = spec.map(|s| s.to_lowercase());
             let targets: Vec<_> = ctx
                 .scan()?
                 .into_iter()
+                .filter(|prd| {
+                    spec_filter.as_ref().is_none_or(|f| {
+                        prd.title.to_lowercase().contains(f) || prd.id.contains(f)
+                    })
+                })
                 .filter(|prd| {
                     let already = existing
                         .iter()
@@ -95,8 +114,7 @@ async fn main() -> Result<()> {
 
             if matches!(provider, doomscrum::providers::Provider::Fal(_)) {
                 let spent = server::total_spend(&existing);
-                let per_render =
-                    f64::from(ctx.cfg.video.max_duration_sec) * ctx.cfg.video.price_per_second_usd;
+                let per_render = doomscrum::providers::fal::unit_cost(&ctx.cfg.video);
                 let planned = per_render * targets.len() as f64;
                 let cap = ctx.cfg.video.max_total_spend_usd;
                 anyhow::ensure!(
@@ -110,8 +128,11 @@ async fn main() -> Result<()> {
 
             let mut count = 0usize;
             for prd in targets {
-                let storyboard =
-                    compile_storyboard(&prd, &distill(&prd), ctx.cfg.video.max_duration_sec);
+                let storyboard = compile_storyboard(
+                    &prd,
+                    &distill(&prd),
+                    provider.clip_duration(ctx.cfg.video.max_duration_sec),
+                );
                 let storyboards_dir = ctx.state_dir().join("storyboards");
                 std::fs::create_dir_all(&storyboards_dir)?;
                 std::fs::write(

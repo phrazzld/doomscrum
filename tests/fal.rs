@@ -119,6 +119,90 @@ async fn renders_through_queue_poll_and_download() {
     assert!(provenance.contains("fal-ai/test-model"));
 }
 
+/// Each model family gets the request schema fal actually accepts
+/// (verified against fal's OpenAPI 2026-06-10): sora-2 integer durations,
+/// kling "5"/"10" strings, seedance "4".."15" strings + resolution,
+/// veo-style "{n}s" for everything else.
+#[tokio::test]
+async fn each_model_family_gets_its_own_request_schema() {
+    let cases: Vec<(&str, serde_json::Value)> = vec![
+        (
+            "fal-ai/sora-2/text-to-video",
+            serde_json::json!({"duration": 8, "resolution": "720p", "aspect_ratio": "9:16"}),
+        ),
+        (
+            "fal-ai/kling-video/v2.6/pro/text-to-video",
+            // kling only does 5s/10s: an 8s target snaps UP to 10.
+            serde_json::json!({"duration": "10", "generate_audio": true, "aspect_ratio": "9:16"}),
+        ),
+        (
+            "bytedance/seedance-2.0/fast/text-to-video",
+            serde_json::json!({"duration": "8", "resolution": "720p", "generate_audio": true}),
+        ),
+        (
+            "fal-ai/veo3.1/fast",
+            serde_json::json!({"duration": "8s", "generate_audio": true}),
+        ),
+    ];
+    for (model, expected_body) in cases {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(format!("/{model}")))
+            .and(body_partial_json(expected_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "video": { "url": format!("{}/files/out.mp4", server.uri()) }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/files/out.mp4"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(FAKE_MP4))
+            .mount(&server)
+            .await;
+
+        let prd = sample_prd();
+        let mut p = provider(server.uri(), "k");
+        p.model = model.into();
+        // Compile the storyboard at the duration the model will really
+        // produce, exactly as the CLI/server do.
+        let duration = doomscrum::providers::fal::clip_duration(model, 8);
+        let storyboard = compile_storyboard(&prd, &distill(&prd), duration);
+        let dir = tempfile::tempdir().unwrap();
+        let render = p.render(&storyboard, dir.path()).await.unwrap_or_else(|e| {
+            panic!("render failed for {model}: {e:#} (expected body {expected_body})")
+        });
+        assert_eq!(render.model, model);
+    }
+}
+
+#[test]
+fn known_models_have_verified_prices_and_durations() {
+    use doomscrum::providers::fal::{clip_duration, model_price_per_second};
+    assert_eq!(model_price_per_second("fal-ai/veo3.1/fast"), Some(0.15));
+    assert_eq!(
+        model_price_per_second("fal-ai/sora-2/text-to-video"),
+        Some(0.10)
+    );
+    assert_eq!(
+        model_price_per_second("fal-ai/kling-video/v2.6/pro/text-to-video"),
+        Some(0.14)
+    );
+    assert_eq!(
+        model_price_per_second("bytedance/seedance-2.0/fast/text-to-video"),
+        Some(0.2419)
+    );
+    assert_eq!(model_price_per_second("fal-ai/mystery-model"), None);
+
+    assert_eq!(clip_duration("fal-ai/sora-2/text-to-video", 8), 8);
+    assert_eq!(clip_duration("fal-ai/sora-2/text-to-video", 9), 12);
+    assert_eq!(clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 8), 10);
+    assert_eq!(clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 4), 5);
+    assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 8), 8);
+    assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 20), 15);
+    assert_eq!(clip_duration("fal-ai/veo3.1/fast", 8), 8);
+}
+
 #[tokio::test]
 async fn missing_api_key_is_a_clear_error() {
     let prd = sample_prd();

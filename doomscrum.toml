@@ -16,9 +16,15 @@ max_items = 10
 # "fal" generates real AI video — costs money and sends spec-derived
 # prompts to fal.ai. Needs FAL_API_KEY (env or ~/.secrets).
 provider = "fake"
+# Supported (all native-audio, 720p, prices verified 2026-06-10):
+#   fal-ai/sora-2/text-to-video                  $0.10/s  (durations 4/8/12)
+#   fal-ai/kling-video/v2.6/pro/text-to-video    $0.14/s  (durations 5/10)
+#   fal-ai/veo3.1/fast                           $0.15/s  (durations 4/6/8)
+#   bytedance/seedance-2.0/fast/text-to-video    $0.2419/s (durations 4-15)
 fal_model = "fal-ai/veo3.1/fast"
 max_duration_sec = 8
-# veo3.1/fast with audio at 720p: $0.15/s => $1.20 per 8s render.
+# Fallback $/s for models not in the built-in price table; known models
+# use their verified price automatically.
 price_per_second_usd = 0.15
 # Wallet guard: real renders refused once estimated total spend would
 # exceed this. Raise deliberately.
