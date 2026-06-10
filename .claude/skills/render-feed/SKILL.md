@@ -46,8 +46,10 @@ Schema check for a new model:
 After every render:
 
 ```sh
-python3 scripts/check_script_fit.py <mp4> --expect "<planned script>"
+python3 scripts/check_script_fit.py <mp4> "<planned script>" [--words-json out.json]
 ```
+
+`--words-json` saves word-level timings (caption overlays for the demo).
 
 COMPLETE (exit 0) or it gets re-rolled/retired. The planned script comes from
 the storyboard in `.doomscrum/storyboards/`. Word budget is

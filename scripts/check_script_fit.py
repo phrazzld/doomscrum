@@ -51,7 +51,7 @@ def upload(wav: bytes, key: str) -> str:
     return init["file_url"]
 
 
-def transcribe(mp4: Path, key: str) -> dict:
+def transcribe(mp4: Path, key: str, chunk_level: str = "segment") -> dict:
     wav = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(mp4), "-ac", "1", "-ar", "16000",
          "-f", "wav", "-"],
@@ -61,7 +61,7 @@ def transcribe(mp4: Path, key: str) -> dict:
         "audio_url": upload(wav, key),
         "task": "transcribe",
         "language": "en",
-        "chunk_level": "segment",
+        "chunk_level": chunk_level,
     }).encode()
     req = urllib.request.Request(
         "https://queue.fal.run/fal-ai/whisper",
@@ -87,11 +87,17 @@ def norm_words(text: str) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    words_json = None
+    for i, a in enumerate(sys.argv[1:]):
+        if a == "--words-json":
+            words_json = Path(sys.argv[1:][i + 1])
+            args = [x for x in args if x != sys.argv[1:][i + 1]]
+    if not args:
         print(__doc__)
         return 2
-    mp4 = Path(sys.argv[1])
-    expected = sys.argv[2] if len(sys.argv) > 2 else ""
+    mp4 = Path(args[0])
+    expected = args[1] if len(args) > 1 else ""
 
     duration = float(subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -99,7 +105,12 @@ def main() -> int:
         capture_output=True, text=True, check=True,
     ).stdout.strip())
 
-    result = transcribe(mp4, fal_key())
+    # Word-level chunks time each spoken word (for caption overlays) and
+    # still give a valid speech-end for the cutoff check.
+    result = transcribe(mp4, fal_key(), "word" if words_json else "segment")
+    if words_json:
+        words_json.write_text(json.dumps(result.get("chunks", []), indent=1))
+        print(f"words     : saved {len(result.get('chunks', []))} word timings -> {words_json}")
     text = result.get("text", "").strip()
     chunks = result.get("chunks", [])
     speech_end = max((c["timestamp"][1] or duration for c in chunks), default=0.0)
