@@ -73,16 +73,23 @@ impl AppCtx {
     }
 
     pub fn provider(&self, name: &str) -> anyhow::Result<Provider> {
+        self.provider_with(name, &self.cfg.video)
+    }
+
+    /// Build a provider for one specific pipeline (model + duration) —
+    /// the render mix resolves a different `VideoConfig` per spec.
+    pub fn provider_with(
+        &self,
+        name: &str,
+        video: &crate::config::VideoConfig,
+    ) -> anyhow::Result<Provider> {
         match name {
             "fake" => Ok(Provider::Fake(FakeProvider)),
             "fal" => {
                 let key = self.fal_key().ok_or_else(|| {
                     anyhow::anyhow!("FAL_API_KEY or FAL_KEY not configured (env or ~/.secrets)")
                 })?;
-                Ok(Provider::Fal(FalProvider::from_config(
-                    &self.cfg.video,
-                    key,
-                )))
+                Ok(Provider::Fal(FalProvider::from_config(video, key)))
             }
             other => anyhow::bail!("unknown video provider '{other}' (expected fake|fal)"),
         }
@@ -185,7 +192,7 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         "spend": {
             "total_usd": total_spend(&renders),
             "cap_usd": ctx.cfg.video.max_total_spend_usd,
-            "price_per_render_usd": crate::providers::fal::unit_cost(&ctx.cfg.video),
+            "price_per_render_usd": crate::providers::fal::avg_unit_cost(&ctx.cfg.video),
         },
     }))
     .into_response()
@@ -228,8 +235,10 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     // Wallet guard: refuse real generation that would blow the spend cap.
     if matches!(provider, Provider::Fal(_)) {
         let spent = total_spend(&existing);
-        let per_render = crate::providers::fal::unit_cost(&ctx.cfg.video);
-        let planned = per_render * targets.len() as f64;
+        let planned: f64 = targets
+            .iter()
+            .map(|p| crate::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&p.sha256)))
+            .sum();
         let cap = ctx.cfg.video.max_total_spend_usd;
         if spent + planned > cap {
             return error_response(
@@ -245,10 +254,15 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
 
     let mut rendered = Vec::new();
     for prd in targets {
+        let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
+        let provider = match ctx.provider_with(&provider_name, &vcfg) {
+            Ok(p) => p,
+            Err(err) => return error_response(StatusCode::BAD_REQUEST, err),
+        };
         let storyboard = compile_storyboard(
             &prd,
             &distill(&prd),
-            provider.clip_duration(ctx.cfg.video.max_duration_sec),
+            provider.clip_duration(vcfg.max_duration_sec),
         );
         let storyboards_dir = ctx.state_dir().join("storyboards");
         let _ = std::fs::create_dir_all(&storyboards_dir);

@@ -45,7 +45,11 @@ struct StatusResponse {
 /// checked 2026-06-10. Unknown models fall back to the configured
 /// `price_per_second_usd` so spend tracking never silently reads $0.
 pub fn model_price_per_second(model: &str) -> Option<f64> {
-    if model.contains("veo3.1/lite") {
+    if model.contains("ltx-2.3") && model.contains("fast") {
+        Some(0.04)
+    } else if model.contains("ltx-2.3") {
+        Some(0.06)
+    } else if model.contains("veo3.1/lite") {
         Some(0.05)
     } else if model.contains("veo3.1/fast") {
         Some(0.15)
@@ -79,6 +83,8 @@ pub fn clip_duration(model: &str, target: u32) -> u32 {
         snap_up(&[5, 10])
     } else if model.contains("seedance") {
         target.clamp(4, 15)
+    } else if model.contains("ltx-2.3") {
+        snap_up(&[6, 8, 10, 12, 14, 16, 18, 20])
     } else {
         snap_up(&[4, 6, 8])
     }
@@ -90,6 +96,25 @@ pub fn clip_duration(model: &str, target: u32) -> u32 {
 pub fn unit_cost(cfg: &crate::config::VideoConfig) -> f64 {
     f64::from(clip_duration(&cfg.fal_model, cfg.max_duration_sec))
         * model_price_per_second(&cfg.fal_model).unwrap_or(cfg.price_per_second_usd)
+}
+
+/// Expected per-render cost under the configured mix: the weight-averaged
+/// unit cost across the portfolio (plain unit cost when no mix is set).
+pub fn avg_unit_cost(cfg: &crate::config::VideoConfig) -> f64 {
+    if cfg.mix.is_empty() {
+        return unit_cost(cfg);
+    }
+    let total: f64 = cfg.mix.iter().map(|m| f64::from(m.weight.max(1))).sum();
+    cfg.mix
+        .iter()
+        .map(|m| {
+            let mut c = cfg.clone();
+            c.fal_model = m.model.clone();
+            c.max_duration_sec = m.duration_sec;
+            unit_cost(&c) * f64::from(m.weight.max(1))
+        })
+        .sum::<f64>()
+        / total
 }
 
 impl FalProvider {
@@ -153,6 +178,14 @@ impl FalProvider {
                 "aspect_ratio": "9:16",
                 "resolution": "720p",
                 "duration": duration.to_string(),
+                "generate_audio": true,
+            })
+        } else if self.model.contains("ltx-2.3") {
+            json!({
+                "prompt": prompt,
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "duration": duration,
                 "generate_audio": true,
             })
         } else {

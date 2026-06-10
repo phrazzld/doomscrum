@@ -705,7 +705,7 @@ pub fn compile_with_format(
 
     // Seeded by spec content: the same spec always renders the same way
     // (stable re-renders), but different specs draw different ingredients.
-    let seed = u64::from_str_radix(prd.sha256.get(..16).unwrap_or("0"), 16).unwrap_or(0);
+    let seed = crate::util::spec_seed(&prd.sha256);
     let script = plan_script(
         &prd.title,
         &brief.goal,

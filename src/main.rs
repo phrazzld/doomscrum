@@ -85,7 +85,10 @@ async fn main() -> Result<()> {
                 cfg.feed.max_items = limit;
             }
             if let Some(model) = model {
+                // An explicit --model overrides the render mix too: the
+                // operator asked for exactly this pipeline.
                 cfg.video.fal_model = model;
+                cfg.video.mix.clear();
             }
             let provider_name = provider.unwrap_or_else(|| cfg.video.provider.clone());
             let ctx = AppCtx::new(root, cfg);
@@ -114,8 +117,14 @@ async fn main() -> Result<()> {
 
             if matches!(provider, doomscrum::providers::Provider::Fal(_)) {
                 let spent = server::total_spend(&existing);
-                let per_render = doomscrum::providers::fal::unit_cost(&ctx.cfg.video);
-                let planned = per_render * targets.len() as f64;
+                // Each spec may draw a different pipeline from the mix, so
+                // the planned spend is the sum of per-spec unit costs.
+                let planned: f64 = targets
+                    .iter()
+                    .map(|p| {
+                        doomscrum::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&p.sha256))
+                    })
+                    .sum();
                 let cap = ctx.cfg.video.max_total_spend_usd;
                 anyhow::ensure!(
                     spent + planned <= cap,
@@ -128,10 +137,12 @@ async fn main() -> Result<()> {
 
             let mut count = 0usize;
             for prd in targets {
+                let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
+                let provider = ctx.provider_with(&provider_name, &vcfg)?;
                 let storyboard = compile_storyboard(
                     &prd,
                     &distill(&prd),
-                    provider.clip_duration(ctx.cfg.video.max_duration_sec),
+                    provider.clip_duration(vcfg.max_duration_sec),
                 );
                 let storyboards_dir = ctx.state_dir().join("storyboards");
                 std::fs::create_dir_all(&storyboards_dir)?;

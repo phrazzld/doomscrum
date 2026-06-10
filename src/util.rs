@@ -25,6 +25,13 @@ pub fn slug(text: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// Deterministic per-spec seed from a content sha256 hex string. Drives
+/// script templates, scene ingredients, and render-mix pipeline draws so
+/// the same spec always renders the same way.
+pub fn spec_seed(sha256_hex: &str) -> u64 {
+    u64::from_str_radix(sha256_hex.get(..16).unwrap_or("0"), 16).unwrap_or(0)
+}
+
 pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }

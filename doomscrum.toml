@@ -27,6 +27,8 @@ provider = "fake"
 # renders correctly-spelled word-synced captions, and delivers the
 # infomercial energy. seedance fast remains the premium tier ($2.90);
 # veo3.1/lite the budget tier ($0.40, 8s, captions garble, no criterion).
+# fal_model/max_duration_sec apply when the mix below is empty or when
+# --model forces a single pipeline.
 fal_model = "fal-ai/sora-2/text-to-video"
 max_duration_sec = 12
 # Fallback $/s for models not in the built-in price table; known models
@@ -37,6 +39,32 @@ price_per_second_usd = 0.15
 # re-render; 40 -> 60 on 2026-06-10 for the hypermaximalist regen:
 # veo-lite/sora-2 bake-off + full feed re-render on the winner.)
 max_total_spend_usd = 60.0
+
+# Render portfolio (see docs/EFFICIENCY.md): each spec deterministically
+# draws one pipeline by content hash. Weighted toward cheap/short clips
+# with a hero sprinkle — average ≈ $0.77/clip vs $1.20 flat sora.
+# NOTE: these [[video.mix]] tables must stay AFTER the plain [video] keys,
+# and ltx-2.3 diction/caption quality is unverified — every paid render
+# still goes through scripts/check_script_fit.py before it counts.
+[[video.mix]]
+model = "fal-ai/ltx-2.3/text-to-video/fast" # $0.04/s @1080p, native audio
+duration_sec = 8                            # $0.32/clip
+weight = 5
+
+[[video.mix]]
+model = "fal-ai/veo3.1/lite" # $0.05/s @720p, native audio
+duration_sec = 8             # $0.40/clip
+weight = 2
+
+[[video.mix]]
+model = "fal-ai/sora-2/text-to-video" # $0.10/s, speaks the criterion at 12s
+duration_sec = 12                     # $1.20/clip
+weight = 2
+
+[[video.mix]]
+model = "bytedance/seedance-2.0/fast/text-to-video" # $0.2419/s showpiece
+duration_sec = 12                                   # $2.90/clip
+weight = 1
 
 [agent]
 # Right swipe runs implement_cmd in a fresh worktree; left swipe runs

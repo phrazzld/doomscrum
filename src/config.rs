@@ -62,6 +62,25 @@ pub struct VideoConfig {
     /// Hard wallet guard: real renders are refused once estimated total
     /// spend (summed from render provenance) would exceed this.
     pub max_total_spend_usd: f64,
+    /// Weighted render portfolio. When non-empty, each spec draws one
+    /// (model, duration) deterministically by content hash — most specs
+    /// land on cheap/short pipelines, a weighted few on hero models, and
+    /// the average cost drops without making every clip the same.
+    pub mix: Vec<MixEntry>,
+}
+
+/// One pipeline in the render mix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MixEntry {
+    pub model: String,
+    pub duration_sec: u32,
+    /// Relative draw weight: weight 3 is picked ~3x as often as weight 1.
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+}
+
+fn default_weight() -> u32 {
+    1
 }
 
 impl Default for VideoConfig {
@@ -73,7 +92,33 @@ impl Default for VideoConfig {
             max_duration_sec: 8,
             price_per_second_usd: 0.15,
             max_total_spend_usd: 25.0,
+            mix: Vec::new(),
         }
+    }
+}
+
+impl VideoConfig {
+    /// Resolve this spec's pipeline: a clone of the config with the
+    /// mix-drawn model and duration applied. Deterministic per spec hash
+    /// (stable re-renders); the identity when no mix is configured.
+    pub fn with_pipeline(&self, spec_sha: &str) -> VideoConfig {
+        let mut cfg = self.clone();
+        if self.mix.is_empty() {
+            return cfg;
+        }
+        let seed = crate::util::spec_seed(spec_sha);
+        let total: u64 = self.mix.iter().map(|m| u64::from(m.weight.max(1))).sum();
+        let mut x = seed % total;
+        for entry in &self.mix {
+            let w = u64::from(entry.weight.max(1));
+            if x < w {
+                cfg.fal_model = entry.model.clone();
+                cfg.max_duration_sec = entry.duration_sec;
+                return cfg;
+            }
+            x -= w;
+        }
+        cfg
     }
 }
 
@@ -188,6 +233,64 @@ implement_cmd = ["echo", "{worktree}"]
         // untouched tables keep defaults
         assert_eq!(cfg.video.provider, "fake");
         assert_eq!(cfg.agent.pr_cmd[0], "gh");
+    }
+
+    #[test]
+    fn render_mix_parses_and_picks_deterministically() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("doomscrum.toml"),
+            r#"
+[video]
+fal_model = "fal-ai/sora-2/text-to-video"
+max_duration_sec = 12
+
+[[video.mix]]
+model = "fal-ai/ltx-2.3/text-to-video/fast"
+duration_sec = 8
+weight = 3
+
+[[video.mix]]
+model = "fal-ai/sora-2/text-to-video"
+duration_sec = 12
+weight = 1
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(dir.path()).unwrap();
+        assert_eq!(cfg.video.mix.len(), 2);
+
+        // Same spec hash always draws the same pipeline (stable re-renders).
+        let a = cfg.video.with_pipeline("00aa11bb22cc33dd44ee");
+        let b = cfg.video.with_pipeline("00aa11bb22cc33dd44ee");
+        assert_eq!(a.fal_model, b.fal_model);
+        assert_eq!(a.max_duration_sec, b.max_duration_sec);
+
+        // Across many hashes both entries get picked, weighted toward
+        // the cheap one.
+        let mut cheap = 0;
+        let mut hero = 0;
+        for i in 0..32u32 {
+            let sha = format!("{i:016x}");
+            let v = cfg.video.with_pipeline(&sha);
+            if v.fal_model.contains("ltx") {
+                assert_eq!(v.max_duration_sec, 8);
+                cheap += 1;
+            } else {
+                assert_eq!(v.max_duration_sec, 12);
+                hero += 1;
+            }
+        }
+        assert!(cheap > hero, "weights ignored: cheap={cheap} hero={hero}");
+        assert!(hero > 0, "hero entry never drawn");
+    }
+
+    #[test]
+    fn empty_mix_keeps_the_single_configured_pipeline() {
+        let cfg = VideoConfig::default();
+        let v = cfg.with_pipeline("deadbeef00000000");
+        assert_eq!(v.fal_model, cfg.fal_model);
+        assert_eq!(v.max_duration_sec, cfg.max_duration_sec);
     }
 
     #[test]

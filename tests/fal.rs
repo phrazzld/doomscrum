@@ -147,6 +147,11 @@ async fn each_model_family_gets_its_own_request_schema() {
             "fal-ai/veo3.1/lite",
             serde_json::json!({"duration": "8s", "generate_audio": true, "aspect_ratio": "9:16"}),
         ),
+        (
+            // ltx-2.3 wants an integer duration (6..20 step 2) at >=1080p.
+            "fal-ai/ltx-2.3/text-to-video/fast",
+            serde_json::json!({"duration": 8, "resolution": "1080p", "generate_audio": true, "aspect_ratio": "9:16"}),
+        ),
     ];
     for (model, expected_body) in cases {
         let server = MockServer::start().await;
@@ -186,6 +191,16 @@ fn known_models_have_verified_prices_and_durations() {
     assert_eq!(model_price_per_second("fal-ai/veo3.1/fast"), Some(0.15));
     // veo3.1/lite: $0.05/s at 720p with audio, verified on fal 2026-06-10.
     assert_eq!(model_price_per_second("fal-ai/veo3.1/lite"), Some(0.05));
+    // ltx-2.3: $0.04/s fast, $0.06/s pro at 1080p with native audio,
+    // verified on fal 2026-06-10.
+    assert_eq!(
+        model_price_per_second("fal-ai/ltx-2.3/text-to-video/fast"),
+        Some(0.04)
+    );
+    assert_eq!(
+        model_price_per_second("fal-ai/ltx-2.3/text-to-video"),
+        Some(0.06)
+    );
     assert_eq!(
         model_price_per_second("fal-ai/sora-2/text-to-video"),
         Some(0.10)
