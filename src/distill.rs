@@ -121,9 +121,10 @@ pub fn distill(prd: &PrdSource) -> SpecBrief {
 }
 
 /// Live brainrot formats (researched 2026-06): AI fruit soap operas,
-/// Italian-brainrot creature reveals, cryptid selfie vlogs, fake future
-/// documentaries, and unhinged gen-z explainers. Each spec is assigned one
-/// deterministically so the feed has variety and re-renders are stable.
+/// 90s TV infomercials, cryptid selfie vlogs, Italian-brainrot creature
+/// reveals, fake future documentaries, and gen-z explainers. Each spec is
+/// assigned one deterministically so the feed has variety and re-renders
+/// are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrainrotFormat {
     FruitDrama,
@@ -131,24 +132,27 @@ pub enum BrainrotFormat {
     CryptidVlog,
     ItalianBrainrot,
     StreetInterview,
+    Infomercial,
 }
 
 impl BrainrotFormat {
-    pub const ALL: [BrainrotFormat; 5] = [
+    pub const ALL: [BrainrotFormat; 6] = [
         BrainrotFormat::FruitDrama,
-        BrainrotFormat::GenZExplainer,
+        BrainrotFormat::Infomercial,
         BrainrotFormat::CryptidVlog,
         BrainrotFormat::ItalianBrainrot,
         BrainrotFormat::StreetInterview,
+        BrainrotFormat::GenZExplainer,
     ];
 
     pub fn tone(self) -> &'static str {
         match self {
-            BrainrotFormat::FruitDrama => "fruit_drama_v2",
-            BrainrotFormat::GenZExplainer => "genz_explainer_v2",
-            BrainrotFormat::CryptidVlog => "cryptid_vlog_v2",
-            BrainrotFormat::ItalianBrainrot => "italian_brainrot_v2",
-            BrainrotFormat::StreetInterview => "street_interview_v2",
+            BrainrotFormat::FruitDrama => "fruit_drama_v3",
+            BrainrotFormat::GenZExplainer => "genz_explainer_v3",
+            BrainrotFormat::CryptidVlog => "cryptid_vlog_v3",
+            BrainrotFormat::ItalianBrainrot => "italian_brainrot_v3",
+            BrainrotFormat::StreetInterview => "street_interview_v3",
+            BrainrotFormat::Infomercial => "infomercial_v1",
         }
     }
 }
@@ -436,10 +440,12 @@ pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) 
 fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u32) -> String {
     let header = format!(
         "Vertical 9:16 video, exactly {duration_sec} seconds, with native audio: \
-         clear spoken dialogue, sound effects, and music as described. Bold \
-         TikTok-style captions of the spoken words appear on screen word by word, \
-         perfectly synced to the dialogue — a viewer with sound off must still be \
-         able to read the entire script."
+         clear spoken dialogue, sound effects, and music as described. Huge bold \
+         meme-style captions with thick outlines pop onto the screen word by word, \
+         perfectly synced to the dialogue — the captions are a main character, and \
+         a viewer with sound off must still be able to read the entire script. \
+         High energy throughout: the camera never sits still — punch-in zooms, \
+         whip pans, dramatic push-ins on every beat."
     );
     let hook = &script.hook;
     let goal = &script.goal;
@@ -505,6 +511,25 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
                  to an elderly retired gen-z developer on a city sidewalk, vertical handheld framing, \
                  ambient traffic, mournful piano. The retiree stares into the distance, voice \
                  cracking: \"{hook} {goal}\"{tail} Slow documentary push-in on their eyes."
+            )
+        }
+        BrainrotFormat::Infomercial => {
+            let tail = match &script.criterion {
+                Some(c) => {
+                    format!(
+                        " Hard cut closer: he leans into the lens, eyebrows raised, and adds: \"{c}\" \
+                         A giant starburst graphic flashes behind him as the studio audience gasps."
+                    )
+                }
+                None => " A giant starburst graphic flashes as the studio audience applauds.".to_string(),
+            };
+            format!(
+                "A 1990s late-night TV infomercial shot on slightly grainy videotape with cheesy \
+                 synth music. An overjoyed pitchman in a loud blazer stands in a bright studio \
+                 kitchen set, gesturing wildly at the camera while colorful starburst graphics \
+                 and price-tag stickers pop on and off the screen. He booms with game-show \
+                 enthusiasm, every word crisp and clearly intelligible: \"{hook} {goal}\"{tail} \
+                 Rapid cuts, canned applause, VHS tracking flicker on the final frame."
             )
         }
     };
@@ -680,13 +705,30 @@ mod tests {
     #[test]
     fn consecutive_feed_positions_never_share_a_format() {
         assert_eq!(format_for(0), BrainrotFormat::FruitDrama);
-        assert_eq!(format_for(1), BrainrotFormat::GenZExplainer);
+        assert_eq!(format_for(1), BrainrotFormat::Infomercial);
         assert_eq!(format_for(2), BrainrotFormat::CryptidVlog);
         assert_eq!(format_for(3), BrainrotFormat::ItalianBrainrot);
         assert_eq!(format_for(4), BrainrotFormat::StreetInterview);
-        assert_eq!(format_for(5), BrainrotFormat::FruitDrama);
-        for i in 0..10 {
+        assert_eq!(format_for(5), BrainrotFormat::GenZExplainer);
+        assert_eq!(format_for(6), BrainrotFormat::FruitDrama);
+        for i in 0..12 {
             assert_ne!(format_for(i), format_for(i + 1));
+        }
+    }
+
+    #[test]
+    fn prompts_demand_hypermaximalist_captions_and_motion() {
+        let p = prd(SAMPLE);
+        let brief = distill(&p);
+        let sb = compile_with_format(&p, &brief, 12, BrainrotFormat::Infomercial);
+        // 90s infomercial scene with the spec spoken by the pitchman.
+        assert!(sb.provider_prompt.contains("infomercial"), "{}", sb.provider_prompt);
+        assert!(sb.provider_prompt.contains("starburst"), "{}", sb.provider_prompt);
+        // Shared header: captions are oversized meme text and the camera keeps moving.
+        for format in BrainrotFormat::ALL {
+            let prompt = compile_with_format(&p, &brief, 12, format).provider_prompt;
+            assert!(prompt.contains("meme-style captions"), "{format:?}");
+            assert!(prompt.contains("never sits still"), "{format:?}");
         }
     }
 
