@@ -510,7 +510,7 @@ const Close: React.FC = () => {
           $5,000 explainer video
         </span>
         <span style={{ fontFamily: IMPACT, fontSize: 72, color: "#ffd400", WebkitTextStroke: "2px #000" }}>
-          $0.40
+          $1.20
         </span>
       </div>
       <div style={{ fontFamily: MONO, fontSize: 36, color: INK, letterSpacing: "0.1em" }}>
