@@ -133,11 +133,11 @@ impl BrainrotFormat {
 
     pub fn tone(self) -> &'static str {
         match self {
-            BrainrotFormat::FruitDrama => "fruit_drama_v1",
-            BrainrotFormat::GenZExplainer => "genz_explainer_v1",
-            BrainrotFormat::CryptidVlog => "cryptid_vlog_v1",
-            BrainrotFormat::ItalianBrainrot => "italian_brainrot_v1",
-            BrainrotFormat::StreetInterview => "street_interview_v1",
+            BrainrotFormat::FruitDrama => "fruit_drama_v2",
+            BrainrotFormat::GenZExplainer => "genz_explainer_v2",
+            BrainrotFormat::CryptidVlog => "cryptid_vlog_v2",
+            BrainrotFormat::ItalianBrainrot => "italian_brainrot_v2",
+            BrainrotFormat::StreetInterview => "street_interview_v2",
         }
     }
 }
@@ -148,85 +148,203 @@ pub fn format_for(priority: usize) -> BrainrotFormat {
     BrainrotFormat::ALL[priority % BrainrotFormat::ALL.len()]
 }
 
-/// Word-boundary clip so spec text fits in ~8 seconds of spoken dialogue.
-fn clip(text: &str, max_chars: usize) -> String {
-    let text = text.trim().trim_end_matches('.');
-    if text.len() <= max_chars {
-        return text.to_string();
-    }
-    let mut out = String::new();
-    for word in text.split_whitespace() {
-        if out.len() + word.len() + 1 > max_chars {
+fn words(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+/// Keep the first `max_words` words, dropping any trailing period.
+pub fn clip_words(text: &str, max_words: usize) -> String {
+    text.trim()
+        .trim_end_matches('.')
+        .split_whitespace()
+        .take(max_words.max(1))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// How many spoken words fit in a clip: an energetic AI voiceover lands
+/// around 2.4 words/sec, and we reserve a 1.5s ending beat so the dialogue
+/// never cuts mid-sentence.
+pub fn word_budget(duration_sec: u32) -> usize {
+    (((duration_sec as f64) - 1.5) * 2.4).max(6.0) as usize
+}
+
+/// Words a compressed line must never end on — a clipped line that trails
+/// off with "so" or "until" reads like a cutoff, which is the exact thing
+/// we're eliminating.
+const DANGLERS: &[&str] = &[
+    "so", "and", "or", "but", "the", "a", "an", "to", "of", "for", "on", "in", "with", "by",
+    "that", "which", "until", "when", "while", "as", "is", "are", "its", "their", "it",
+];
+
+/// Compress spec prose into a coherent spoken line: keep the head clause
+/// (cut subordinate "so/because/..." tails), clip to the word budget, then
+/// drop trailing connectives so the line ends on a real word.
+pub fn tighten(text: &str, max_words: usize) -> String {
+    let text = text.trim();
+    let head = [" so ", " because ", " such that ", " in order to "]
+        .iter()
+        .filter_map(|d| text.find(d).map(|i| &text[..i]))
+        .min_by_key(|s| s.len())
+        .unwrap_or(text);
+    let mut words: Vec<&str> = head
+        .trim_end_matches('.')
+        .split_whitespace()
+        .take(max_words.max(1))
+        .collect();
+    while words.len() > 3 {
+        let last = words
+            .last()
+            .unwrap()
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        if DANGLERS.contains(&last.as_str()) {
+            words.pop();
+        } else {
             break;
         }
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(word);
     }
-    if out.is_empty() {
-        text.chars().take(max_chars).collect()
-    } else {
-        out
+    words
+        .join(" ")
+        .trim_end_matches([',', ';', ':'])
+        .to_string()
+}
+
+/// The complete spoken script for one clip, guaranteed to fit the word
+/// budget. Line 1 is the title hook, line 2 the goal, line 3 the first
+/// acceptance criterion — included only when the budget allows it whole.
+pub struct SpokenScript {
+    pub hook: String,
+    pub goal: String,
+    pub criterion: Option<String>,
+}
+
+impl SpokenScript {
+    pub fn word_count(&self) -> usize {
+        words(&self.hook) + words(&self.goal) + self.criterion.as_deref().map_or(0, words)
+    }
+
+    fn full_text(&self) -> String {
+        match &self.criterion {
+            Some(c) => format!("{} {} {}", self.hook, self.goal, c),
+            None => format!("{} {}", self.hook, self.goal),
+        }
+    }
+}
+
+pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) -> SpokenScript {
+    let budget = word_budget(duration_sec);
+    // The hook never eats the whole budget: the goal always gets ≥2 words.
+    let hook = format!(
+        "{}.",
+        clip_words(title, budget.saturating_sub(2).clamp(1, 6))
+    );
+    let mut used = words(&hook);
+    let goal_line = format!(
+        "{}.",
+        tighten(goal, budget.saturating_sub(used).clamp(1, 11))
+    );
+    used += words(&goal_line);
+    let remaining = budget.saturating_sub(used);
+    // "Not done until" costs 3 words; only speak the criterion if at least
+    // a few words of it fit — a truncated stump is worse than silence.
+    let criterion =
+        (remaining >= 6).then(|| format!("Not done until {}.", tighten(criterion, remaining - 3)));
+    SpokenScript {
+        hook,
+        goal: goal_line,
+        criterion,
     }
 }
 
 /// Build the video-model prompt for one format. The dialogue quotes the
-/// actual spec text — the video must communicate the spec, not just vibe.
-fn format_prompt(
-    format: BrainrotFormat,
-    title: &str,
-    goal: &str,
-    criterion: &str,
-    duration_sec: u32,
-) -> String {
+/// actual spec text — the video must communicate the spec, not just vibe —
+/// and the whole script must finish before the clip ends.
+fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u32) -> String {
     let header = format!(
         "Vertical 9:16 video, exactly {duration_sec} seconds, with native audio: \
          clear spoken dialogue, sound effects, and music as described."
     );
+    let hook = &script.hook;
+    let goal = &script.goal;
     let scene = match format {
-        BrainrotFormat::FruitDrama => format!(
-            "AI fruit drama soap opera. A sunlit kitchen counter shot like a telenovela: \
-             shallow depth of field, dramatic golden lighting, slow push-in. Two anthropomorphic \
-             fruits with big expressive eyes and mouths — a furious strawberry and a guilty mango. \
-             The strawberry gasps, voice trembling with betrayal: \"{title}. {goal}.\" \
-             Dramatic zoom. The mango looks away and whispers: \"And it is not over until {criterion}.\" \
-             Thunder crack, telenovela string sting, audible gasp. Played completely straight."
-        ),
-        BrainrotFormat::GenZExplainer => format!(
-            "Unhinged gen-z talking-head explainer. A twentysomething with a ring light films a \
-             vertical selfie video in their bedroom, talking fast straight into the camera with \
-             punch-in zooms on every sentence and big bold captions appearing word by word. \
-             They say, deadly serious: \"POV: the backlog just dropped {title}. {goal}. \
-             And we are NOT done until {criterion}. No cap.\" Vine boom sound effect on the last line."
-        ),
-        BrainrotFormat::CryptidVlog => format!(
-            "Found-footage cryptid vlog. Bigfoot holds a GoPro at arm's length while striding \
-             through a sunny pine forest, fur rustling, lens slightly fisheye, very influencer. \
-             In a chill deep voice he says: \"Yo what's good fam, today we are shipping {title}. \
-             {goal}. We do NOT log off until {criterion}.\" Birdsong, crunching footsteps, \
-             one dramatic zoom to his face at the end."
-        ),
-        BrainrotFormat::ItalianBrainrot => format!(
-            "Italian brainrot creature reveal. A surreal hybrid creature — a giant espresso cup \
-             with muscular human legs and a crocodile head — strikes heroic poses on a marble \
-             plaza, camera orbiting, renaissance lighting, fully cinematic. A bombastic \
-             pseudo-Italian opera narrator bellows over orchestral hits: \
-             \"Specifissimo {title}! {goal}! Non è finito until {criterion}!\" Deadpan, epic, absurd."
-        ),
-        BrainrotFormat::StreetInterview => format!(
-            "Fake documentary street interview from the year 2080. A reporter holds a microphone \
-             to an elderly retired gen-z developer on a city sidewalk, vertical handheld framing, \
-             ambient traffic, mournful piano. The reporter asks: \"Do you remember {title}?\" \
-             The retiree stares into the distance, voice cracking: \"{goal}. We swore we were not \
-             done until {criterion}.\" Slow documentary push-in on their eyes."
-        ),
+        BrainrotFormat::FruitDrama => {
+            let mango = match &script.criterion {
+                Some(c) => format!(" The mango looks away and whispers: \"{c}\""),
+                None => " The mango looks away in shame, silent.".to_string(),
+            };
+            format!(
+                "AI fruit drama soap opera. A sunlit kitchen counter shot like a telenovela: \
+                 shallow depth of field, dramatic golden lighting, slow push-in. Two anthropomorphic \
+                 fruits with big expressive eyes and mouths — a furious strawberry and a guilty mango. \
+                 The strawberry gasps, voice trembling with betrayal: \"{hook} {goal}\" \
+                 Dramatic zoom.{mango} Thunder crack, telenovela string sting. Played completely straight."
+            )
+        }
+        BrainrotFormat::GenZExplainer => {
+            let tail = match &script.criterion {
+                Some(c) => format!(" \"{c}\" Vine boom on the last line."),
+                None => " Vine boom at the end.".to_string(),
+            };
+            format!(
+                "Unhinged gen-z talking-head explainer. A twentysomething with a ring light films a \
+                 vertical selfie video in their bedroom, talking fast straight into the camera with \
+                 punch-in zooms and big bold captions appearing word by word. \
+                 They say, deadly serious: \"{hook} {goal}\"{tail}"
+            )
+        }
+        BrainrotFormat::CryptidVlog => {
+            let tail = match &script.criterion {
+                Some(c) => format!(" Then, deadpan to camera: \"{c}\""),
+                None => String::new(),
+            };
+            format!(
+                "Found-footage cryptid vlog. Bigfoot holds a GoPro at arm's length while striding \
+                 through a sunny pine forest, fur rustling, lens slightly fisheye, very influencer. \
+                 In a chill deep voice he says: \"{hook} {goal}\"{tail} Birdsong, crunching \
+                 footsteps, one dramatic zoom to his face at the end."
+            )
+        }
+        BrainrotFormat::ItalianBrainrot => {
+            let tail = match &script.criterion {
+                Some(c) => format!(" \"{c}\""),
+                None => String::new(),
+            };
+            format!(
+                "Italian brainrot creature reveal. A surreal hybrid creature — a giant espresso cup \
+                 with muscular human legs and a crocodile head — strikes heroic poses on a marble \
+                 plaza, camera orbiting, renaissance lighting, fully cinematic. A bombastic \
+                 pseudo-Italian opera narrator bellows over orchestral hits: \"{hook} {goal}\"{tail} \
+                 Deadpan, epic, absurd."
+            )
+        }
+        BrainrotFormat::StreetInterview => {
+            let tail = match &script.criterion {
+                Some(c) => format!(" \"{c}\""),
+                None => String::new(),
+            };
+            format!(
+                "Fake documentary street interview from the year 2080. A reporter holds a microphone \
+                 to an elderly retired gen-z developer on a city sidewalk, vertical handheld framing, \
+                 ambient traffic, mournful piano. The retiree stares into the distance, voice \
+                 cracking: \"{hook} {goal}\"{tail} Slow documentary push-in on their eyes."
+            )
+        }
     };
-    let guardrail = "All spoken lines must stay faithful to the quoted spec text. Do not invent \
+    let pacing = format!(
+        "The complete spoken script is exactly the quoted text above — {} words total. \
+         Every word must be spoken at a natural energetic pace and FINISHED by second {} of the \
+         video, ending on a held reaction shot or visual beat. Never cut off mid-sentence; \
+         the clip must feel like one complete unit. Full script for reference: \"{}\"",
+        script.word_count(),
+        duration_sec.saturating_sub(1),
+        script.full_text(),
+    );
+    let guardrail = "All spoken lines must stay faithful to the quoted script. Do not invent \
                      shipped features, metrics, customer names, or implementation details. \
                      Do not claim anything has shipped or that tests pass. \
                      On-screen captions, if any, must match the dialogue.";
-    format!("{header}\n{scene}\n{guardrail}")
+    format!("{header}\n{scene}\n{pacing}\n{guardrail}")
 }
 
 pub fn compile_storyboard(
@@ -254,15 +372,13 @@ pub fn compile_with_format(
         .cloned()
         .unwrap_or_else(|| "No explicit risk recorded.".into());
 
-    let goal_line = clip(&brief.goal, 110);
-    let criterion_line = clip(&first_criterion, 90);
-    let provider_prompt = format_prompt(
-        format,
+    let script = plan_script(
         &prd.title,
-        &goal_line,
-        &criterion_line,
+        &brief.goal,
+        &first_criterion,
         target_duration_sec,
     );
+    let provider_prompt = format_prompt(format, &script, target_duration_sec);
 
     let beats = vec![
         Beat {
@@ -417,12 +533,82 @@ mod tests {
     }
 
     #[test]
-    fn clip_respects_word_boundaries() {
-        assert_eq!(clip("Ship the thing.", 110), "Ship the thing");
-        let long = "word ".repeat(50);
-        let clipped = clip(&long, 40);
-        assert!(clipped.len() <= 40);
-        assert!(!clipped.ends_with(' '));
-        assert!(clipped.starts_with("word"));
+    fn clip_words_keeps_whole_words() {
+        assert_eq!(clip_words("Ship the thing.", 10), "Ship the thing");
+        assert_eq!(clip_words("one two three four", 2), "one two");
+        assert_eq!(clip_words("solo", 0), "solo"); // never empty
+    }
+
+    #[test]
+    fn tighten_cuts_at_clause_boundaries_and_danglers() {
+        // Subordinate clause dropped whole, not mid-truncated.
+        assert_eq!(
+            tighten(
+                "Add a cache busting path for generated render metadata so the gallery always shows the latest MP4 provenance.",
+                11
+            ),
+            "Add a cache busting path for generated render metadata"
+        );
+        assert_eq!(
+            tighten("Record a simple human vibe rating on each render so bad models can be culled later.", 11),
+            "Record a simple human vibe rating on each render"
+        );
+        // Never ends on a dangling connective.
+        assert_eq!(
+            tighten("block run-intent gestures completely and", 10),
+            "block run-intent gestures completely"
+        );
+        // Short coherent lines pass through.
+        assert_eq!(tighten("Ship it.", 11), "Ship it");
+    }
+
+    #[test]
+    fn script_always_fits_the_word_budget() {
+        let long_goal = "make the gallery always show the latest MP4 provenance for every \
+                         spec in the backlog even when providers drift and budgets explode"
+            .to_string();
+        let long_criterion = "a route level test proves that the newest successful render is \
+                              selected by provenance timestamp and never an older stale render";
+        for duration in [4u32, 6, 8, 12] {
+            let script = plan_script("Cache Chaos Exorcism", &long_goal, long_criterion, duration);
+            assert!(
+                script.word_count() <= word_budget(duration),
+                "{} words exceeds budget {} at {duration}s",
+                script.word_count(),
+                word_budget(duration)
+            );
+        }
+    }
+
+    #[test]
+    fn criterion_is_whole_or_absent() {
+        // Tight budget: criterion dropped entirely, not stumped.
+        let tight = plan_script(
+            "A Very Long Spec Title Here",
+            "a goal sentence that uses up most of the available word budget for sure",
+            "this criterion will not fit",
+            4,
+        );
+        assert!(tight.criterion.is_none());
+        assert!(tight.word_count() <= word_budget(4));
+
+        // Roomy budget: criterion spoken.
+        let roomy = plan_script("Spec", "Ship it.", "tests pass on refresh", 8);
+        assert!(roomy.criterion.is_some());
+        assert!(roomy
+            .criterion
+            .as_deref()
+            .unwrap()
+            .contains("Not done until"));
+    }
+
+    #[test]
+    fn prompt_demands_complete_script_before_clip_ends() {
+        let p = prd(SAMPLE);
+        let brief = distill(&p);
+        let sb = compile_storyboard(&p, &brief, 8);
+        assert!(sb.provider_prompt.contains("FINISHED by second 7"));
+        assert!(sb.provider_prompt.contains("Never cut off mid-sentence"));
+        assert!(sb.provider_prompt.contains("words total"));
     }
 }

@@ -18,6 +18,11 @@ max_items = 10
 provider = "fake"
 fal_model = "fal-ai/veo3.1/fast"
 max_duration_sec = 8
+# veo3.1/fast with audio at 720p: $0.15/s => $1.20 per 8s render.
+price_per_second_usd = 0.15
+# Wallet guard: real renders refused once estimated total spend would
+# exceed this. Raise deliberately.
+max_total_spend_usd = 25.0
 
 [agent]
 # Right swipe runs implement_cmd in a fresh worktree; left swipe runs

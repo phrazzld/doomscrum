@@ -16,7 +16,7 @@ fn provider(base_url: String, api_key: &str) -> FalProvider {
         base_url,
         api_key: api_key.into(),
         max_duration_sec: 8,
-        estimate_usd: 1.5,
+        price_per_second_usd: 0.15,
         poll_interval: Duration::from_millis(10),
         max_polls: 10,
     }
@@ -104,6 +104,8 @@ async fn renders_through_queue_poll_and_download() {
     assert!(render.native_audio);
     assert_eq!(render.provider_job_id.as_deref(), Some("req-1"));
     assert_eq!(render.prd_sha256, prd.sha256);
+    // 8 billed seconds × $0.15/s
+    assert!((render.cost_estimate_usd - 1.2).abs() < 1e-9);
 
     let asset =
         std::fs::read(dir.path().join(&render.prd_sha256).join(&render.asset_file)).unwrap();

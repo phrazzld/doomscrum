@@ -57,7 +57,11 @@ pub struct VideoConfig {
     pub fal_model: String,
     pub fal_base_url: String,
     pub max_duration_sec: u32,
-    pub estimate_usd: f64,
+    /// veo3.1/fast with audio at 720p is $0.15/s on fal (verified 2026-06).
+    pub price_per_second_usd: f64,
+    /// Hard wallet guard: real renders are refused once estimated total
+    /// spend (summed from render provenance) would exceed this.
+    pub max_total_spend_usd: f64,
 }
 
 impl Default for VideoConfig {
@@ -67,7 +71,8 @@ impl Default for VideoConfig {
             fal_model: "fal-ai/veo3.1/fast".into(),
             fal_base_url: "https://queue.fal.run".into(),
             max_duration_sec: 8,
-            estimate_usd: 1.5,
+            price_per_second_usd: 0.15,
+            max_total_spend_usd: 25.0,
         }
     }
 }

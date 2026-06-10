@@ -16,7 +16,7 @@ pub struct FalProvider {
     pub base_url: String,
     pub api_key: String,
     pub max_duration_sec: u32,
-    pub estimate_usd: f64,
+    pub price_per_second_usd: f64,
     pub poll_interval: Duration,
     pub max_polls: u32,
 }
@@ -48,10 +48,17 @@ impl FalProvider {
             base_url: cfg.fal_base_url.clone(),
             api_key,
             max_duration_sec: cfg.max_duration_sec,
-            estimate_usd: cfg.estimate_usd,
+            price_per_second_usd: cfg.price_per_second_usd,
             poll_interval: Duration::from_secs(1),
             max_polls: 180,
         }
+    }
+
+    /// Billed seconds × price: duration is capped the same way the submit
+    /// request caps it, so the estimate matches what fal actually charges.
+    pub fn render_cost(&self, storyboard: &Storyboard) -> f64 {
+        f64::from(storyboard.target_duration_sec.min(self.max_duration_sec))
+            * self.price_per_second_usd
     }
 
     pub async fn render(&self, storyboard: &Storyboard, renders_dir: &Path) -> Result<VideoRender> {
@@ -102,7 +109,7 @@ impl FalProvider {
             asset_url: format!("/media/{}/{}", storyboard.prd_sha256, asset_file),
             asset_file,
             provider_job_id: result.request_id.or(Some(url)),
-            cost_estimate_usd: self.estimate_usd,
+            cost_estimate_usd: self.render_cost(storyboard),
             latency_ms: started.elapsed().as_millis() as u64,
             created_at: now_rfc3339(),
         };

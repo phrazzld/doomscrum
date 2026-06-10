@@ -109,6 +109,15 @@ fn error_response(status: StatusCode, message: impl std::fmt::Display) -> Respon
     (status, Json(json!({ "error": message.to_string() }))).into_response()
 }
 
+/// Total estimated spend on real renders, summed from provenance on disk.
+pub fn total_spend(renders: &[VideoRender]) -> f64 {
+    renders
+        .iter()
+        .filter(|r| r.provider == "fal")
+        .map(|r| r.cost_estimate_usd)
+        .sum()
+}
+
 /// Latest render for a spec, preferring real provider output over fixtures.
 fn latest_render(prd_id: &str, renders: &[VideoRender]) -> Option<VideoRender> {
     let ready: Vec<&VideoRender> = renders
@@ -173,6 +182,12 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         "video_provider": ctx.cfg.video.provider,
         "fal_configured": ctx.fal_key().is_some(),
         "max_items": ctx.cfg.feed.max_items,
+        "spend": {
+            "total_usd": total_spend(&renders),
+            "cap_usd": ctx.cfg.video.max_total_spend_usd,
+            "price_per_render_usd":
+                f64::from(ctx.cfg.video.max_duration_sec) * ctx.cfg.video.price_per_second_usd,
+        },
     }))
     .into_response()
 }
@@ -200,19 +215,38 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
     let force = body.force.unwrap_or(false);
 
+    let targets: Vec<_> = prds
+        .into_iter()
+        .filter(|prd| body.prd_id.as_ref().is_none_or(|id| &prd.id == id))
+        .filter(|prd| {
+            force
+                || !existing
+                    .iter()
+                    .any(|r| r.prd_id == prd.id && r.provider == provider.name())
+        })
+        .collect();
+
+    // Wallet guard: refuse real generation that would blow the spend cap.
+    if matches!(provider, Provider::Fal(_)) {
+        let spent = total_spend(&existing);
+        let per_render =
+            f64::from(ctx.cfg.video.max_duration_sec) * ctx.cfg.video.price_per_second_usd;
+        let planned = per_render * targets.len() as f64;
+        let cap = ctx.cfg.video.max_total_spend_usd;
+        if spent + planned > cap {
+            return error_response(
+                StatusCode::PAYMENT_REQUIRED,
+                format!(
+                    "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
+                     exceeds max_total_spend_usd ${cap:.2} — raise it in specifi.toml [video]",
+                    targets.len()
+                ),
+            );
+        }
+    }
+
     let mut rendered = Vec::new();
-    for prd in prds {
-        if let Some(id) = &body.prd_id {
-            if &prd.id != id {
-                continue;
-            }
-        }
-        let has_render = existing
-            .iter()
-            .any(|r| r.prd_id == prd.id && r.provider == provider.name());
-        if has_render && !force {
-            continue;
-        }
+    for prd in targets {
         let storyboard = compile_storyboard(&prd, &distill(&prd), ctx.cfg.video.max_duration_sec);
         let storyboards_dir = ctx.state_dir().join("storyboards");
         let _ = std::fs::create_dir_all(&storyboards_dir);

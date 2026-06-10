@@ -78,15 +78,38 @@ async fn main() -> Result<()> {
             let ctx = AppCtx::new(root, cfg);
             let provider = ctx.provider(&provider_name)?;
             let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
+
+            let targets: Vec<_> = ctx
+                .scan()?
+                .into_iter()
+                .filter(|prd| {
+                    let already = existing
+                        .iter()
+                        .any(|r| r.prd_id == prd.id && r.provider == provider.name());
+                    if already && !force {
+                        println!("skip   {} (already rendered)", prd.title);
+                    }
+                    force || !already
+                })
+                .collect();
+
+            if matches!(provider, specifi::providers::Provider::Fal(_)) {
+                let spent = server::total_spend(&existing);
+                let per_render =
+                    f64::from(ctx.cfg.video.max_duration_sec) * ctx.cfg.video.price_per_second_usd;
+                let planned = per_render * targets.len() as f64;
+                let cap = ctx.cfg.video.max_total_spend_usd;
+                anyhow::ensure!(
+                    spent + planned <= cap,
+                    "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
+                     exceeds max_total_spend_usd ${cap:.2} — raise it in specifi.toml [video]",
+                    targets.len()
+                );
+                println!("wallet: ${spent:.2} spent, ${planned:.2} planned, ${cap:.2} cap");
+            }
+
             let mut count = 0usize;
-            for prd in ctx.scan()? {
-                let already = existing
-                    .iter()
-                    .any(|r| r.prd_id == prd.id && r.provider == provider.name());
-                if already && !force {
-                    println!("skip   {} (already rendered)", prd.title);
-                    continue;
-                }
+            for prd in targets {
                 let storyboard =
                     compile_storyboard(&prd, &distill(&prd), ctx.cfg.video.max_duration_sec);
                 let storyboards_dir = ctx.state_dir().join("storyboards");
@@ -115,6 +138,11 @@ async fn main() -> Result<()> {
             let dispatches =
                 dispatch::load_receipts(&ctx.dispatcher.dispatches_dir).unwrap_or_default();
             println!("specs={}", prds.len());
+            println!(
+                "spend=${:.2} cap=${:.2}",
+                server::total_spend(&renders),
+                ctx.cfg.video.max_total_spend_usd
+            );
             println!(
                 "renders={} ready={}",
                 renders.len(),

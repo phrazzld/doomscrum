@@ -196,6 +196,7 @@
 <body>
 <div class="glow"></div>
 <div class="ticker"><span id="ticker">SPECIFI // spec brainrot triage // swipe → dispatch implement agent // swipe ← dispatch shape agent // swipe ↑ skip // tap = read the actual spec</span></div>
+<div class="hint" style="top: 40px; right: 18px;" id="spend"></div>
 
 <div class="rail" id="rail"></div>
 <div class="hint r"><b>→</b> ship it (agent + PR)</div>
@@ -261,6 +262,11 @@
     const currentId = items[idx]?.prd.id;
     items = state.items;
     window.__falConfigured = state.fal_configured;
+    if (state.spend) {
+      const s = state.spend;
+      $("spend").textContent = `$${s.total_usd.toFixed(2)} / $${s.cap_usd.toFixed(0)} cap`;
+      $("spend").style.color = s.total_usd > s.cap_usd * 0.8 ? "var(--warn)" : "var(--dead)";
+    }
     if (keepPosition && currentId) {
       const found = items.findIndex((it) => it.prd.id === currentId);
       if (found >= 0) idx = found;
