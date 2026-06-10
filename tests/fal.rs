@@ -143,6 +143,10 @@ async fn each_model_family_gets_its_own_request_schema() {
             "fal-ai/veo3.1/fast",
             serde_json::json!({"duration": "8s", "generate_audio": true}),
         ),
+        (
+            "fal-ai/veo3.1/lite",
+            serde_json::json!({"duration": "8s", "generate_audio": true, "aspect_ratio": "9:16"}),
+        ),
     ];
     for (model, expected_body) in cases {
         let server = MockServer::start().await;
@@ -180,6 +184,8 @@ async fn each_model_family_gets_its_own_request_schema() {
 fn known_models_have_verified_prices_and_durations() {
     use doomscrum::providers::fal::{clip_duration, model_price_per_second};
     assert_eq!(model_price_per_second("fal-ai/veo3.1/fast"), Some(0.15));
+    // veo3.1/lite: $0.05/s at 720p with audio, verified on fal 2026-06-10.
+    assert_eq!(model_price_per_second("fal-ai/veo3.1/lite"), Some(0.05));
     assert_eq!(
         model_price_per_second("fal-ai/sora-2/text-to-video"),
         Some(0.10)
@@ -201,6 +207,7 @@ fn known_models_have_verified_prices_and_durations() {
     assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 8), 8);
     assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 20), 15);
     assert_eq!(clip_duration("fal-ai/veo3.1/fast", 8), 8);
+    assert_eq!(clip_duration("fal-ai/veo3.1/lite", 12), 8);
 }
 
 #[tokio::test]

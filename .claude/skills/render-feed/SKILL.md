@@ -17,7 +17,8 @@ transcript-verified before it counts.
 - Unit cost is quoted by `fal::unit_cost(cfg)` (snapped clip duration × model
   price). Spend cap lives in `doomscrum.toml` (`max_total_spend_usd`); raise
   it only with the owner's say-so. Provenance = render JSONs in
-  `.doomscrum/renders/*/render.json`; their sum is total spend.
+  `.doomscrum/renders/<spec-sha>/<render-id>.json`; the sum of their
+  `cost_estimate_usd` (all statuses, including retired) is total spend.
 - To remove a render from the feed without losing spend provenance, set its
   `status` to `"retired"` — never delete render dirs.
 - FAL key: env `FAL_API_KEY`/`FAL_KEY` or `~/.secrets`. Never print it.

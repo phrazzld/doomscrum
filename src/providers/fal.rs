@@ -45,7 +45,9 @@ struct StatusResponse {
 /// checked 2026-06-10. Unknown models fall back to the configured
 /// `price_per_second_usd` so spend tracking never silently reads $0.
 pub fn model_price_per_second(model: &str) -> Option<f64> {
-    if model.contains("veo3.1/fast") {
+    if model.contains("veo3.1/lite") {
+        Some(0.05)
+    } else if model.contains("veo3.1/fast") {
         Some(0.15)
     } else if model.contains("sora-2") {
         Some(0.10)
