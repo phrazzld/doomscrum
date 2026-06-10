@@ -1,0 +1,30 @@
+# Specifi configuration. Every field is optional; these are the defaults.
+
+[repo]
+# The repository Specifi is synced to. Backlog specs are read from
+# `<path>/<backlog_dir>`, and agent worktrees are created from this repo.
+path = "."
+backlog_dir = "backlog.d"
+state_dir = ".specifi"
+
+[feed]
+# Only the top N specs (filename order = priority) enter the feed.
+max_items = 10
+
+[video]
+# "fake" renders an embedded fixture (offline, free).
+# "fal" generates real AI video — costs money and sends spec-derived
+# prompts to fal.ai. Needs FAL_API_KEY (env or ~/.secrets).
+provider = "fake"
+fal_model = "fal-ai/veo3.1/fast"
+max_duration_sec = 8
+
+[agent]
+# Right swipe runs implement_cmd in a fresh worktree; left swipe runs
+# shape_cmd. Placeholders: {worktree} {prompt} {branch} {spec_path} {title}.
+implement_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
+shape_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
+# After the agent commits, Specifi pushes the branch and runs pr_cmd.
+# Placeholders: {branch} {title} {body_file} {worktree}.
+pr_cmd = ["gh", "pr", "create", "--head", "{branch}", "--title", "{title}", "--body-file", "{body_file}"]
+open_pr = true

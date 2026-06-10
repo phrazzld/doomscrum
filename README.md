@@ -1,87 +1,121 @@
-# Specifi AI
+# Specifi
 
-Local desktop prototype for triaging PRD-shaped agent work as shortform video.
+Backlog triage as a TikTok feed. Specifi reads markdown specs from a repo's
+backlog, turns each one into a goofy shortform video, and lets you swipe:
 
-Specifi AI reads markdown PRDs from `backlog.d/`, turns them into goofy vertical
-AI videos, and lets you inspect, skip, mark needs-spec, or launch a bounded
-local Codex run.
+| Gesture | Action |
+|---|---|
+| **swipe →** | dispatch a coding agent in a fresh git worktree to **implement** the spec and open a PR |
+| **swipe ←** | dispatch an agent to **shape** the spec — sharpen it, add acceptance criteria and context — and open a PR |
+| **swipe ↑** | skip to the next spec (recorded, durable) |
+| **swipe ↓** | go back to the previous spec |
+| **tap** | read the exact source spec (path + sha256) |
 
-## Quick Start
+Arrow keys mirror the gestures; `space` pauses; `enter` opens the spec.
 
-```bash
-npm install
-npm run build
-npm run brainrot:generate
-npm run serve
-```
+Right and left swipes launch **real agents** that modify code and open
+**real pull requests**. That is the point. There is no sandbox theater
+beyond what your agent CLI provides.
 
-Open `http://127.0.0.1:4173`.
-
-## Real Video
-
-Put a FAL key in your shell environment or `~/.secrets`:
+## Quick start
 
 ```bash
-export FAL_API_KEY=...
+cargo build --release
+
+# 1. Render videos for the top specs (offline fixture provider)
+cargo run --release -- generate
+
+# 2. Serve the feed
+cargo run --release -- serve        # http://127.0.0.1:4173
 ```
 
-Then use `Generate AI video` in the app, or run a one-item smoke:
+Tap the splash screen (sound gate), then swipe.
+
+### Real AI video
+
+Put a FAL key in your environment or `~/.secrets` (`FAL_API_KEY=...`), then:
 
 ```bash
-npm run build:server
-node build-server/generate.js --real-provider --limit=1
+cargo run --release -- generate --provider fal --limit 1
 ```
 
-Remote video generation sends PRD-derived prompts to the provider. Treat it as
-an explicit disclosure event.
+or use **cook with AI** in the app. Real generation costs money per render
+and sends spec-derived prompt text to fal.ai — treat it as a disclosure
+event. The fixture provider (`fake`) is the default and never leaves the
+machine.
 
-## Backlog
+## Syncing to a repo
 
-Each markdown file in `backlog.d/` is one PRD. Runtime artifacts are written to
-the ignored `.brainrot/` directory:
+Point `specifi.toml` at any repository:
 
-- `storyboards/` for extracted shortform beats and provider prompts.
-- `renders/` for MP4 files and render provenance JSON.
-- `events.ndjson` for inspect, skip, needs-spec, and run-intent decisions.
-- `run-packets/` for bounded agent intents.
-- `launches/` for local Codex launch receipts and logs.
-
-## Backlog Config
-
-`backlog.config.json` binds PRDs to execution targets:
-
-```json
-{
-  "defaults": {
-    "repoPath": ".",
-    "allowedCommands": ["npm test", "npm run typecheck", "npm run lint"],
-    "agentMode": "local-codex",
-    "renderProvider": "fal",
-    "maxRenderSpendUsd": 20
-  },
-  "items": {
-    "001-cache-chaos-exorcism.md": {
-      "repoPath": "."
-    }
-  }
-}
+```toml
+[repo]
+path = "../some-other-repo"
+backlog_dir = "backlog.d"
 ```
 
-Right-swipe launches local Codex when `agentMode` is `local-codex`. Use
-`BRAINROT_AGENT_LAUNCH_MODE=dry-run` for tests or demos that should not spawn a
-real agent.
+Each `*.md` file in the backlog directory is one spec. Priority is filename
+sort order; only the top `feed.max_items` (default 10) enter the feed.
+Files starting with `_` are ignored (use `_done/`-style prefixes for
+archives).
 
-## Verification
+## What a swipe actually does
+
+Right swipe (implement) / left swipe (shape):
+
+1. `git worktree add .specifi/worktrees/<branch> -b specifi/<impl|shape>-<slug>-<id>`
+2. Runs your configured agent command in the worktree with the full spec as
+   its mission (implement it, or improve the spec file in place).
+3. Commits anything the agent left uncommitted.
+4. Pushes the branch and opens a PR with `gh` (when the repo has an
+   `origin` remote and `open_pr = true`; otherwise the branch stays local
+   and the receipt says so).
+
+Every dispatch writes a staged receipt to `.specifi/dispatches/<id>.json`
+(status: `queued → agent_running → opening_pr → pr_opened | completed_local
+| failed`) plus a full agent log. The feed shows live status stickers and
+links to opened PRs. The agent command is yours to choose in
+`specifi.toml` — codex by default; point it at claude, or anything else
+that can take a prompt and edit a worktree.
+
+## Provenance
+
+The source spec stays authoritative. Every render records provider, model,
+spec sha256, storyboard hash, latency, and job id in
+`.specifi/renders/<spec-sha>/<render-id>.json`. Every decision (skip,
+dispatch) is appended to `.specifi/events.ndjson`. Deleting `.specifi/`
+destroys only generated state — never specs.
+
+## Development
 
 ```bash
-npm run build
-BRAINROT_AGENT_LAUNCH_MODE=dry-run npm test
-npm run typecheck
-npm run lint
-BRAINROT_AGENT_LAUNCH_MODE=dry-run npm run test:e2e
-npm run brainrot:report
+cargo test           # unit + end-to-end HTTP tests (stub agents, real git remotes)
+cargo clippy --all-targets
+cargo fmt --check
 ```
 
-## Docs
+The end-to-end tests exercise the actual HTTP routes: a right swipe in the
+test suite creates a real worktree, runs a stub agent, pushes to a real
+bare remote, and asserts the PR command ran. The FAL provider is tested
+against a mock queue API; one fixture render is embedded so tests run
+offline with zero external dependencies.
 
-- [MVP spec](docs/final-mvp-spec.md)
+### Layout
+
+```
+src/
+  backlog.rs       spec scanning, hashing, priority cap
+  distill.rs       markdown → brief → storyboard (the brainrot script)
+  providers/       fake (embedded fixture) and fal (real) video generation
+  dispatch.rs      swipe → worktree → agent → commit → push → PR
+  events.rs        durable NDJSON decision ledger
+  server.rs        axum API + embedded UI
+  main.rs          CLI: serve | generate | report
+assets/index.html  the feed UI (single embedded file; the only non-Rust surface)
+backlog.d/         this repo's own sample specs
+docs/archive/      the original (superseded) MVP spec
+```
+
+The UI is one static HTML file embedded in the binary — browsers execute
+JS, so the gesture/video shim is the single deliberate non-Rust exception.
+All state, logic, and dispatch live in Rust.
