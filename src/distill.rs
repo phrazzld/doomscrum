@@ -63,7 +63,13 @@ fn bullets(text: Option<String>) -> Vec<String> {
                 let line = line.trim();
                 line.strip_prefix("- ")
                     .or_else(|| line.strip_prefix("* "))
-                    .map(|s| s.trim().to_string())
+                    .map(|s| {
+                        // Oracle bullets carry checkbox prefixes.
+                        s.trim_start_matches("[ ]")
+                            .trim_start_matches("[x]")
+                            .trim()
+                            .to_string()
+                    })
             })
             .filter(|s| !s.is_empty())
             .collect()
@@ -75,7 +81,12 @@ pub fn distill(prd: &PrdSource) -> SpecBrief {
     let goal = section(&prd.raw, "Goal").unwrap_or_else(|| prd.title.clone());
     let user = section(&prd.raw, "User").unwrap_or_else(|| "Local operator".into());
     let problem = section(&prd.raw, "Problem").unwrap_or_default();
-    let acceptance_criteria = bullets(section(&prd.raw, "Acceptance Criteria"));
+    // Groomed tickets phrase their "done when" as `## Oracle` checkboxes;
+    // either section is the spec's acceptance contract.
+    let mut acceptance_criteria = bullets(section(&prd.raw, "Acceptance Criteria"));
+    if acceptance_criteria.is_empty() {
+        acceptance_criteria = bullets(section(&prd.raw, "Oracle"));
+    }
     let risk_notes = bullets(section(&prd.raw, "Risk"))
         .into_iter()
         .chain(
@@ -198,8 +209,17 @@ const RUN_STARTERS: &[&str] = &[
 /// clause run starting here is not a sentence on its own.
 const INTRO_SUBORDINATORS: &[&str] = &[
     "after", "before", "when", "while", "once", "if", "as", "until", "during", "upon",
-    "without", "unless", "since",
+    "without", "unless", "since", "with",
 ];
+
+/// Spoken lines double as on-screen captions: start them like sentences.
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
 
 /// Strip trailing connectives and punctuation so a line ends on a word
 /// that can carry a full stop.
@@ -224,10 +244,12 @@ fn strip_danglers(text: &str) -> String {
         .to_string()
 }
 
-/// Remove em-dash asides ("— like this —"): parentheticals read fine on
-/// the page but burn spoken-word budget without carrying the core clause.
+/// Remove em-dash asides ("— like this —") and parenthesized groups:
+/// parentheticals read fine on the page but burn spoken-word budget
+/// without carrying the core clause — and "(config `flag`, default 2)"
+/// must never be read aloud.
 fn remove_asides(text: &str) -> String {
-    let mut out = text.to_string();
+    let mut out = text.replace('`', "");
     loop {
         let Some(first) = out.find('—') else { break };
         let Some(second_rel) = out[first + '—'.len_utf8()..].find('—') else {
@@ -237,6 +259,14 @@ fn remove_asides(text: &str) -> String {
         let mut next = out[..first].trim_end().to_string();
         next.push(' ');
         next.push_str(out[second + '—'.len_utf8()..].trim_start());
+        out = next;
+    }
+    loop {
+        let Some(open) = out.find('(') else { break };
+        let Some(close_rel) = out[open..].find(')') else { break };
+        let mut next = out[..open].trim_end().to_string();
+        next.push(' ');
+        next.push_str(out[open + close_rel + 1..].trim_start());
         out = next;
     }
     out.trim().to_string()
@@ -300,7 +330,7 @@ fn best_clause_run(text: &str, max_words: usize) -> Option<String> {
 /// over word clipping, and always end on a real word.
 pub fn tighten(text: &str, max_words: usize) -> String {
     let text = remove_asides(text.trim());
-    let head = [" so ", " because ", " such that ", " in order to "]
+    let mut head = [" so ", " because ", " such that ", " in order to "]
         .iter()
         .filter_map(|d| text.find(d).map(|i| &text[..i]))
         .min_by_key(|s| s.len())
@@ -308,6 +338,22 @@ pub fn tighten(text: &str, max_words: usize) -> String {
         .trim_end_matches('.');
     if words(head) <= max_words {
         return strip_danglers(head);
+    }
+    // Over budget and opening with "With ffmpeg present, …"-style intro:
+    // the intro phrase is never the payload — drop it and keep the clause.
+    let first = head
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase();
+    if INTRO_SUBORDINATORS.contains(&first.as_str()) {
+        if let Some(comma) = head.find(',') {
+            head = head[comma + 1..].trim_start();
+            if words(head) <= max_words {
+                return strip_danglers(head);
+            }
+        }
     }
     if let Some(run) = best_clause_run(head, max_words) {
         return strip_danglers(&run);
@@ -361,16 +407,22 @@ pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) 
         tighten(title, budget.saturating_sub(2).clamp(1, 4))
     );
     let mut used = words(&hook);
+    // On long clips, reserve room so the first acceptance criterion — the
+    // "done when" that makes a spec legible — always gets spoken whole.
+    let reserve = if budget >= 18 { 8 } else { 0 };
     let goal_line = format!(
         "{}.",
-        tighten(goal, budget.saturating_sub(used).clamp(1, 11))
+        capitalize(&tighten(
+            goal,
+            budget.saturating_sub(used + reserve).clamp(1, 11)
+        ))
     );
     used += words(&goal_line);
     let remaining = budget.saturating_sub(used);
     // "Not done until" costs 3 words; only speak the criterion if at least
     // a few words of it fit — a truncated stump is worse than silence.
-    let criterion =
-        (remaining >= 6).then(|| format!("Not done until {}.", tighten(criterion, remaining - 3)));
+    let criterion = (remaining >= 6)
+        .then(|| format!("Not done until {}.", tighten(criterion, remaining.saturating_sub(3))));
     SpokenScript {
         hook,
         goal: goal_line,
@@ -384,7 +436,10 @@ pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) 
 fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u32) -> String {
     let header = format!(
         "Vertical 9:16 video, exactly {duration_sec} seconds, with native audio: \
-         clear spoken dialogue, sound effects, and music as described."
+         clear spoken dialogue, sound effects, and music as described. Bold \
+         TikTok-style captions of the spoken words appear on screen word by word, \
+         perfectly synced to the dialogue — a viewer with sound off must still be \
+         able to read the entire script."
     );
     let hook = &script.hook;
     let goal = &script.goal;

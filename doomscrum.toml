@@ -21,17 +21,20 @@ provider = "fake"
 #   fal-ai/kling-video/v2.6/pro/text-to-video    $0.14/s  (durations 5/10)
 #   fal-ai/veo3.1/fast                           $0.15/s  (durations 4/6/8)
 #   bytedance/seedance-2.0/fast/text-to-video    $0.2419/s (durations 4-15)
-# Bake-off winner 2026-06-10: sora-2 spoke 100% of the script with the
-# right pacing at the lowest price (kling ran speech to the final frame,
-# seedance garbled words at 2.4x the cost).
-fal_model = "fal-ai/sora-2/text-to-video"
-max_duration_sec = 8
+# Hero-quality mode (owner call 2026-06-10): seedance fast for maximum
+# visual quality + native word-synced captions; 12s clips so the spoken
+# script fits title, goal, AND the first acceptance criterion.
+# Cost-optimized alternative: sora-2 at 8s ($0.80/clip vs $2.90) — won the
+# script-fit bake-off and is the right default once quality is proven.
+fal_model = "bytedance/seedance-2.0/fast/text-to-video"
+max_duration_sec = 12
 # Fallback $/s for models not in the built-in price table; known models
 # use their verified price automatically.
 price_per_second_usd = 0.15
 # Wallet guard: real renders refused once estimated total spend would
-# exceed this. Raise deliberately.
-max_total_spend_usd = 25.0
+# exceed this. Raise deliberately. (Raised 25 -> 40 for the seedance
+# hero re-render: 5 clips x 12s x $0.2419/s ≈ $14.50 on top of $18.44.)
+max_total_spend_usd = 40.0
 
 [agent]
 # Right swipe runs implement_cmd in a fresh worktree; left swipe runs
