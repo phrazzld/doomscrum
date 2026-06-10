@@ -9,8 +9,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use specifi::config::Config;
-use specifi::server::{router, AppCtx};
+use doomscrum::config::Config;
+use doomscrum::server::{router, AppCtx};
 
 struct TestApp {
     addr: SocketAddr,
@@ -61,11 +61,11 @@ async fn spawn_app() -> TestApp {
     sh(&root, &["git", "init", "-q", "-b", "main"]);
     sh(
         &root,
-        &["git", "config", "user.email", "test@specifi.local"],
+        &["git", "config", "user.email", "test@doomscrum.local"],
     );
-    sh(&root, &["git", "config", "user.name", "Specifi Test"]);
+    sh(&root, &["git", "config", "user.name", "DoomScrum Test"]);
     sh(&root, &["git", "config", "commit.gpgsign", "false"]);
-    std::fs::write(root.join(".gitignore"), ".specifi/\n").unwrap();
+    std::fs::write(root.join(".gitignore"), ".doomscrum/\n").unwrap();
     sh(&root, &["git", "add", "-A"]);
     sh(&root, &["git", "commit", "-qm", "init"]);
     sh(tmp.path(), &["git", "init", "-q", "--bare", "origin.git"]);
@@ -205,7 +205,7 @@ async fn right_swipe_dispatches_agent_and_opens_pr() {
     let id = body["dispatch"]["id"].as_str().unwrap().to_string();
     let branch = body["dispatch"]["branch"].as_str().unwrap().to_string();
     assert!(
-        branch.starts_with("specifi/impl-first-spec-"),
+        branch.starts_with("doomscrum/impl-first-spec-"),
         "branch: {branch}"
     );
 
@@ -221,7 +221,7 @@ async fn right_swipe_dispatches_agent_and_opens_pr() {
     assert!(refs.contains(&branch), "remote refs: {refs}");
     let subject = app.git_stdout(&app.bare, &["log", "-1", "--format=%s", &branch]);
     assert!(
-        subject.contains("specifi: agent output for First Spec"),
+        subject.contains("doomscrum: agent output for First Spec"),
         "subject: {subject}"
     );
     let files = app.git_stdout(&app.bare, &["ls-tree", "--name-only", &branch]);
@@ -249,7 +249,7 @@ async fn left_swipe_dispatches_shape_agent_that_edits_the_spec() {
     let id = body["dispatch"]["id"].as_str().unwrap().to_string();
     let branch = body["dispatch"]["branch"].as_str().unwrap().to_string();
     assert!(
-        branch.starts_with("specifi/shape-second-spec-"),
+        branch.starts_with("doomscrum/shape-second-spec-"),
         "branch: {branch}"
     );
 

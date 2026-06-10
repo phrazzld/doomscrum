@@ -22,7 +22,7 @@ const INDEX_HTML: &str = include_str!("../assets/index.html");
 #[derive(Clone)]
 pub struct AppCtx {
     pub cfg: Config,
-    /// Project root (where specifi.toml lives).
+    /// Project root (where doomscrum.toml lives).
     pub root: PathBuf,
     pub dispatcher: Arc<Dispatcher>,
 }
@@ -238,7 +238,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
                 StatusCode::PAYMENT_REQUIRED,
                 format!(
                     "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
-                     exceeds max_total_spend_usd ${cap:.2} — raise it in specifi.toml [video]",
+                     exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
                     targets.len()
                 ),
             );

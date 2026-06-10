@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Loaded from `specifi.toml` in the project root. Every field has a default,
+/// Loaded from `doomscrum.toml` in the project root. Every field has a default,
 /// so the file (and any table in it) is optional.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -17,7 +17,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RepoConfig {
-    /// The repository Specifi is synced to. Backlog is read from here and
+    /// The repository DoomScrum is synced to. Backlog is read from here and
     /// agent worktrees are created from here.
     pub path: String,
     /// Backlog directory inside the synced repo. One markdown file per spec.
@@ -31,7 +31,7 @@ impl Default for RepoConfig {
         Self {
             path: ".".into(),
             backlog_dir: "backlog.d".into(),
-            state_dir: ".specifi".into(),
+            state_dir: ".doomscrum".into(),
         }
     }
 }
@@ -129,7 +129,7 @@ impl Default for AgentConfig {
 
 impl Config {
     pub fn load(root: &Path) -> Result<Self> {
-        let path = root.join("specifi.toml");
+        let path = root.join("doomscrum.toml");
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -172,7 +172,7 @@ mod tests {
     fn partial_toml_overrides_only_named_fields() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            dir.path().join("specifi.toml"),
+            dir.path().join("doomscrum.toml"),
             r#"
 [feed]
 max_items = 3

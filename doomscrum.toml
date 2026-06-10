@@ -1,11 +1,11 @@
-# Specifi configuration. Every field is optional; these are the defaults.
+# DoomScrum configuration. Every field is optional; these are the defaults.
 
 [repo]
-# The repository Specifi is synced to. Backlog specs are read from
+# The repository DoomScrum is synced to. Backlog specs are read from
 # `<path>/<backlog_dir>`, and agent worktrees are created from this repo.
 path = "."
 backlog_dir = "backlog.d"
-state_dir = ".specifi"
+state_dir = ".doomscrum"
 
 [feed]
 # Only the top N specs (filename order = priority) enter the feed.
@@ -29,7 +29,7 @@ max_total_spend_usd = 25.0
 # shape_cmd. Placeholders: {worktree} {prompt} {branch} {spec_path} {title}.
 implement_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
 shape_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
-# After the agent commits, Specifi pushes the branch and runs pr_cmd.
+# After the agent commits, DoomScrum pushes the branch and runs pr_cmd.
 # Placeholders: {branch} {title} {body_file} {worktree}.
 pr_cmd = ["gh", "pr", "create", "--head", "{branch}", "--title", "{title}", "--body-file", "{body_file}"]
 open_pr = true

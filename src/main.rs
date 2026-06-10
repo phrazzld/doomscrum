@@ -3,20 +3,20 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use specifi::config::Config;
-use specifi::dispatch;
-use specifi::distill::{compile_storyboard, distill};
-use specifi::providers::load_renders;
-use specifi::server::{self, AppCtx};
+use doomscrum::config::Config;
+use doomscrum::dispatch;
+use doomscrum::distill::{compile_storyboard, distill};
+use doomscrum::providers::load_renders;
+use doomscrum::server::{self, AppCtx};
 
 #[derive(Parser)]
 #[command(
-    name = "specifi",
+    name = "doomscrum",
     version,
     about = "Backlog specs as swipeable brainrot video; swipes dispatch agents"
 )]
 struct Cli {
-    /// Project root containing specifi.toml (defaults to cwd).
+    /// Project root containing doomscrum.toml (defaults to cwd).
     #[arg(long, global = true)]
     root: Option<PathBuf>,
     #[command(subcommand)]
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
             let ctx = AppCtx::new(root, cfg);
             let app = server::router(ctx);
             let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
-            println!("specifi listening on http://{host}:{port}");
+            println!("doomscrum listening on http://{host}:{port}");
             axum::serve(listener, app).await?;
         }
         Command::Generate {
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            if matches!(provider, specifi::providers::Provider::Fal(_)) {
+            if matches!(provider, doomscrum::providers::Provider::Fal(_)) {
                 let spent = server::total_spend(&existing);
                 let per_render =
                     f64::from(ctx.cfg.video.max_duration_sec) * ctx.cfg.video.price_per_second_usd;
@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
                 anyhow::ensure!(
                     spent + planned <= cap,
                     "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
-                     exceeds max_total_spend_usd ${cap:.2} — raise it in specifi.toml [video]",
+                     exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
                     targets.len()
                 );
                 println!("wallet: ${spent:.2} spent, ${planned:.2} planned, ${cap:.2} cap");

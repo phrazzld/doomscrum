@@ -35,7 +35,7 @@ mod tests {
 
     #[test]
     fn sha256_is_stable_hex() {
-        assert_eq!(sha256_hex(b"specifi"), sha256_hex(b"specifi"),);
+        assert_eq!(sha256_hex(b"doomscrum"), sha256_hex(b"doomscrum"),);
         assert_eq!(sha256_hex(b"").len(), 64);
     }
 

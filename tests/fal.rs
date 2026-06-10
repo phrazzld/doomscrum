@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use specifi::backlog::PrdSource;
-use specifi::distill::{compile_storyboard, distill};
-use specifi::providers::fal::FalProvider;
-use specifi::util::sha256_hex;
+use doomscrum::backlog::PrdSource;
+use doomscrum::distill::{compile_storyboard, distill};
+use doomscrum::providers::fal::FalProvider;
+use doomscrum::util::sha256_hex;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

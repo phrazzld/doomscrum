@@ -1,6 +1,6 @@
-# Specifi
+# DoomScrum
 
-Backlog triage as a TikTok feed. Specifi reads markdown specs from a repo's
+Backlog triage as a TikTok feed. DoomScrum reads markdown specs from a repo's
 backlog, turns each one into a goofy shortform video, and lets you swipe:
 
 | Gesture | Action |
@@ -66,7 +66,7 @@ Prompts forbid inventing features or claiming anything shipped.
 
 ## Syncing to a repo
 
-Point `specifi.toml` at any repository:
+Point `doomscrum.toml` at any repository:
 
 ```toml
 [repo]
@@ -83,7 +83,7 @@ archives).
 
 Right swipe (implement) / left swipe (shape):
 
-1. `git worktree add .specifi/worktrees/<branch> -b specifi/<impl|shape>-<slug>-<id>`
+1. `git worktree add .doomscrum/worktrees/<branch> -b doomscrum/<impl|shape>-<slug>-<id>`
 2. Runs your configured agent command in the worktree with the full spec as
    its mission (implement it, or improve the spec file in place).
 3. Commits anything the agent left uncommitted.
@@ -91,19 +91,19 @@ Right swipe (implement) / left swipe (shape):
    `origin` remote and `open_pr = true`; otherwise the branch stays local
    and the receipt says so).
 
-Every dispatch writes a staged receipt to `.specifi/dispatches/<id>.json`
+Every dispatch writes a staged receipt to `.doomscrum/dispatches/<id>.json`
 (status: `queued → agent_running → opening_pr → pr_opened | completed_local
 | failed`) plus a full agent log. The feed shows live status stickers and
 links to opened PRs. The agent command is yours to choose in
-`specifi.toml` — codex by default; point it at claude, or anything else
+`doomscrum.toml` — codex by default; point it at claude, or anything else
 that can take a prompt and edit a worktree.
 
 ## Provenance
 
 The source spec stays authoritative. Every render records provider, model,
 spec sha256, storyboard hash, latency, and job id in
-`.specifi/renders/<spec-sha>/<render-id>.json`. Every decision (skip,
-dispatch) is appended to `.specifi/events.ndjson`. Deleting `.specifi/`
+`.doomscrum/renders/<spec-sha>/<render-id>.json`. Every decision (skip,
+dispatch) is appended to `.doomscrum/events.ndjson`. Deleting `.doomscrum/`
 destroys only generated state — never specs.
 
 ## Development

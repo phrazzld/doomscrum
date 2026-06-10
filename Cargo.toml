@@ -1,5 +1,5 @@
 [package]
-name = "specifi"
+name = "doomscrum"
 version = "0.2.0"
 edition = "2021"
 description = "PRD brainrot triage: backlog specs as swipeable shortform video, swipes dispatch agents"

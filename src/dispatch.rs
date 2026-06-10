@@ -79,7 +79,7 @@ impl Dispatcher {
         let created_at = now_rfc3339();
         let id = sha256_hex(format!("{}:{:?}:{created_at}", prd.sha256, kind).as_bytes());
         let branch = format!(
-            "specifi/{}-{}-{}",
+            "doomscrum/{}-{}-{}",
             kind.verb(),
             slug(&prd.title),
             short(&id)
@@ -177,7 +177,7 @@ impl Dispatcher {
                 &[
                     "commit",
                     "-m",
-                    &format!("specifi: agent output for {}", prd.title),
+                    &format!("doomscrum: agent output for {}", prd.title),
                 ],
             )
             .await?;
@@ -236,7 +236,7 @@ impl Dispatcher {
                 ("branch", receipt.branch.as_str()),
                 (
                     "title",
-                    &format!("Specifi {}: {}", receipt.kind.verb(), prd.title),
+                    &format!("DoomScrum {}: {}", receipt.kind.verb(), prd.title),
                 ),
                 ("body_file", &body_file.to_string_lossy()),
                 ("worktree", receipt.worktree.as_str()),
@@ -402,7 +402,7 @@ fn pr_body(receipt: &DispatchReceipt, prd: &PrdSource) -> String {
     };
     format!(
         "{action} `{path}`.\n\n\
-         Dispatched from Specifi (swipe feed).\n\n\
+         Dispatched from DoomScrum (swipe feed).\n\n\
          - Spec: `{path}`\n\
          - Spec sha256: `{sha}`\n\
          - Dispatch id: `{id}`\n\
@@ -445,25 +445,25 @@ mod tests {
         };
         let a = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
         assert_eq!(a.status, "queued");
-        assert!(a.branch.starts_with("specifi/impl-demo-spec-"));
+        assert!(a.branch.starts_with("doomscrum/impl-demo-spec-"));
         let on_disk =
             std::fs::read_to_string(dir.path().join("dispatches").join(format!("{}.json", a.id)))
                 .unwrap();
         assert!(on_disk.contains("queued"));
 
         let b = dispatcher.create(&prd(), DispatchKind::Shape).unwrap();
-        assert!(b.branch.starts_with("specifi/shape-demo-spec-"));
+        assert!(b.branch.starts_with("doomscrum/shape-demo-spec-"));
         assert_ne!(a.branch, b.branch);
     }
 
     #[test]
     fn prompts_carry_full_spec_and_branch() {
         let p = prd();
-        let implement = build_prompt(DispatchKind::Implement, &p, "specifi/impl-x");
+        let implement = build_prompt(DispatchKind::Implement, &p, "doomscrum/impl-x");
         assert!(implement.contains("## Goal"));
-        assert!(implement.contains("specifi/impl-x"));
+        assert!(implement.contains("doomscrum/impl-x"));
         assert!(implement.contains("Do not push"));
-        let shape = build_prompt(DispatchKind::Shape, &p, "specifi/shape-x");
+        let shape = build_prompt(DispatchKind::Shape, &p, "doomscrum/shape-x");
         assert!(shape.contains("Do not implement it"));
         assert!(shape.contains("backlog.d/demo.md"));
     }
