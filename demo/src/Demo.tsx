@@ -25,32 +25,32 @@ export const FPS = 30;
 const sec = (s: number) => Math.round(s * FPS);
 
 // ----- scene timing (seconds) ---------------------------------------------
-// Clip scenes are sized from each render's measured speech-end (whisper
-// transcript) + a held beat, so the demo never cuts a line mid-sentence.
-// sora-2 clips run 12s, speak title + goal + criterion, and burn their own
-// word-synced captions; the NOT-DONE-UNTIL ribbon repeats the criterion.
+// Research-backed structure (2026-06-10): outcome-lead hook in the first
+// 3 seconds, full value prop landed by ~9s, demo + proof in the middle,
+// explicit CTA at the end. Clip scenes are sized from each render's
+// measured speech-end (whisper) + a held beat — never cut a line.
 const T = {
-  coldOpen: 9.8, // 001 fruit drama: speech ends 9.07s
-  beat: 1.8,
-  title: 2.4,
-  clipA: 7.6, // 005 infomercial: speech ends 6.87s
-  clipB: 11.3, // 006 cryptid: speech ends 10.59s
+  prHook: 3.2, // the real PR card: "opened by a swipe"
+  flash: 2.4, // ...a swipe on THIS (fruit drama, muted)
+  valueProp: 3.6, // title + "your backlog is a tiktok feed now"
+  clipA: 10.9, // infomercial: speech ends 10.15s
+  actions: 3.4, // swipe right / left / tap card
+  clipB: 11.5, // cryptid: speech ends 10.79s
   swipe: 2.2,
-  pr: 6.2,
-  clipC: 10.1, // 007 italian: speech ends 9.38s
-  clipD: 10.0, // 008 street interview: set from measured speech end
-  close: 6.5,
+  pr: 5.6, // proof: PR #1 + "but wait there's more"
+  clipC: 11.1, // italian invention creature: speech ends 10.41s
+  close: 6.0,
 };
 const ORDER: (keyof typeof T)[] = [
-  "coldOpen",
-  "beat",
-  "title",
+  "prHook",
+  "flash",
+  "valueProp",
   "clipA",
+  "actions",
   "clipB",
   "swipe",
   "pr",
   "clipC",
-  "clipD",
   "close",
 ];
 const startOf = (k: keyof typeof T) =>
@@ -135,6 +135,46 @@ const Sticker: React.FC<{
   </div>
 );
 
+/** The real PR #1 card, GitHub-dark. Reused by the hook and the proof. */
+const PrCard: React.FC<{ scale?: number }> = ({ scale = 1 }) => (
+  <div
+    style={{
+      width: 920,
+      background: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: 18,
+      padding: 50,
+      transform: `scale(${scale})`,
+      fontFamily: "-apple-system, 'Segoe UI', Helvetica, sans-serif",
+      color: "#e6edf3",
+    }}
+  >
+    <div style={{ fontSize: 46, fontWeight: 600 }}>
+      Shape: Cache Chaos Exorcism <span style={{ color: "#8b949e" }}>#1</span>
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 28 }}>
+      <span
+        style={{
+          background: "#238636",
+          borderRadius: 999,
+          padding: "10px 26px",
+          fontSize: 30,
+          fontWeight: 600,
+        }}
+      >
+        ✓ Open
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 26, color: "#8b949e" }}>
+        doomscrum/shape-cache-chaos-exorcism → main
+      </span>
+    </div>
+    <div style={{ marginTop: 30, fontSize: 30, color: "#8b949e" }}>
+      <span style={{ color: "#3fb950" }}>+76</span>{" "}
+      <span style={{ color: "#f85149" }}>−7</span> · 1 commit · opened by a swipe
+    </div>
+  </div>
+);
+
 /** Infomercial-style criterion ribbon: the spec's "done when". */
 const NotDoneUntil: React.FC<{ text: string }> = ({ text }) => {
   const frame = useCurrentFrame();
@@ -185,7 +225,7 @@ const NotDoneUntil: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-/** A real render in the app's phone frame: punch-in, shake, karaoke, ribbon. */
+/** A real render in the app's phone frame: punch-in, shake, ribbon. */
 const PhoneClip: React.FC<{
   src: string;
   sticker: string;
@@ -253,11 +293,66 @@ const PhoneClip: React.FC<{
   );
 };
 
-const CardScene: React.FC<{ lines: { text: string; size?: number; color?: string }[] }> = ({
-  lines,
-}) => {
+// ----- scenes ---------------------------------------------------------------
+/** Hook, 0–3.2s: lead with the outcome. A real PR, opened by a swipe. */
+const PrHook: React.FC = () => {
   const { fps } = useVideoConfig();
-  const shake = useShake(4);
+  const frame = useCurrentFrame();
+  const enter = spring({ fps, frame, config: { damping: 10, stiffness: 220 } });
+  const shake = useShake(9);
+  return (
+    <AbsoluteFill
+      style={{
+        background: "#0d1117",
+        justifyContent: "center",
+        alignItems: "center",
+        flexDirection: "column",
+        gap: 54,
+        transform: shake,
+      }}
+    >
+      <Boom volume={0.85} />
+      <PrCard scale={enter} />
+      <MemeText size={88} color={ACID} delay={Math.round(0.45 * fps)}>
+        this PR was opened
+      </MemeText>
+      <MemeText size={88} color={ACID} delay={Math.round(0.75 * fps)}>
+        by a swipe.
+      </MemeText>
+      <Flash />
+    </AbsoluteFill>
+  );
+};
+
+/** 3.2–5.6s: resolve the curiosity gap with the absurd source. */
+const FlashClip: React.FC = () => {
+  const scale = usePunchIn(1.08);
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      <Hit />
+      <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})` }}>
+        <OffthreadVideo
+          muted
+          src={staticFile("fruit_drama.mp4")}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      </div>
+      <VhsTag />
+      <div style={{ position: "absolute", bottom: 300, left: 40, right: 40 }}>
+        <MemeText size={96}>a swipe on THIS.</MemeText>
+      </div>
+      <Scanlines />
+      <Flash />
+    </AbsoluteFill>
+  );
+};
+
+/** 5.6–9.2s: the whole value prop, on one card, inside the first 10s. */
+const ValueProp: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const jitter = Math.sin(frame * 1.7) * 2;
+  const shake = useShake(5);
   return (
     <AbsoluteFill
       style={{
@@ -265,60 +360,15 @@ const CardScene: React.FC<{ lines: { text: string; size?: number; color?: string
         justifyContent: "center",
         alignItems: "center",
         flexDirection: "column",
-        gap: 60,
-        padding: 70,
+        gap: 46,
         transform: shake,
       }}
     >
-      <Hit />
-      {lines.map((l, i) => (
-        <MemeText key={i} size={l.size ?? 100} color={l.color ?? "#fff"} delay={Math.round(i * 0.4 * fps)}>
-          {l.text}
-        </MemeText>
-      ))}
-      <Scanlines />
-      <Flash />
-    </AbsoluteFill>
-  );
-};
-
-// ----- scenes ---------------------------------------------------------------
-const ColdOpen: React.FC = () => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const scale = usePunchIn(1.05);
-  return (
-    <AbsoluteFill style={{ background: "#000" }}>
-      <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})` }}>
-        <OffthreadVideo
-          src={staticFile("fruit_drama.mp4")}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      </div>
-      <VhsTag />
-      {frame > fps * 1.4 ? (
-        <div style={{ position: "absolute", top: 200, left: 50, right: 50 }}>
-          <MemeText size={80}>this is one of our specs</MemeText>
-        </div>
-      ) : null}
-      <Scanlines />
-    </AbsoluteFill>
-  );
-};
-
-const Title: React.FC = () => {
-  const frame = useCurrentFrame();
-  const jitter = Math.sin(frame * 1.7) * 2;
-  const shake = useShake(8);
-  return (
-    <AbsoluteFill
-      style={{ background: BG, justifyContent: "center", alignItems: "center", flexDirection: "column", gap: 40, transform: shake }}
-    >
-      <Boom volume={0.85} />
+      <Boom volume={0.8} />
       <div
         style={{
           fontFamily: IMPACT,
-          fontSize: 190,
+          fontSize: 180,
           color: ACID,
           textTransform: "uppercase",
           WebkitTextStroke: "5px #000",
@@ -328,17 +378,51 @@ const Title: React.FC = () => {
       >
         DoomScrum
       </div>
-      <div
-        style={{
-          fontFamily: MONO,
-          fontSize: 44,
-          letterSpacing: "0.3em",
-          color: INK,
-          textTransform: "uppercase",
-        }}
-      >
-        doomscroll your backlog
-      </div>
+      <MemeText size={74} delay={Math.round(0.4 * fps)}>
+        your backlog is a tiktok feed now
+      </MemeText>
+      <MemeText size={62} color={PINK} delay={Math.round(1.1 * fps)}>
+        every spec = a brainrot video
+      </MemeText>
+      <MemeText size={62} color={ACID} delay={Math.round(1.8 * fps)}>
+        every swipe = a real coding agent
+      </MemeText>
+      <Scanlines />
+      <Flash />
+    </AbsoluteFill>
+  );
+};
+
+/** Core actions, kept dead simple and honest to the app's gestures. */
+const ActionsCard: React.FC = () => {
+  const { fps } = useVideoConfig();
+  const rows: { key: string; label: string; color: string }[] = [
+    { key: "swipe right →", label: "agent ships it. real PR.", color: ACID },
+    { key: "← swipe left", label: "agent fleshes out the spec", color: PINK },
+    { key: "tap", label: "read the raw spec", color: "#ffd400" },
+  ];
+  return (
+    <AbsoluteFill
+      style={{
+        background: BG,
+        justifyContent: "center",
+        alignItems: "center",
+        flexDirection: "column",
+        gap: 70,
+        padding: 60,
+      }}
+    >
+      <Hit />
+      {rows.map((r, i) => (
+        <div key={r.key} style={{ textAlign: "center" }}>
+          <MemeText size={84} color={r.color} delay={Math.round(i * 0.5 * fps)}>
+            {r.key}
+          </MemeText>
+          <MemeText size={52} delay={Math.round((i * 0.5 + 0.2) * fps)}>
+            {r.label}
+          </MemeText>
+        </div>
+      ))}
       <Scanlines />
       <Flash />
     </AbsoluteFill>
@@ -399,7 +483,7 @@ const SwipeRight: React.FC = () => {
   );
 };
 
-/** GitHub-dark PR card with the real PR #1 data, plus the infomercial turn. */
+/** Proof beat: the PR again, now with the infomercial turn. */
 const PrScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -412,61 +496,11 @@ const PrScene: React.FC = () => {
       <Starburst delay={Math.round(0.3 * fps)} style={{ top: 40, right: 30 }} size={420}>
         but wait, there&apos;s more
       </Starburst>
-      <div
-        style={{
-          width: 920,
-          background: "#161b22",
-          border: "1px solid #30363d",
-          borderRadius: 18,
-          padding: 50,
-          transform: `scale(${enter})`,
-          fontFamily: "-apple-system, 'Segoe UI', Helvetica, sans-serif",
-          color: "#e6edf3",
-        }}
-      >
-        <div style={{ fontSize: 46, fontWeight: 600 }}>
-          Shape: Cache Chaos Exorcism <span style={{ color: "#8b949e" }}>#1</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 28 }}>
-          <span
-            style={{
-              background: "#238636",
-              borderRadius: 999,
-              padding: "10px 26px",
-              fontSize: 30,
-              fontWeight: 600,
-            }}
-          >
-            ✓ Open
-          </span>
-          <span style={{ fontFamily: MONO, fontSize: 26, color: "#8b949e" }}>
-            doomscrum/shape-cache-chaos-exorcism → main
-          </span>
-        </div>
-        <div style={{ marginTop: 30, fontSize: 30, color: "#8b949e" }}>
-          <span style={{ color: "#3fb950" }}>+76</span>{" "}
-          <span style={{ color: "#f85149" }}>−7</span> · 1 commit · opened by a swipe
-        </div>
-        <div
-          style={{
-            marginTop: 30,
-            borderTop: "1px solid #30363d",
-            paddingTop: 26,
-            fontSize: 28,
-            color: "#8b949e",
-          }}
-        >
-          🤖 The agent read the live codebase and rewrote the spec with
-          repo-aware acceptance criteria.
-        </div>
-      </div>
+      <PrCard scale={enter} />
       <MemeText size={84} delay={Math.round(0.5 * fps)}>
-        a real agent implements it
+        a real agent. a real PR.
       </MemeText>
-      <MemeText size={84} color={ACID} delay={Math.round(1.1 * fps)}>
-        and opens a real PR
-      </MemeText>
-      <MemeText size={56} color={PINK} delay={Math.round(2.1 * fps)}>
+      <MemeText size={56} color={PINK} delay={Math.round(1.6 * fps)}>
         (PR #1 happened. it&apos;s real.)
       </MemeText>
       <Flash />
@@ -543,28 +577,26 @@ const Close: React.FC = () => {
 // ----- the demo -------------------------------------------------------------
 export const Demo: React.FC = () => (
   <AbsoluteFill style={{ background: "#000" }}>
-    <Sequence from={startOf("coldOpen")} durationInFrames={sec(T.coldOpen)}>
-      <ColdOpen />
+    <Sequence from={startOf("prHook")} durationInFrames={sec(T.prHook)}>
+      <PrHook />
     </Sequence>
-    <Sequence from={startOf("beat")} durationInFrames={sec(T.beat)}>
-      <CardScene
-        lines={[
-          { text: "yes. a spec.", size: 120 },
-          { text: "(a strawberry is narrating our cache bug)", size: 56, color: ACID },
-        ]}
-      />
+    <Sequence from={startOf("flash")} durationInFrames={sec(T.flash)}>
+      <FlashClip />
     </Sequence>
-    <Sequence from={startOf("title")} durationInFrames={sec(T.title)}>
-      <Title />
+    <Sequence from={startOf("valueProp")} durationInFrames={sec(T.valueProp)}>
+      <ValueProp />
     </Sequence>
     <Sequence from={startOf("clipA")} durationInFrames={sec(T.clipA)}>
       <PhoneClip
         src="infomercial.mp4"
-        sticker="new format"
+        sticker="fresh"
         prio="#2"
         caption="every spec becomes brainrot"
         notDoneUntil="rate a clip from cursed to corporate"
       />
+    </Sequence>
+    <Sequence from={startOf("actions")} durationInFrames={sec(T.actions)}>
+      <ActionsCard />
     </Sequence>
     <Sequence from={startOf("clipB")} durationInFrames={sec(T.clipB)}>
       <PhoneClip
@@ -573,7 +605,7 @@ export const Demo: React.FC = () => (
         prio="#3"
         caption="accurate. word for word."
         notDoneUntil="excess swipes queue with visible status"
-        hint="↑ skip · tap = read the actual spec"
+        hint="tap = read the actual spec"
       />
     </Sequence>
     <Sequence from={startOf("swipe")} durationInFrames={sec(T.swipe)}>
@@ -585,19 +617,10 @@ export const Demo: React.FC = () => (
     <Sequence from={startOf("clipC")} durationInFrames={sec(T.clipC)}>
       <PhoneClip
         src="italian_brainrot.mp4"
-        sticker="fresh"
+        sticker="new creature"
         prio="#4"
-        caption="six formats. no two alike."
+        caption="it invents new formats"
         notDoneUntil="media streams only the requested byte range"
-      />
-    </Sequence>
-    <Sequence from={startOf("clipD")} durationInFrames={sec(T.clipD)}>
-      <PhoneClip
-        src="street_interview.mp4"
-        sticker="pr opened"
-        prio="#5"
-        caption="your specs deserve to be seen"
-        notDoneUntil="doomscrum gc removes superseded renders"
       />
     </Sequence>
     <Sequence from={startOf("close")} durationInFrames={sec(T.close)}>

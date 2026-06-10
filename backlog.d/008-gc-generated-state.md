@@ -3,10 +3,10 @@
 Priority: P1 · Status: ready · Estimate: M
 
 ## Goal
-.specifi never grows unbounded: superseded renders, finished worktrees, and stale logs have a lifecycle.
+.doomscrum never grows unbounded: superseded renders, finished worktrees, and stale logs have a lifecycle.
 
 ## Oracle
-- [ ] `specifi gc` removes superseded renders (keep latest per provider per spec; provenance JSON preserved for audit), prunes merged/stale worktrees via `git worktree prune` + age policy, rotates events.ndjson past a size threshold.
+- [ ] `doomscrum gc` removes superseded renders (keep latest per provider per spec; provenance JSON preserved for audit), prunes merged/stale worktrees via `git worktree prune` + age policy, rotates events.ndjson past a size threshold.
 - [ ] Dry-run mode prints what would be deleted.
 - [ ] gc never touches source specs or open-dispatch state.
 
