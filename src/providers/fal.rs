@@ -99,8 +99,11 @@ impl FalProvider {
             max_duration_sec: cfg.max_duration_sec,
             price_per_second_usd: model_price_per_second(&cfg.fal_model)
                 .unwrap_or(cfg.price_per_second_usd),
-            poll_interval: Duration::from_secs(1),
-            max_polls: 180,
+            // Premium models (kling pro, seedance) can queue+render for
+            // many minutes; fal charges on success, so giving up early
+            // strands a billed render. 2s × 600 = 20 min ceiling.
+            poll_interval: Duration::from_secs(2),
+            max_polls: 600,
         }
     }
 

@@ -21,7 +21,10 @@ provider = "fake"
 #   fal-ai/kling-video/v2.6/pro/text-to-video    $0.14/s  (durations 5/10)
 #   fal-ai/veo3.1/fast                           $0.15/s  (durations 4/6/8)
 #   bytedance/seedance-2.0/fast/text-to-video    $0.2419/s (durations 4-15)
-fal_model = "fal-ai/veo3.1/fast"
+# Bake-off winner 2026-06-10: sora-2 spoke 100% of the script with the
+# right pacing at the lowest price (kling ran speech to the final frame,
+# seedance garbled words at 2.4x the cost).
+fal_model = "fal-ai/sora-2/text-to-video"
 max_duration_sec = 8
 # Fallback $/s for models not in the built-in price table; known models
 # use their verified price automatically.
