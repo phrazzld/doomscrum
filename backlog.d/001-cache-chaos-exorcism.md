@@ -1,5 +1,9 @@
 # Cache Chaos Exorcism
 
+Priority: P2 · Status: in-progress · Estimate: M
+
+Note: sharpened spec lives in PR #1 (specifi/shape-cache-chaos-exorcism-1d3c78d189); merge or fold back before implementing.
+
 ## User
 Operators reviewing agent-delivered web app changes.
 
