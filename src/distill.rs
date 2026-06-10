@@ -151,7 +151,7 @@ impl BrainrotFormat {
             BrainrotFormat::GenZExplainer => "genz_explainer_v3",
             BrainrotFormat::CryptidVlog => "cryptid_vlog_v3",
             BrainrotFormat::ItalianBrainrot => "italian_brainrot_v3",
-            BrainrotFormat::StreetInterview => "street_interview_v3",
+            BrainrotFormat::StreetInterview => "street_interview_v4",
             BrainrotFormat::Infomercial => "infomercial_v1",
         }
     }
@@ -508,9 +508,10 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
             };
             format!(
                 "Fake documentary street interview from the year 2080. A reporter holds a microphone \
-                 to an elderly retired gen-z developer on a city sidewalk, vertical handheld framing, \
-                 ambient traffic, mournful piano. The retiree stares into the distance, voice \
-                 cracking: \"{hook} {goal}\"{tail} Slow documentary push-in on their eyes."
+                 to a retired developer in futuristic streetwear on a neon city sidewalk, vertical \
+                 handheld framing, ambient hover-traffic, nostalgic synth piano. The retiree smiles \
+                 wistfully at the horizon and says, warm and clear: \"{hook} {goal}\"{tail} \
+                 Slow documentary push-in, flying cars drifting past in the background."
             )
         }
         BrainrotFormat::Infomercial => {

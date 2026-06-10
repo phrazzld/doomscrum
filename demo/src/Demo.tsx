@@ -14,14 +14,12 @@ import {
   Boom,
   Flash,
   Hit,
-  Karaoke,
   Riser,
   Starburst,
   usePunchIn,
   useShake,
   VhsTag,
 } from "./fx";
-import { CAPTIONS } from "./captions";
 
 export const FPS = 30;
 const sec = (s: number) => Math.round(s * FPS);
@@ -29,18 +27,18 @@ const sec = (s: number) => Math.round(s * FPS);
 // ----- scene timing (seconds) ---------------------------------------------
 // Clip scenes are sized from each render's measured speech-end (whisper
 // transcript) + a held beat, so the demo never cuts a line mid-sentence.
-// veo3.1/lite clips run 8s and speak title + goal; the acceptance criterion
-// rides the NOT-DONE-UNTIL ribbon burned on each clip scene.
+// sora-2 clips run 12s, speak title + goal + criterion, and burn their own
+// word-synced captions; the NOT-DONE-UNTIL ribbon repeats the criterion.
 const T = {
-  coldOpen: 7.4, // 001 fruit drama
+  coldOpen: 9.8, // 001 fruit drama: speech ends 9.07s
   beat: 1.8,
   title: 2.4,
-  clipA: 7.4, // 005 infomercial
-  clipB: 7.4, // 006 cryptid
+  clipA: 7.6, // 005 infomercial: speech ends 6.87s
+  clipB: 11.3, // 006 cryptid: speech ends 10.59s
   swipe: 2.2,
   pr: 6.2,
-  clipC: 7.4, // 007 italian
-  clipD: 7.4, // 008 street interview
+  clipC: 10.1, // 007 italian: speech ends 9.38s
+  clipD: 10.0, // 008 street interview: set from measured speech end
   close: 6.5,
 };
 const ORDER: (keyof typeof T)[] = [
@@ -200,8 +198,6 @@ const PhoneClip: React.FC<{
   const { fps } = useVideoConfig();
   const scale = usePunchIn(1.04);
   const shake = useShake(7);
-  const slug = src.replace(".mp4", "");
-  const words = CAPTIONS[slug];
   return (
     <AbsoluteFill style={{ background: BG, justifyContent: "center", alignItems: "center" }}>
       <Boom />
@@ -224,7 +220,6 @@ const PhoneClip: React.FC<{
         <Sticker bg={PINK} color="#fff" rotate={-5} style={{ bottom: -30, left: -38 }}>
           {prio}
         </Sticker>
-        {words ? <Karaoke words={words} bottom={210} size={64} /> : null}
       </div>
       <div style={{ position: "absolute", top: 170, left: 60, right: 60 }}>
         <MemeText size={68} delay={Math.round(0.35 * fps)}>
@@ -292,7 +287,6 @@ const ColdOpen: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const scale = usePunchIn(1.05);
-  const words = CAPTIONS["fruit_drama"];
   return (
     <AbsoluteFill style={{ background: "#000" }}>
       <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})` }}>
@@ -307,7 +301,6 @@ const ColdOpen: React.FC = () => {
           <MemeText size={80}>this is one of our specs</MemeText>
         </div>
       ) : null}
-      {words ? <Karaoke words={words} bottom={260} /> : null}
       <Scanlines />
     </AbsoluteFill>
   );
