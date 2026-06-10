@@ -89,6 +89,12 @@ async fn main() -> Result<()> {
                 }
                 let storyboard =
                     compile_storyboard(&prd, &distill(&prd), ctx.cfg.video.max_duration_sec);
+                let storyboards_dir = ctx.state_dir().join("storyboards");
+                std::fs::create_dir_all(&storyboards_dir)?;
+                std::fs::write(
+                    storyboards_dir.join(format!("{}.json", prd.sha256)),
+                    serde_json::to_string_pretty(&storyboard)?,
+                )?;
                 let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
                 println!(
                     "render {} provider={} model={} audio={} latency_ms={}",

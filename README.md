@@ -44,6 +44,26 @@ and sends spec-derived prompt text to fal.ai — treat it as a disclosure
 event. The fixture provider (`fake`) is the default and never leaves the
 machine.
 
+## Brainrot formats
+
+Each spec is translated into one of five live brainrot formats, rotated by
+feed position so consecutive videos never look alike:
+
+1. **AI fruit drama** — anthropomorphic fruits in a telenovela kitchen
+   confrontation; the betrayal *is* the spec goal.
+2. **Gen-Z explainer** — unhinged ring-light talking head, punch-in zooms,
+   word-by-word captions, "no cap."
+3. **Cryptid vlog** — Bigfoot GoPro selfie vlog hyping the spec like a
+   day-in-the-life.
+4. **Italian brainrot** — surreal hybrid creature reveal with a bombastic
+   pseudo-Italian opera narrator.
+5. **2080 street interview** — fake future documentary asking an elderly
+   gen-z developer if they remember the spec.
+
+The spoken dialogue in every format quotes the spec's actual goal and first
+acceptance criterion — the video must communicate the spec, not just vibe.
+Prompts forbid inventing features or claiming anything shipped.
+
 ## Syncing to a repo
 
 Point `specifi.toml` at any repository:
