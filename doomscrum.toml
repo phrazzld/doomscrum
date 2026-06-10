@@ -22,13 +22,12 @@ provider = "fake"
 #   fal-ai/kling-video/v2.6/pro/text-to-video    $0.14/s  (durations 5/10)
 #   fal-ai/veo3.1/fast                           $0.15/s  (durations 4/6/8)
 #   bytedance/seedance-2.0/fast/text-to-video    $0.2419/s (durations 4-15)
-# Hero-quality mode (owner call 2026-06-10): seedance fast for maximum
-# visual quality + native word-synced captions; 12s clips so the spoken
-# script fits title, goal, AND the first acceptance criterion.
-# Cost-optimized alternative: veo3.1/lite at 8s ($0.40/clip vs $2.90) —
-# cheapest dialogue-capable model on fal; sora-2 at 8s ($0.80) is the
-# proven runner-up from the script-fit bake-off.
-fal_model = "bytedance/seedance-2.0/fast/text-to-video"
+# Default (bake-off 2026-06-10, hypermaximalist prompts): sora-2 at 12s
+# ($1.20/clip) — speaks title + goal + "Not done until <criterion>",
+# renders correctly-spelled word-synced captions, and delivers the
+# infomercial energy. seedance fast remains the premium tier ($2.90);
+# veo3.1/lite the budget tier ($0.40, 8s, captions garble, no criterion).
+fal_model = "fal-ai/sora-2/text-to-video"
 max_duration_sec = 12
 # Fallback $/s for models not in the built-in price table; known models
 # use their verified price automatically.
