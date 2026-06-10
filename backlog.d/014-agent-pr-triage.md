@@ -3,7 +3,7 @@
 Priority: P2 · Status: pending · Estimate: M
 
 ## Goal
-specifi/* PRs get an automatic first review (tests, scope vs spec, diff size) and a clear human merge/decline queue instead of rotting.
+doomscrum/* PRs get an automatic first review (tests, scope vs spec, diff size) and a clear human merge/decline queue instead of rotting.
 
 ## Oracle
 - [ ] Each agent PR receives an automated review comment: gate results + does-the-diff-address-the-spec verdict.
