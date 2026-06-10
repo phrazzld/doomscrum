@@ -7,3 +7,5 @@ outputs/
 .env
 .env.*
 *.log
+demo/node_modules/
+demo/out/

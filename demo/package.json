@@ -1,0 +1,15 @@
+{
+  "name": "doomscrum-demo",
+  "private": true,
+  "description": "Marketing demo composition. Dev tooling only — the product itself is Rust.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts DoomScrumDemo out/doomscrum-demo.mp4 --codec h264"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  }
+}
