@@ -228,18 +228,28 @@ fn capitalize(text: &str) -> String {
 /// Strip trailing connectives and punctuation so a line ends on a word
 /// that can carry a full stop.
 fn strip_danglers(text: &str) -> String {
+    let norm = |w: &str| {
+        w.trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase()
+    };
     let mut words: Vec<&str> = text.split_whitespace().collect();
     while words.len() > 2 {
-        let last = words
-            .last()
-            .unwrap()
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_lowercase();
+        let last = norm(words.last().unwrap());
         if last.is_empty() || DANGLERS.contains(&last.as_str()) {
             words.pop();
-        } else {
-            break;
+            continue;
         }
+        // A trailing "<preposition> <article> <word>" stub ("to a looping")
+        // is a clipped phrase: the article hides the dangling preposition.
+        if words.len() > 4 {
+            let article = matches!(norm(words[words.len() - 2]).as_str(), "a" | "an" | "the");
+            let prep_dangles = DANGLERS.contains(&norm(words[words.len() - 3]).as_str());
+            if article && prep_dangles {
+                words.truncate(words.len() - 3);
+                continue;
+            }
+        }
+        break;
     }
     words
         .join(" ")
@@ -402,12 +412,43 @@ impl SpokenScript {
     }
 }
 
-pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) -> SpokenScript {
+/// Hook/goal phrasing templates. The criterion line stays canonical
+/// ("Not done until …") — it is the verifiable spec anchor — but the rest
+/// of the script gets seeded variety so the feed never reads samey.
+/// Each entry: (hook prefix, hook suffix, goal prefix).
+const SCRIPT_TEMPLATES: [(&str, &str, &str); 5] = [
+    ("", "", ""),
+    ("Breaking: ", "", ""),
+    ("", " just dropped", ""),
+    ("Nobody mentions ", "", ""),
+    ("", "", "The mission: "),
+];
+
+pub fn plan_script(
+    title: &str,
+    goal: &str,
+    criterion: &str,
+    duration_sec: u32,
+    seed: u64,
+) -> SpokenScript {
     let budget = word_budget(duration_sec);
+    // Template filler is a luxury: a template is only eligible when the
+    // budget can absorb its overhead without starving the goal line.
+    // Short clips always speak the classic form — every word is spec.
+    let eligible: Vec<&(&str, &str, &str)> = SCRIPT_TEMPLATES
+        .iter()
+        .filter(|(pre, post, gpre)| {
+            let overhead = words(pre) + words(post) + words(gpre);
+            overhead == 0 || budget >= 18 + overhead
+        })
+        .collect();
+    let (hook_pre, hook_post, goal_pre) = *eligible[(seed as usize) % eligible.len()];
     // The hook is a short title fragment; the goal line is the payload and
     // gets the bulk of the budget — the spec must come through clearly.
+    // Template filler words are real spoken words: the hook's land in
+    // `used`, the goal prefix's shrink the goal's own allowance.
     let hook = format!(
-        "{}.",
+        "{hook_pre}{}{hook_post}.",
         tighten(title, budget.saturating_sub(2).clamp(1, 4))
     );
     let mut used = words(&hook);
@@ -415,10 +456,12 @@ pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) 
     // "done when" that makes a spec legible — always gets spoken whole.
     let reserve = if budget >= 18 { 8 } else { 0 };
     let goal_line = format!(
-        "{}.",
+        "{goal_pre}{}.",
         capitalize(&tighten(
             goal,
-            budget.saturating_sub(used + reserve).clamp(1, 11)
+            budget
+                .saturating_sub(used + reserve + words(goal_pre))
+                .clamp(1, 11)
         ))
     );
     used += words(&goal_line);
@@ -434,10 +477,23 @@ pub fn plan_script(title: &str, goal: &str, criterion: &str, duration_sec: u32) 
     }
 }
 
+/// Pick one ingredient from a pool, deterministically per seed. `salt`
+/// decorrelates multiple pools fed by the same seed.
+fn pick<'a>(pool: &[&'a str], seed: u64, salt: u64) -> &'a str {
+    pool[((seed ^ (salt.wrapping_mul(0x9e3779b97f4a7c15))) % pool.len() as u64) as usize]
+}
+
 /// Build the video-model prompt for one format. The dialogue quotes the
 /// actual spec text — the video must communicate the spec, not just vibe —
-/// and the whole script must finish before the clip ends.
-fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u32) -> String {
+/// and the whole script must finish before the clip ends. Scene
+/// ingredients (cast, setting, persona) are seeded per spec: anchors stay
+/// (bigfoot vlogs, fruit soap operas, pitchmen), details stay fresh.
+fn format_prompt(
+    format: BrainrotFormat,
+    script: &SpokenScript,
+    duration_sec: u32,
+    seed: u64,
+) -> String {
     let header = format!(
         "Vertical 9:16 video, exactly {duration_sec} seconds, with native audio: \
          clear spoken dialogue, sound effects, and music as described. Huge bold \
@@ -451,70 +507,139 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
     let goal = &script.goal;
     let scene = match format {
         BrainrotFormat::FruitDrama => {
-            let mango = match &script.criterion {
-                Some(c) => format!(" The mango looks away and whispers: \"{c}\""),
-                None => " The mango looks away in shame, silent.".to_string(),
+            let accuser = pick(
+                &["furious strawberry", "seething grape", "heartbroken peach", "betrayed pineapple"],
+                seed, 1,
+            );
+            let accused = pick(
+                &["guilty mango", "smug banana", "scheming lime", "innocent-looking blueberry"],
+                seed, 2,
+            );
+            let set = pick(
+                &[
+                    "A sunlit kitchen counter",
+                    "A picnic table at golden hour",
+                    "A farmers-market stall at dawn",
+                ],
+                seed, 3,
+            );
+            let confession = match &script.criterion {
+                Some(c) => format!(" The {accused} looks away and whispers: \"{c}\""),
+                None => format!(" The {accused} looks away in shame, silent."),
             };
             format!(
-                "AI fruit drama soap opera. A sunlit kitchen counter shot like a telenovela: \
-                 shallow depth of field, dramatic golden lighting, slow push-in. Two anthropomorphic \
-                 fruits with big expressive eyes and mouths — a furious strawberry and a guilty mango. \
-                 The strawberry gasps, voice trembling with betrayal: \"{hook} {goal}\" \
-                 Dramatic zoom.{mango} Thunder crack, telenovela string sting. Played completely straight."
+                "AI fruit drama soap opera. {set} shot like a telenovela: shallow depth of \
+                 field, dramatic golden lighting, slow push-in. Two anthropomorphic fruits with \
+                 big expressive eyes and mouths — a {accuser} and a {accused}. \
+                 The {accuser} gasps, voice trembling with betrayal: \"{hook} {goal}\" \
+                 Dramatic zoom.{confession} Thunder crack, telenovela string sting. Played completely straight."
             )
         }
         BrainrotFormat::GenZExplainer => {
+            let where_ = pick(
+                &[
+                    "in their bedroom with a ring light",
+                    "in a parked car, phone on the dashboard",
+                    "at a dorm desk lit by RGB strips",
+                ],
+                seed, 1,
+            );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\" Vine boom on the last line."),
                 None => " Vine boom at the end.".to_string(),
             };
             format!(
-                "Chaotic gen-z talking-head explainer. A twentysomething with a ring light films a \
-                 vertical selfie video in their bedroom, talking fast straight into the camera with \
-                 punch-in zooms and big bold captions appearing word by word. \
+                "Chaotic gen-z talking-head explainer. A twentysomething films a vertical selfie \
+                 video {where_}, talking fast straight into the camera with punch-in zooms and \
+                 big bold captions appearing word by word. \
                  They say, completely serious: \"{hook} {goal}\"{tail}"
             )
         }
         BrainrotFormat::CryptidVlog => {
+            let cryptid = pick(
+                &[
+                    "Bigfoot",
+                    "A chill yeti",
+                    "The Mothman",
+                    "A surprisingly photogenic swamp creature",
+                ],
+                seed, 1,
+            );
+            let locale = pick(
+                &[
+                    "a sunny pine forest",
+                    "a misty mountain trail",
+                    "a golden autumn birch forest",
+                ],
+                seed, 2,
+            );
             let tail = match &script.criterion {
                 Some(c) => format!(" Then, deadpan to camera: \"{c}\""),
                 None => String::new(),
             };
             format!(
-                "Found-footage cryptid vlog. Bigfoot holds a GoPro at arm's length while striding \
-                 through a sunny pine forest, fur rustling, lens slightly fisheye, very influencer. \
+                "Found-footage cryptid vlog. {cryptid} holds a GoPro at arm's length while striding \
+                 through {locale}, fur rustling, lens slightly fisheye, very influencer. \
                  In a chill deep voice he says: \"{hook} {goal}\"{tail} Birdsong, crunching \
                  footsteps, one dramatic zoom to his face at the end."
             )
         }
         BrainrotFormat::ItalianBrainrot => {
+            let creature = pick(
+                &[
+                    "a giant espresso cup with muscular human legs and a crocodile head",
+                    "a marble statue of a ballerina with a steaming cappuccino for a head",
+                    "a three-legged shark in designer sneakers posing like a renaissance hero",
+                    // The freedom slot: let the model invent, but fence it
+                    // away from the defaults so it can't collapse back.
+                    "one you invent yourself: fuse one everyday household object with one \
+                     animal; do NOT use a crocodile, shark, or coffee cup; surprise us",
+                ],
+                seed, 1,
+            );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\""),
                 None => String::new(),
             };
             format!(
-                "Italian brainrot creature reveal. A surreal hybrid creature — a giant espresso cup \
-                 with muscular human legs and a crocodile head — strikes heroic poses on a marble \
-                 plaza, camera orbiting, renaissance lighting, fully cinematic. A bombastic \
-                 opera narrator with a slight Italian flair bellows over orchestral hits, every \
-                 English word crisp and clearly intelligible: \"{hook} {goal}\"{tail} \
-                 Deadpan, epic, absurd."
+                "Italian brainrot creature reveal. A surreal hybrid creature — {creature} — \
+                 strikes heroic poses on a marble plaza, camera orbiting, renaissance lighting, \
+                 fully cinematic. A bombastic opera narrator with a slight Italian flair bellows \
+                 over orchestral hits, every English word crisp and clearly intelligible: \
+                 \"{hook} {goal}\"{tail} Deadpan, epic, absurd."
             )
         }
         BrainrotFormat::StreetInterview => {
+            let year = pick(&["2080", "2147", "3024"], seed, 1);
+            let who = pick(
+                &[
+                    "a retired developer in futuristic streetwear",
+                    "a former scrum master turned hover-cab driver",
+                    "the last human programmer, now a beloved celebrity",
+                ],
+                seed, 2,
+            );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\""),
                 None => String::new(),
             };
             format!(
-                "Fake documentary street interview from the year 2080. A reporter holds a microphone \
-                 to a retired developer in futuristic streetwear on a neon city sidewalk, vertical \
-                 handheld framing, ambient hover-traffic, nostalgic synth piano. The retiree smiles \
-                 wistfully at the horizon and says, warm and clear: \"{hook} {goal}\"{tail} \
+                "Fake documentary street interview from the year {year}. A reporter holds a \
+                 microphone to {who} on a neon city sidewalk, vertical handheld framing, ambient \
+                 hover-traffic, nostalgic synth piano. They smile wistfully at the horizon and \
+                 say, warm and clear: \"{hook} {goal}\"{tail} \
                  Slow documentary push-in, flying cars drifting past in the background."
             )
         }
         BrainrotFormat::Infomercial => {
+            let set = pick(
+                &[
+                    "a bright studio kitchen set",
+                    "a wood-paneled garage workshop set",
+                    "a late-night shopping-channel desk with a spinning product pedestal",
+                ],
+                seed, 1,
+            );
             let tail = match &script.criterion {
                 Some(c) => {
                     format!(
@@ -526,8 +651,8 @@ fn format_prompt(format: BrainrotFormat, script: &SpokenScript, duration_sec: u3
             };
             format!(
                 "A 1990s late-night TV infomercial shot on slightly grainy videotape with cheesy \
-                 synth music. An overjoyed pitchman in a loud blazer stands in a bright studio \
-                 kitchen set, gesturing wildly at the camera while colorful starburst graphics \
+                 synth music. An overjoyed pitchman in a loud blazer stands in {set}, \
+                 gesturing wildly at the camera while colorful starburst graphics \
                  and price-tag stickers pop on and off the screen. He booms with game-show \
                  enthusiasm, every word crisp and clearly intelligible: \"{hook} {goal}\"{tail} \
                  Rapid cuts, canned applause, VHS tracking flicker on the final frame."
@@ -578,13 +703,17 @@ pub fn compile_with_format(
         .cloned()
         .unwrap_or_else(|| "No explicit risk recorded.".into());
 
+    // Seeded by spec content: the same spec always renders the same way
+    // (stable re-renders), but different specs draw different ingredients.
+    let seed = u64::from_str_radix(prd.sha256.get(..16).unwrap_or("0"), 16).unwrap_or(0);
     let script = plan_script(
         &prd.title,
         &brief.goal,
         &first_criterion,
         target_duration_sec,
+        seed,
     );
-    let provider_prompt = format_prompt(format, &script, target_duration_sec);
+    let provider_prompt = format_prompt(format, &script, target_duration_sec, seed);
 
     let beats = vec![
         Beat {
@@ -718,6 +847,57 @@ mod tests {
     }
 
     #[test]
+    fn script_phrasing_varies_with_seed_but_respects_budget() {
+        let title = "Brainrot Vibe Meter";
+        let goal = "Record a simple human vibe rating on each render";
+        let criterion = "Render detail allows rating a clip from cursed to corporate";
+        let texts: std::collections::HashSet<String> = (0..6)
+            .map(|seed| plan_script(title, goal, criterion, 12, seed).full_text())
+            .collect();
+        // Different seeds produce genuinely different phrasings...
+        assert!(texts.len() >= 3, "expected varied phrasings, got {texts:?}");
+        for seed in 0..6 {
+            let s = plan_script(title, goal, criterion, 12, seed);
+            // ...every variant stays inside the spoken-word budget...
+            assert!(
+                s.word_count() <= word_budget(12),
+                "seed {seed} over budget: {} words: {}",
+                s.word_count(),
+                s.full_text()
+            );
+            // ...and the canonical criterion line survives every template.
+            assert!(
+                s.criterion.as_deref().unwrap_or("").starts_with("Not done until"),
+                "seed {seed} lost the criterion line: {:?}",
+                s.criterion
+            );
+        }
+        // Same seed, same script: re-renders stay stable.
+        assert_eq!(
+            plan_script(title, goal, criterion, 12, 3).full_text(),
+            plan_script(title, goal, criterion, 12, 3).full_text()
+        );
+    }
+
+    #[test]
+    fn scene_ingredients_vary_with_seed_but_are_deterministic() {
+        let p = prd(SAMPLE);
+        let brief = distill(&p);
+        let script = plan_script(&p.title, &brief.goal, "x", 12, 0);
+        for format in BrainrotFormat::ALL {
+            let scenes: std::collections::HashSet<String> = (0..8)
+                .map(|seed| format_prompt(format, &script, 12, seed))
+                .collect();
+            assert!(scenes.len() >= 2, "{format:?} never varies its scene");
+            assert_eq!(
+                format_prompt(format, &script, 12, 5),
+                format_prompt(format, &script, 12, 5),
+                "{format:?} must be deterministic per seed"
+            );
+        }
+    }
+
+    #[test]
     fn prompts_demand_hypermaximalist_captions_and_motion() {
         let p = prd(SAMPLE);
         let brief = distill(&p);
@@ -843,13 +1023,16 @@ mod tests {
         let long_criterion = "a route level test proves that the newest successful render is \
                               selected by provenance timestamp and never an older stale render";
         for duration in [4u32, 6, 8, 12] {
-            let script = plan_script("Cache Chaos Exorcism", &long_goal, long_criterion, duration);
-            assert!(
-                script.word_count() <= word_budget(duration),
-                "{} words exceeds budget {} at {duration}s",
-                script.word_count(),
-                word_budget(duration)
-            );
+            for seed in 0..6 {
+                let script =
+                    plan_script("Cache Chaos Exorcism", &long_goal, long_criterion, duration, seed);
+                assert!(
+                    script.word_count() <= word_budget(duration),
+                    "{} words exceeds budget {} at {duration}s seed {seed}",
+                    script.word_count(),
+                    word_budget(duration)
+                );
+            }
         }
     }
 
@@ -861,12 +1044,13 @@ mod tests {
             "a goal sentence that uses up most of the available word budget for sure",
             "this criterion will not fit",
             4,
+            0,
         );
         assert!(tight.criterion.is_none());
         assert!(tight.word_count() <= word_budget(4));
 
         // Roomy budget: criterion spoken.
-        let roomy = plan_script("Spec", "Ship it.", "tests pass on refresh", 8);
+        let roomy = plan_script("Spec", "Ship it.", "tests pass on refresh", 8, 0);
         assert!(roomy.criterion.is_some());
         assert!(roomy
             .criterion
