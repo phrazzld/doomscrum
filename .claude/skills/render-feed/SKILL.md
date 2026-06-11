@@ -68,6 +68,23 @@ use `/usr/bin/trash`.
 
 ## Render gotchas (earned, not theoretical)
 
+- **Exhausted fal balance masquerades as everything else** (2026-06-11): a
+  locked account produced storage 403s, LTX 422s at result-fetch, and
+  600-poll queue timeouts across models before any request said "Exhausted
+  balance". When two unrelated failure shapes appear in one batch, probe
+  with a cheap submit and read the 403 body before debugging models.
+  Our spend cap tracks OUR ledger, not the prepaid fal balance.
+- **ltx-2.3 is banned from the content mix** (verified 2026-06-11): 1 of 4
+  clips had catastrophic diction ("no vibes merges, capiche" -> "No merges.
+  Copy, sheep."), 1 cut its last word. veo3.1/lite carries the cheap weight.
+- **Transcription fallback**: fal storage upload may 403 independently of
+  the queue; `check_script_fit.py` falls back to Deepgram (DEEPGRAM_API_KEY)
+  automatically — direct binary upload, no storage hop.
+- Scripts must spell numbers as words and skip exotic interjections
+  ("capisce") — voice models garble them and the transcript gate eats the
+  miss. The scriptwriter prompt enforces this; don't hand-write scripts
+  that violate it.
+
 - Seedance output moderation rejects "unhinged" / "deadly serious" phrasing.
 - Accented narrators garble words unless the prompt demands "crisp, clearly
   intelligible English".
