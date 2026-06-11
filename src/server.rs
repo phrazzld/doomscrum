@@ -25,6 +25,10 @@ pub struct AppCtx {
     pub root: PathBuf,
     /// The currently synced repo — switchable at runtime via /api/repo.
     repo_sel: Arc<std::sync::RwLock<PathBuf>>,
+    /// In-flight single-spec AI renders: prd_id -> "cooking" | "failed: …".
+    /// UI-triggered renders run detached so a page refresh can't abort a
+    /// paid job; the feed poll reads this map for progress/failure.
+    cooking: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl AppCtx {
@@ -35,6 +39,7 @@ impl AppCtx {
             cfg,
             root,
             repo_sel: Arc::new(std::sync::RwLock::new(repo)),
+            cooking: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -285,6 +290,7 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
 
     Json(json!({
         "items": items,
+        "cooking": *ctx.cooking.lock().expect("cooking lock"),
         "video_provider": ctx.cfg.video.provider,
         "fal_configured": ctx.fal_key().is_some(),
         "max_items": ctx.cfg.feed.max_items,
@@ -351,49 +357,39 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         }
     }
 
-    let script_key = crate::secrets::get(&["OPENROUTER_API_KEY"]);
+    // Single-spec paid render (the card's "cook with AI" button): run
+    // detached so a page refresh cannot abort a job that costs money. The
+    // feed poll watches ctx.cooking for progress and failure.
+    if body.prd_id.is_some() && matches!(provider, Provider::Fal(_)) {
+        let Some(prd) = targets.into_iter().next() else {
+            return error_response(StatusCode::CONFLICT, "already rendered (use force)");
+        };
+        let id = prd.id.clone();
+        ctx.cooking
+            .lock()
+            .expect("cooking lock")
+            .insert(id.clone(), "cooking".into());
+        let bg = ctx.clone();
+        let pname = provider_name.clone();
+        tokio::spawn(async move {
+            let outcome = render_one(&bg, &pname, &prd).await;
+            let mut map = bg.cooking.lock().expect("cooking lock");
+            match outcome {
+                Ok(_) => {
+                    map.remove(&id);
+                }
+                Err(err) => {
+                    map.insert(id, format!("failed: {err:#}"));
+                }
+            }
+        });
+        return Json(json!({ "started": true })).into_response();
+    }
+
     let mut rendered = Vec::new();
     for prd in targets {
-        let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
-        let provider = match ctx.provider_with(&provider_name, &vcfg) {
-            Ok(p) => p,
-            Err(err) => return error_response(StatusCode::BAD_REQUEST, err),
-        };
-        let storyboard = match crate::scriptwriter::storyboard(
-            &ctx.cfg.script,
-            script_key.as_deref(),
-            &prd,
-            provider.clip_duration(vcfg.max_duration_sec),
-            &ctx.state_dir().join("scripts"),
-            provider_name != "fake",
-        )
-        .await
-        {
-            Ok(board) => board,
-            Err(err) => {
-                return error_response(
-                    StatusCode::BAD_GATEWAY,
-                    format!("scriptwriter failed for '{}': {err:#}", prd.title),
-                )
-            }
-        };
-        let storyboards_dir = ctx.state_dir().join("storyboards");
-        let _ = std::fs::create_dir_all(&storyboards_dir);
-        let _ = std::fs::write(
-            storyboards_dir.join(format!("{}.json", prd.sha256)),
-            serde_json::to_string_pretty(&storyboard).unwrap_or_default(),
-        );
-        match provider.render(&storyboard, &ctx.renders_dir()).await {
-            Ok(render) => {
-                let _ = events::append(
-                    &ctx.events_path(),
-                    &prd.id,
-                    &prd.sha256,
-                    "rendered",
-                    Some(format!("{}/{}", render.provider, render.model)),
-                );
-                rendered.push(render);
-            }
+        match render_one(&ctx, &provider_name, &prd).await {
+            Ok(render) => rendered.push(render),
             Err(err) => {
                 return error_response(
                     StatusCode::BAD_GATEWAY,
@@ -403,6 +399,42 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         }
     }
     Json(json!({ "renders": rendered })).into_response()
+}
+
+/// Script + storyboard + render + event for one spec.
+async fn render_one(
+    ctx: &AppCtx,
+    provider_name: &str,
+    prd: &PrdSource,
+) -> anyhow::Result<VideoRender> {
+    let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
+    let provider = ctx.provider_with(provider_name, &vcfg)?;
+    let script_key = crate::secrets::get(&["OPENROUTER_API_KEY"]);
+    let storyboard = crate::scriptwriter::storyboard(
+        &ctx.cfg.script,
+        script_key.as_deref(),
+        prd,
+        provider.clip_duration(vcfg.max_duration_sec),
+        &ctx.state_dir().join("scripts"),
+        provider_name != "fake",
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("scriptwriter failed: {err:#}"))?;
+    let storyboards_dir = ctx.state_dir().join("storyboards");
+    let _ = std::fs::create_dir_all(&storyboards_dir);
+    let _ = std::fs::write(
+        storyboards_dir.join(format!("{}.json", prd.sha256)),
+        serde_json::to_string_pretty(&storyboard).unwrap_or_default(),
+    );
+    let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
+    let _ = events::append(
+        &ctx.events_path(),
+        &prd.id,
+        &prd.sha256,
+        "rendered",
+        Some(format!("{}/{}", render.provider, render.model)),
+    );
+    Ok(render)
 }
 
 #[derive(Deserialize)]

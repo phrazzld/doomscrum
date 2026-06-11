@@ -109,11 +109,16 @@
     box-shadow: 3px 3px 0 #000;
   }
   .sticker.status { top: -14px; right: -18px; transform: rotate(6deg); background: var(--acid); color: #000; }
-  button.sticker.aiify {
+  .sticker.aiify {
     top: auto; bottom: 120px; left: 50%; right: auto;
-    transform: translateX(-50%) rotate(-2deg);
+    transform: translateX(-50%) rotate(-2deg); max-width: 80%;
     background: var(--pink); color: #fff; cursor: pointer; border: 2px solid #000;
   }
+  .sticker.aiify.cooking {
+    background: var(--warn); color: #000; cursor: default;
+    animation: cookthrob 1s infinite alternate;
+  }
+  @keyframes cookthrob { from { transform: translateX(-50%) rotate(-2deg) scale(1); } to { transform: translateX(-50%) rotate(-2deg) scale(1.06); } }
   .sticker.status.queued, .sticker.status.agent_running { background: var(--warn); animation: throb 1s infinite alternate; }
   .sticker.status.opening_pr { background: var(--cyan); animation: throb 1s infinite alternate; }
   .sticker.status.pr_opened { background: var(--pink); color: #fff; }
@@ -329,6 +334,7 @@
     const currentId = items[idx]?.prd.id;
     items = state.items;
     window.__falConfigured = state.fal_configured;
+    window.__cooking = state.cooking || {};
     if (state.spend) {
       const s = state.spend;
       $("spend").textContent = `$${s.total_usd.toFixed(2)} / $${s.cap_usd.toFixed(0)} cap`;
@@ -354,7 +360,8 @@
     const item = items[idx];
     // Re-render only on material change; otherwise the 4s status poll
     // would rebuild the DOM and restart the looping video.
-    const liveStatus = item ? (item.dispatch ? item.dispatch.status : item.status) : "";
+    const cook = item ? (window.__cooking || {})[item.prd.id] : undefined;
+    const liveStatus = (item ? (item.dispatch ? item.dispatch.status : item.status) : "") + "|" + (cook || "");
     const cardSig = JSON.stringify([
       idx, items.length, item && item.prd.id,
       item && item.render && item.render.id,
@@ -416,8 +423,13 @@
         <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
         <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
         <span class="sticker prio">#${prd.priority + 1}</span>
-        ${vid.provider === "fake-local" && window.__falConfigured
-          ? '<button class="sticker aiify" id="aiify">fixture → cook with AI ($)</button>' : ""}
+        ${cook === "cooking"
+          ? '<span class="sticker aiify cooking">AI render cooking… (~2-4 min, safe to refresh)</span>'
+          : (cook
+            ? `<button class="sticker aiify" id="aiify" title="${esc(cook)}">render flopped — tap to retry ($)</button>`
+            : (vid.provider === "fake-local" && window.__falConfigured
+              ? '<button class="sticker aiify" id="aiify">fixture → cook with AI ($)</button>' : ""))}
+        ${cook && cook !== "cooking" ? `<div class="logbox failed" style="display:block">${esc(cook)}</div>` : ""}
         <div class="logbox" id="logbox" style="display:none"></div>
         <div class="caption">
           <div class="meme">${esc(prd.title)}</div>
@@ -431,15 +443,14 @@
       aiify.onpointerdown = (e) => e.stopPropagation();
       aiify.onclick = async (e) => {
         e.stopPropagation();
-        showToast("cooking real AI video… ($)");
         try {
           await api("/api/generate", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ provider: "fal", prd_id: prd.id }),
           });
+          showToast("AI render kicked off — watch the sticker");
           await load();
-          showToast("AI clip ready");
         } catch (err) { showToast(err.message, true); }
       };
     }
