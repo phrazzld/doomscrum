@@ -175,6 +175,7 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/swipe", post(api_swipe))
         .route("/api/spec/{prd_id}", get(api_spec))
         .route("/api/dispatches", get(api_dispatches))
+        .route("/api/dispatch/{id}/log", get(api_dispatch_log))
         .route("/api/repo", get(api_repo_get).post(api_repo_set))
         .route("/media/{sha}/{file}", get(media))
         .with_state(ctx)
@@ -485,6 +486,33 @@ async fn api_dispatches(State(ctx): State<AppCtx>) -> Response {
         Ok(receipts) => Json(json!({ "dispatches": receipts })).into_response(),
         Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     }
+}
+
+/// Tail of one dispatch's agent log — what the feed shows while an agent
+/// is cooking and when it flops. Receipts persist after every stage, so
+/// this is pure surfacing.
+async fn api_dispatch_log(State(ctx): State<AppCtx>, UrlPath(id): UrlPath<String>) -> Response {
+    let receipts = load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
+    let Some(receipt) = receipts.into_iter().find(|r| r.id == id) else {
+        return error_response(StatusCode::NOT_FOUND, "dispatch not found");
+    };
+    let raw = std::fs::read_to_string(&receipt.agent_log).unwrap_or_default();
+    let tail: Vec<&str> = raw.lines().rev().take(14).collect();
+    let tail: Vec<&str> = tail.into_iter().rev().collect();
+    let failing_stage = receipt
+        .stages
+        .iter()
+        .rev()
+        .find(|s| !s.ok)
+        .map(|s| s.name.clone());
+    Json(json!({
+        "id": receipt.id,
+        "status": receipt.status,
+        "note": receipt.note,
+        "failing_stage": failing_stage,
+        "tail": tail,
+    }))
+    .into_response()
 }
 
 /// Parse a `Range: bytes=start-end` header against a body of `len` bytes.

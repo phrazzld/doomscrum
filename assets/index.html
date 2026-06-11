@@ -162,6 +162,25 @@
     padding: 6px 12px; cursor: pointer; text-transform: uppercase;
   }
 
+  .logbox {
+    position: absolute; left: 10px; right: 10px; bottom: 86px; z-index: 5;
+    background: rgba(0,0,0,.82); border: 2px solid var(--acid);
+    box-shadow: 4px 4px 0 #000; padding: 8px 10px;
+    font-size: 10px; line-height: 1.5; color: var(--acid);
+    max-height: 130px; overflow: hidden; white-space: pre-wrap; word-break: break-all;
+  }
+  .logbox.failed { border-color: #ff3b30; color: #ffb3af; }
+  .logbox .lhead {
+    font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
+    font-size: 11px; letter-spacing: .08em; margin-bottom: 4px; color: var(--ink);
+  }
+  .logbox button.retry {
+    margin-top: 6px; font-family: Impact, "Arial Black", sans-serif;
+    text-transform: uppercase; font-size: 12px; padding: 5px 12px; cursor: pointer;
+    background: var(--acid); color: #000; border: 2px solid #000; box-shadow: 3px 3px 0 #000;
+  }
+  .logbox button.retry:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #000; }
+
   .repochip {
     position: fixed; top: 36px; left: 16px; z-index: 31;
     font-family: Impact, "Arial Black", sans-serif; text-transform: uppercase;
@@ -392,6 +411,7 @@
         <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
         <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
         <span class="sticker prio">#${prd.priority + 1}</span>
+        <div class="logbox" id="logbox" style="display:none"></div>
         <div class="caption">
           <div class="meme">${esc(prd.title)}</div>
           <div class="meta">${esc(vid.provider)}/${esc(vid.model)} · ${esc(prd.sha256.slice(0, 10))}${pr ? ` · <a style="color:var(--cyan)" href="${esc(pr)}">PR ↗</a>` : ""}</div>
@@ -488,6 +508,39 @@
       card.classList.add("snap"); // not far enough: snap back
     });
   }
+
+  // --- live agent log on the card ------------------------------------
+  // While an agent cooks (or after it flops), the card shows the tail of
+  // its log. Updates bypass render()'s signature machinery so the looping
+  // video never restarts.
+  async function refreshLogbox() {
+    const box = $("logbox");
+    const item = items[idx];
+    const d = item && item.dispatch;
+    if (!box || !d) return;
+    const active = ["queued", "agent_running", "opening_pr"].includes(d.status);
+    const failed = d.status === "failed";
+    if (!active && !failed) { box.style.display = "none"; return; }
+    try {
+      const log = await api(`/api/dispatch/${d.id}/log`);
+      const tail = (log.tail || []).slice(failed ? -6 : -4).join("\n");
+      box.className = "logbox" + (failed ? " failed" : "");
+      box.innerHTML = failed
+        ? `<div class="lhead">agent flopped${log.failing_stage ? " @ " + esc(log.failing_stage) : ""}</div>` +
+          `${esc(log.note || "")}\n${esc(tail)}` +
+          `<br><button class="retry" id="retryBtn">run it back</button>`
+        : `<div class="lhead">agent cooking…</div>${esc(tail) || "(warming up)"}`;
+      box.style.display = "block";
+      box.onpointerdown = (e) => e.stopPropagation();
+      const retry = $("retryBtn");
+      if (retry) retry.onclick = (e) => {
+        e.stopPropagation();
+        swipe(d.kind === "shape" ? "shape" : "implement");
+        showToast("re-dispatched. run it back.");
+      };
+    } catch { box.style.display = "none"; }
+  }
+  setInterval(() => { if (started) refreshLogbox().catch(() => {}); }, 2000);
 
   // --- repo picker -------------------------------------------------
   const repoOverlay = $("repoOverlay");

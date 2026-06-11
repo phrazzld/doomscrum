@@ -353,6 +353,65 @@ async fn dispatch_against_a_foreign_repo_routes_to_that_repos_remote() {
     assert!(root.join(".doomscrum/dispatches").exists());
 }
 
+/// 009: a flopped agent is visible from the feed — failing stage + log
+/// tail via the log route — and retrying creates a fresh dispatch.
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_dispatch_exposes_log_and_retry_creates_a_fresh_dispatch() {
+    let mut app = spawn_app().await;
+    // Keep a handle on the temp dir; rebuild the app with a flopping agent.
+    let root = app.root.clone();
+    let mut cfg = Config::default();
+    cfg.agent.implement_cmd = vec![
+        "sh".into(),
+        "-c".into(),
+        "echo the build exploded spectacularly; exit 1".into(),
+    ];
+    let ctx = AppCtx::new(root, cfg);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    app.addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router(ctx)).await.unwrap();
+    });
+
+    let (_, state) = app.get("/api/state").await;
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let (_, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": prd_id, "action": "implement" }),
+        )
+        .await;
+    let id = body["dispatch"]["id"].as_str().unwrap().to_string();
+    let receipt = app.await_dispatch(&id).await;
+    assert_eq!(receipt["status"], "failed");
+
+    // The log route surfaces the failing stage and the agent's last words.
+    let (status, log) = app.get(&format!("/api/dispatch/{id}/log")).await;
+    assert_eq!(status, 200);
+    assert_eq!(log["status"], "failed");
+    assert_eq!(log["failing_stage"], "agent");
+    let tail = log["tail"].as_array().unwrap();
+    assert!(
+        tail.iter()
+            .any(|l| l.as_str().unwrap_or("").contains("exploded spectacularly")),
+        "tail: {tail:?}"
+    );
+
+    // Retry = swipe again: a fresh dispatch with a fresh id.
+    let (status, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": prd_id, "action": "implement" }),
+        )
+        .await;
+    assert_eq!(status, 200);
+    let id2 = body["dispatch"]["id"].as_str().unwrap();
+    assert_ne!(id, id2, "retry must create a fresh dispatch");
+
+    let (status, _) = app.get("/api/dispatch/nope/log").await;
+    assert_eq!(status, 404);
+}
+
 /// Demo-day flow: switch the synced repo from the UI without a restart;
 /// feed follows, state stays namespaced per repo.
 #[tokio::test(flavor = "multi_thread")]
