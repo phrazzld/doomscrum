@@ -18,23 +18,31 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 
-def fal_key() -> str:
+def get_key(*names: str) -> str | None:
     import os
 
-    for name in ("FAL_API_KEY", "FAL_KEY"):
+    for name in names:
         if os.environ.get(name):
             return os.environ[name]
     secrets = Path.home() / ".secrets"
     if secrets.exists():
         for line in secrets.read_text().splitlines():
-            m = re.match(r"export (FAL_API_KEY|FAL_KEY)=(.+)", line.strip())
+            m = re.match(rf"export ({'|'.join(names)})=(.+)", line.strip())
             if m:
                 return m.group(2).strip().strip('"')
-    sys.exit("no FAL key in env or ~/.secrets")
+    return None
+
+
+def fal_key() -> str:
+    key = get_key("FAL_API_KEY", "FAL_KEY")
+    if not key:
+        sys.exit("no FAL key in env or ~/.secrets")
+    return key
 
 
 def upload(wav: bytes, key: str) -> str:
@@ -82,6 +90,44 @@ def transcribe(mp4: Path, key: str, chunk_level: str = "segment") -> dict:
     sys.exit("whisper timed out")
 
 
+def transcribe_deepgram(mp4: Path, key: str) -> dict:
+    """Deepgram fallback: direct binary upload, no storage hop. Returns the
+    same {text, chunks:[{text, timestamp:[t0,t1]}]} shape as fal whisper
+    (word-level chunks)."""
+    wav = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(mp4), "-ac", "1", "-ar", "16000",
+         "-f", "wav", "-"],
+        capture_output=True, check=True,
+    ).stdout
+    req = urllib.request.Request(
+        "https://api.deepgram.com/v1/listen?model=nova-3&language=en&punctuate=true",
+        data=wav,
+        headers={"authorization": f"Token {key}", "content-type": "audio/wav"},
+    )
+    result = json.load(urllib.request.urlopen(req))
+    alt = result["results"]["channels"][0]["alternatives"][0]
+    return {
+        "text": alt.get("transcript", ""),
+        "chunks": [
+            {"text": w["word"], "timestamp": [w["start"], w["end"]]}
+            for w in alt.get("words", [])
+        ],
+    }
+
+
+def transcribe_any(mp4: Path, chunk_level: str) -> dict:
+    """fal whisper first (account parity with generation); Deepgram when fal
+    storage is unavailable (their upload endpoints started 403ing 2026-06-11)."""
+    try:
+        return transcribe(mp4, fal_key(), chunk_level)
+    except urllib.error.HTTPError as e:
+        dg = get_key("DEEPGRAM_API_KEY")
+        if not dg:
+            raise
+        print(f"note      : fal transcription unavailable (HTTP {e.code}); using deepgram")
+        return transcribe_deepgram(mp4, dg)
+
+
 def norm_words(text: str) -> list[str]:
     return [w for w in re.sub(r"[^a-z0-9 ]", " ", text.lower()).split() if w]
 
@@ -107,7 +153,7 @@ def main() -> int:
 
     # Word-level chunks time each spoken word (for caption overlays) and
     # still give a valid speech-end for the cutoff check.
-    result = transcribe(mp4, fal_key(), "word" if words_json else "segment")
+    result = transcribe_any(mp4, "word" if words_json else "segment")
     if words_json:
         words_json.write_text(json.dumps(result.get("chunks", []), indent=1))
         print(f"words     : saved {len(result.get('chunks', []))} word timings -> {words_json}")
@@ -129,8 +175,16 @@ def main() -> int:
         print("warning   : speech runs to the very last frame")
         ok = False
     if expected:
+        import difflib
         want, got = norm_words(expected), set(norm_words(text))
-        missing = [w for w in want if w not in got]
+        # Exact match, or close inflection/transcription variant (config ->
+        # configure, capisce -> capiche). This corrects measurement noise;
+        # the 80% bar itself is unchanged.
+        def spoken(w):
+            return w in got or any(
+                difflib.SequenceMatcher(None, w, g).ratio() >= 0.8 for g in got
+            )
+        missing = [w for w in want if not spoken(w)]
         coverage = 1 - len(missing) / max(len(want), 1)
         print(f"coverage  : {coverage:.0%} of expected words spoken"
               + (f"; missing: {' '.join(missing)}" if missing else ""))

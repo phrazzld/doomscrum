@@ -48,24 +48,20 @@ max_total_spend_usd = 70.0
 
 # Render portfolio (see docs/EFFICIENCY.md): each spec deterministically
 # draws one pipeline by content hash. Weighted toward cheap/short clips
-# with a hero sprinkle — average ≈ $0.77/clip vs $1.20 flat sora.
-# NOTE: these [[video.mix]] tables must stay AFTER the plain [video] keys,
-# and ltx-2.3 diction/caption quality is unverified — every paid render
-# still goes through scripts/check_script_fit.py before it counts.
+# with a hero sprinkle — average ≈ $0.94/clip vs $1.20 flat sora.
+# NOTE: these [[video.mix]] tables must stay AFTER the plain [video] keys.
+# ltx-2.3 was VERIFIED BAD 2026-06-11 and removed: transcript gate caught
+# catastrophic diction ("no vibes merges, capiche" -> "No merges. Copy,
+# sheep."), one cutoff, plus two 422s and a queue timeout in one batch.
 [[video.mix]]
-model = "fal-ai/ltx-2.3/text-to-video/fast" # $0.04/s @1080p, native audio
-duration_sec = 8                            # $0.32/clip
-weight = 5
-
-[[video.mix]]
-model = "fal-ai/veo3.1/lite" # $0.05/s @720p, native audio
+model = "fal-ai/veo3.1/lite" # $0.05/s @720p, native audio, reliable diction
 duration_sec = 8             # $0.40/clip
-weight = 2
+weight = 5
 
 [[video.mix]]
 model = "fal-ai/sora-2/text-to-video" # $0.10/s, speaks the criterion at 12s
 duration_sec = 12                     # $1.20/clip
-weight = 2
+weight = 3
 
 [[video.mix]]
 model = "bytedance/seedance-2.0/fast/text-to-video" # $0.2419/s showpiece

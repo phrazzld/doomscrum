@@ -80,7 +80,9 @@ fn system_prompt(duration_sec: u32) -> String {
          {{\"script\": \"...\", \"scene\": \"...\"}}\n\
          script: the complete spoken dialogue. HARD LIMIT {budget} words — it must be \
          finishable in {duration_sec} seconds at an energetic pace. Never invent features, \
-         metrics, or claims the spec doesn't make. No hashtags, no emoji.\n\
+         metrics, or claims the spec doesn't make. No hashtags, no emoji. Spell numbers \
+         as words (say \"four twenty-nine\", never \"429\") and avoid foreign or exotic \
+         interjections — video voice models garble them.\n\
          scene: one vivid paragraph for a text-to-video model describing the character and \
          setting that DELIVERS the script — who speaks, where, and the camera energy. Do \
          NOT include the dialogue text in the scene; it is appended separately."
