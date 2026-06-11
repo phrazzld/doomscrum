@@ -109,6 +109,11 @@
     box-shadow: 3px 3px 0 #000;
   }
   .sticker.status { top: -14px; right: -18px; transform: rotate(6deg); background: var(--acid); color: #000; }
+  button.sticker.aiify {
+    top: auto; bottom: 120px; left: 50%; right: auto;
+    transform: translateX(-50%) rotate(-2deg);
+    background: var(--pink); color: #fff; cursor: pointer; border: 2px solid #000;
+  }
   .sticker.status.queued, .sticker.status.agent_running { background: var(--warn); animation: throb 1s infinite alternate; }
   .sticker.status.opening_pr { background: var(--cyan); animation: throb 1s infinite alternate; }
   .sticker.status.pr_opened { background: var(--pink); color: #fff; }
@@ -411,6 +416,8 @@
         <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
         <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
         <span class="sticker prio">#${prd.priority + 1}</span>
+        ${vid.provider === "fake-local" && window.__falConfigured
+          ? '<button class="sticker aiify" id="aiify">fixture → cook with AI ($)</button>' : ""}
         <div class="logbox" id="logbox" style="display:none"></div>
         <div class="caption">
           <div class="meme">${esc(prd.title)}</div>
@@ -419,6 +426,23 @@
       </div>`;
     const video = $("vid");
     if (started) { video.muted = false; video.play().catch(() => {}); }
+    const aiify = $("aiify");
+    if (aiify) {
+      aiify.onpointerdown = (e) => e.stopPropagation();
+      aiify.onclick = async (e) => {
+        e.stopPropagation();
+        showToast("cooking real AI video… ($)");
+        try {
+          await api("/api/generate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ provider: "fal", prd_id: prd.id }),
+          });
+          await load();
+          showToast("AI clip ready");
+        } catch (err) { showToast(err.message, true); }
+      };
+    }
     bindGestures($("card"), video);
   }
 
