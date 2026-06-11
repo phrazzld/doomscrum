@@ -41,9 +41,10 @@ max_duration_sec = 12
 price_per_second_usd = 0.15
 # Wallet guard: real renders refused once estimated total spend would
 # exceed this. Raise deliberately. (25 -> 40 for the seedance hero
-# re-render; 40 -> 60 on 2026-06-10 for the hypermaximalist regen:
-# veo-lite/sora-2 bake-off + full feed re-render on the winner.)
-max_total_spend_usd = 60.0
+# re-render; 40 -> 60 on 2026-06-10 for the hypermaximalist regen;
+# 60 -> 70 on 2026-06-11 for the demo-readiness batch: full feed on the
+# render mix with LLM scripts, ~$7.7 planned + re-roll headroom.)
+max_total_spend_usd = 70.0
 
 # Render portfolio (see docs/EFFICIENCY.md): each spec deterministically
 # draws one pipeline by content hash. Weighted toward cheap/short clips

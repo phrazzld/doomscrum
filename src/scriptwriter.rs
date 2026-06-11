@@ -122,15 +122,7 @@ async fn call_llm(
     let content = payload["choices"][0]["message"]["content"]
         .as_str()
         .context("scriptwriter reply had no message content")?;
-    let script = parse_reply(content, &cfg.model)?;
-    let budget = word_budget(duration_sec);
-    let count = script.script.split_whitespace().count();
-    anyhow::ensure!(
-        count <= budget + 3,
-        "scriptwriter blew the word budget: {count} words for a {budget}-word \
-         {duration_sec}s clip — re-run to re-roll"
-    );
-    Ok(script)
+    parse_reply(content, &cfg.model)
 }
 
 /// Get the LLM script for a spec: cache hit, or one paid call (~$0.002)
@@ -152,10 +144,23 @@ pub async fn write_script(
         "script.mode is \"llm\" but no OPENROUTER_API_KEY found (env or ~/.secrets); \
          set the key or set [script] mode = \"templates\" in doomscrum.toml",
     )?;
-    let script = call_llm(cfg, key, prd, duration_sec).await?;
-    std::fs::create_dir_all(cache_dir)?;
-    std::fs::write(&path, serde_json::to_string_pretty(&script)?)?;
-    Ok(script)
+    // Tight budgets (8s = 12 words) get blown on some takes at temp 0.9;
+    // a verbose take is a re-roll (~$0.004), never a batch abort.
+    let budget = word_budget(duration_sec);
+    let mut last_count = 0;
+    for _ in 0..3 {
+        let script = call_llm(cfg, key, prd, duration_sec).await?;
+        last_count = script.script.split_whitespace().count();
+        if last_count <= budget + 3 {
+            std::fs::create_dir_all(cache_dir)?;
+            std::fs::write(&path, serde_json::to_string_pretty(&script)?)?;
+            return Ok(script);
+        }
+    }
+    anyhow::bail!(
+        "scriptwriter blew the word budget on 3 takes (last: {last_count} words \
+         for a {budget}-word {duration_sec}s clip) — model can't hold this budget"
+    )
 }
 
 /// Compile the storyboard for a render. Real (paid) renders in "llm" mode
