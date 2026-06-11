@@ -58,27 +58,32 @@ pub fn parse_reply(content: &str, model: &str) -> Result<LlmScript> {
     })
 }
 
+/// Persona-first prompt: won the 2026-06-11 bench
+/// (scripts/script_bench.py, 7 models x 3 prompts x 4 specs, judged by
+/// gemini-3.1-pro + grok-4.3) — character voice carries both spec
+/// fidelity AND brainrot energy; coverage-first prompts score corporate,
+/// fragment-style prompts score low fidelity.
 fn system_prompt(duration_sec: u32) -> String {
     let budget = word_budget(duration_sec);
     format!(
-        "You write scripts for {duration_sec}-second vertical brainrot videos. Each video \
-         communicates one software backlog spec — the user input is the raw spec file, in \
-         whatever format it happens to be. Your job: the tightest, clearest, funniest \
-         possible articulation of WHAT the spec wants and (when stated) WHEN it counts as \
-         done. The spec is the content; the brainrot is the delivery.\n\
+        "You create {duration_sec}-second vertical brainrot videos that communicate \
+         software backlog specs — the user input is one raw spec file, in whatever format \
+         it happens to be.\n\
+         Work persona-first: FIRST invent one absurd character with a strong voice (a \
+         talking fruit in a soap opera, a 90s infomercial pitchman, a cryptid vlogger, an \
+         Italian-brainrot hybrid creature, a year-3024 street interviewee, a deadpan gen-z \
+         explainer, or something funnier you invent). THEN write the script as that \
+         character speaking IN VOICE — their verbal tics, their stakes, their drama — \
+         while still landing, unmistakably, WHAT the spec wants and (when stated) when it \
+         counts as done. The character serves the spec, never buries it.\n\
          Reply with STRICT JSON, no markdown fences, exactly two keys:\n\
          {{\"script\": \"...\", \"scene\": \"...\"}}\n\
          script: the complete spoken dialogue. HARD LIMIT {budget} words — it must be \
-         finishable in {duration_sec} seconds at an energetic pace. Punchy, meme-cadence, \
-         zero filler; every word earns its place. Never invent features, metrics, or claims \
-         the spec doesn't make. No hashtags, no emoji.\n\
+         finishable in {duration_sec} seconds at an energetic pace. Never invent features, \
+         metrics, or claims the spec doesn't make. No hashtags, no emoji.\n\
          scene: one vivid paragraph for a text-to-video model describing the character and \
-         setting that DELIVERS the script. Go absurd. House favorites for inspiration — a \
-         talking-fruit soap opera, a 90s infomercial pitchman, a cryptid filming a selfie \
-         vlog in the woods, an Italian-brainrot hybrid creature reveal, a street interview \
-         in the year 3024, a deadpan gen-z explainer — but inventing something equally \
-         unhinged is encouraged. Describe who speaks, where, and the camera energy. Do NOT \
-         include the dialogue text in the scene; it is appended separately."
+         setting that DELIVERS the script — who speaks, where, and the camera energy. Do \
+         NOT include the dialogue text in the scene; it is appended separately."
     )
 }
 
@@ -210,14 +215,14 @@ mod tests {
     async fn cache_hit_needs_no_key_and_no_network() {
         let dir = tempfile::tempdir().unwrap();
         let p = prd("# Anything");
+        let cfg = ScriptConfig::default();
         let cached = LlmScript {
-            model: "moonshotai/kimi-k2.6".into(),
+            model: cfg.model.clone(),
             script: "the cache speaks".into(),
             scene: "a filing cabinet with eyes".into(),
         };
         let path = cache_path(dir.path(), &p.sha256, &cached.model, 12);
         std::fs::write(&path, serde_json::to_string(&cached).unwrap()).unwrap();
-        let cfg = ScriptConfig::default();
         let got = write_script(&cfg, None, &p, 12, dir.path()).await.unwrap();
         assert_eq!(got.script, "the cache speaks");
     }
@@ -254,8 +259,9 @@ mod tests {
     async fn llm_storyboard_carries_script_through_the_standard_frame() {
         let dir = tempfile::tempdir().unwrap();
         let p = prd("totally unstructured spec, no headings, vibes only");
+        let cfg = ScriptConfig::default();
         let cached = LlmScript {
-            model: "moonshotai/kimi-k2.6".into(),
+            model: cfg.model.clone(),
             script: "fix the vibes. not done until the vibes are fixed".into(),
             scene: "a sentient lava lamp hosting a courtroom show".into(),
         };
@@ -264,12 +270,11 @@ mod tests {
             serde_json::to_string(&cached).unwrap(),
         )
         .unwrap();
-        let cfg = ScriptConfig::default();
         let board = storyboard(&cfg, None, &p, 12, dir.path(), true).await.unwrap();
         assert_eq!(board.expected_script, cached.script);
         assert!(board.provider_prompt.contains(&cached.scene));
         assert!(board.provider_prompt.contains(&cached.script));
         assert!(board.provider_prompt.contains("FINISHED by second"));
-        assert_eq!(board.tone, "llm:moonshotai/kimi-k2.6");
+        assert_eq!(board.tone, format!("llm:{}", cfg.model));
     }
 }

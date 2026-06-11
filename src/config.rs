@@ -150,8 +150,9 @@ pub struct ScriptConfig {
     /// "llm" (default — real renders refuse to fall back silently) or
     /// "templates" (deterministic, offline, free).
     pub mode: String,
-    /// OpenAI-compatible chat-completions model id. Kimi K2.6 is the
-    /// default: top-tier creative writing at ~$0.002 per script.
+    /// OpenAI-compatible chat-completions model id. gpt-5.4-mini won the
+    /// 2026-06-11 script bench (~$0.004/script); kimi-k2.5 is the budget
+    /// runner-up. Re-run scripts/script_bench.py before changing.
     pub model: String,
     /// OpenAI-compatible API base. OpenRouter by default (one key, any
     /// model); key resolved from OPENROUTER_API_KEY (env or ~/.secrets).
@@ -162,7 +163,7 @@ impl Default for ScriptConfig {
     fn default() -> Self {
         Self {
             mode: "llm".into(),
-            model: "moonshotai/kimi-k2.6".into(),
+            model: "openai/gpt-5.4-mini".into(),
             base_url: "https://openrouter.ai/api/v1".into(),
         }
     }
