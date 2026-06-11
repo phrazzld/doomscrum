@@ -71,6 +71,15 @@ model = "bytedance/seedance-2.0/fast/text-to-video" # $0.2419/s showpiece
 duration_sec = 12                                   # $2.90/clip
 weight = 1
 
+[script]
+# Scripts are LLM-written from the FULL raw spec (any format, any repo) —
+# the deterministic template planner is only the offline fallback for the
+# fake provider. ~$0.002/script, cached by spec hash in .doomscrum/scripts.
+# Preview before paying for video: `doomscrum script <title-substring>`.
+mode = "llm"                       # "llm" | "templates"
+model = "moonshotai/kimi-k2.6"     # via OpenRouter; top creative-writing tier
+base_url = "https://openrouter.ai/api/v1"
+
 # ---- Render profiles -------------------------------------------------
 # Partial [video] overrides; unset fields keep the base values above.
 # dev: free offline fixtures — the everyday default for working on the

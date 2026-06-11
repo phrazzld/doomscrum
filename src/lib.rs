@@ -4,6 +4,7 @@ pub mod dispatch;
 pub mod distill;
 pub mod events;
 pub mod providers;
+pub mod scriptwriter;
 pub mod secrets;
 pub mod server;
 pub mod util;

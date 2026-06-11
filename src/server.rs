@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 use crate::backlog::{self, PrdSource};
 use crate::config::Config;
 use crate::dispatch::{load_receipts, DispatchKind, Dispatcher};
-use crate::distill::{compile_storyboard, distill};
 use crate::events;
 use crate::providers::{fake::FakeProvider, fal::FalProvider, load_renders, Provider, VideoRender};
 use crate::secrets;
@@ -252,6 +251,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         }
     }
 
+    let script_key = crate::secrets::get(&["OPENROUTER_API_KEY"]);
     let mut rendered = Vec::new();
     for prd in targets {
         let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
@@ -259,11 +259,24 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
             Ok(p) => p,
             Err(err) => return error_response(StatusCode::BAD_REQUEST, err),
         };
-        let storyboard = compile_storyboard(
+        let storyboard = match crate::scriptwriter::storyboard(
+            &ctx.cfg.script,
+            script_key.as_deref(),
             &prd,
-            &distill(&prd),
             provider.clip_duration(vcfg.max_duration_sec),
-        );
+            &ctx.state_dir().join("scripts"),
+            provider_name != "fake",
+        )
+        .await
+        {
+            Ok(board) => board,
+            Err(err) => {
+                return error_response(
+                    StatusCode::BAD_GATEWAY,
+                    format!("scriptwriter failed for '{}': {err:#}", prd.title),
+                )
+            }
+        };
         let storyboards_dir = ctx.state_dir().join("storyboards");
         let _ = std::fs::create_dir_all(&storyboards_dir);
         let _ = std::fs::write(

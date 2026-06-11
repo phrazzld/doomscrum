@@ -34,6 +34,10 @@ pub struct Storyboard {
     pub aspect_ratio: String,
     pub beats: Vec<Beat>,
     pub provider_prompt: String,
+    /// The exact words the clip must speak — what
+    /// scripts/check_script_fit.py verifies against the transcript.
+    #[serde(default)]
+    pub expected_script: String,
 }
 
 /// Return the body of a `## Heading` section, if present.
@@ -488,13 +492,8 @@ fn pick<'a>(pool: &[&'a str], seed: u64, salt: u64) -> &'a str {
 /// and the whole script must finish before the clip ends. Scene
 /// ingredients (cast, setting, persona) are seeded per spec: anchors stay
 /// (bigfoot vlogs, fruit soap operas, pitchmen), details stay fresh.
-fn format_prompt(
-    format: BrainrotFormat,
-    script: &SpokenScript,
-    duration_sec: u32,
-    seed: u64,
-) -> String {
-    let header = format!(
+fn prompt_header(duration_sec: u32) -> String {
+    format!(
         "Vertical 9:16 video, exactly {duration_sec} seconds, with native audio: \
          clear spoken dialogue, sound effects, and music as described. Huge bold \
          meme-style captions with thick outlines pop onto the screen word by word, \
@@ -502,7 +501,56 @@ fn format_prompt(
          a viewer with sound off must still be able to read the entire script. \
          High energy throughout: the camera never sits still — punch-in zooms, \
          whip pans, dramatic push-ins on every beat."
+    )
+}
+
+fn prompt_pacing(word_count: usize, duration_sec: u32, full_text: &str) -> String {
+    format!(
+        "Dialogue starts within the first second — no silent intro. The complete spoken \
+         script is exactly the quoted text above — {} words total. Every word must be \
+         spoken at a natural energetic pace and FINISHED by second {} of the {}-second \
+         video, leaving the last moments for a held reaction shot or visual beat. \
+         Never cut off mid-sentence; the clip must feel like one complete unit. \
+         Full script for reference: \"{}\"",
+        word_count,
+        duration_sec.saturating_sub(2).max(1),
+        duration_sec,
+        full_text,
+    )
+}
+
+const PROMPT_GUARDRAIL: &str =
+    "All spoken lines must stay faithful to the quoted script. Do not invent \
+     shipped features, metrics, customer names, or implementation details. \
+     Do not claim anything has shipped or that tests pass. \
+     On-screen captions, if any, must match the dialogue.";
+
+/// Wrap an externally-written scene + script in the standard provider-prompt
+/// frame (caption/motion header, pacing contract, fidelity guardrail). The
+/// LLM scriptwriter path composes its prompts through this so every render —
+/// templated or LLM-written — carries the same verifiable speech contract.
+pub fn compose_provider_prompt(scene: &str, script_text: &str, duration_sec: u32) -> String {
+    let scene = format!(
+        "{} The character delivers, every word crisp and clearly intelligible: \"{}\"",
+        scene.trim_end(),
+        script_text
     );
+    format!(
+        "{}\n{}\n{}\n{}",
+        prompt_header(duration_sec),
+        scene,
+        prompt_pacing(words(script_text), duration_sec, script_text),
+        PROMPT_GUARDRAIL
+    )
+}
+
+fn format_prompt(
+    format: BrainrotFormat,
+    script: &SpokenScript,
+    duration_sec: u32,
+    seed: u64,
+) -> String {
+    let header = prompt_header(duration_sec);
     let hook = &script.hook;
     let goal = &script.goal;
     let scene = match format {
@@ -659,23 +707,8 @@ fn format_prompt(
             )
         }
     };
-    let pacing = format!(
-        "Dialogue starts within the first second — no silent intro. The complete spoken \
-         script is exactly the quoted text above — {} words total. Every word must be \
-         spoken at a natural energetic pace and FINISHED by second {} of the {}-second \
-         video, leaving the last moments for a held reaction shot or visual beat. \
-         Never cut off mid-sentence; the clip must feel like one complete unit. \
-         Full script for reference: \"{}\"",
-        script.word_count(),
-        duration_sec.saturating_sub(2).max(1),
-        duration_sec,
-        script.full_text(),
-    );
-    let guardrail = "All spoken lines must stay faithful to the quoted script. Do not invent \
-                     shipped features, metrics, customer names, or implementation details. \
-                     Do not claim anything has shipped or that tests pass. \
-                     On-screen captions, if any, must match the dialogue.";
-    format!("{header}\n{scene}\n{pacing}\n{guardrail}")
+    let pacing = prompt_pacing(script.word_count(), duration_sec, &script.full_text());
+    format!("{header}\n{scene}\n{pacing}\n{PROMPT_GUARDRAIL}")
 }
 
 pub fn compile_storyboard(
@@ -759,6 +792,7 @@ pub fn compile_with_format(
         aspect_ratio: "9:16".into(),
         beats,
         provider_prompt,
+        expected_script: script.full_text(),
     }
 }
 

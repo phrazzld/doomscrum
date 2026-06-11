@@ -5,7 +5,6 @@ use clap::{Parser, Subcommand};
 
 use doomscrum::config::Config;
 use doomscrum::dispatch;
-use doomscrum::distill::{compile_storyboard, distill};
 use doomscrum::providers::load_renders;
 use doomscrum::server::{self, AppCtx};
 
@@ -56,6 +55,15 @@ enum Command {
         /// (case-insensitive).
         #[arg(long)]
         spec: Option<String>,
+    },
+    /// Write (or replay from cache) the LLM script for one spec and print
+    /// it — preview the words before paying for video.
+    Script {
+        /// Substring of the spec title or id (case-insensitive).
+        spec: String,
+        /// Ignore the cache and pay for a fresh take.
+        #[arg(long, default_value_t = false)]
+        reroll: bool,
     },
     /// Print a summary of specs, renders, and dispatches.
     Report,
@@ -139,15 +147,20 @@ async fn main() -> Result<()> {
                 println!("wallet: ${spent:.2} spent, ${planned:.2} planned, ${cap:.2} cap");
             }
 
+            let script_key = doomscrum::secrets::get(&["OPENROUTER_API_KEY"]);
             let mut count = 0usize;
             for prd in targets {
                 let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
                 let provider = ctx.provider_with(&provider_name, &vcfg)?;
-                let storyboard = compile_storyboard(
+                let storyboard = doomscrum::scriptwriter::storyboard(
+                    &ctx.cfg.script,
+                    script_key.as_deref(),
                     &prd,
-                    &distill(&prd),
                     provider.clip_duration(vcfg.max_duration_sec),
-                );
+                    &ctx.state_dir().join("scripts"),
+                    provider_name != "fake",
+                )
+                .await?;
                 let storyboards_dir = ctx.state_dir().join("storyboards");
                 std::fs::create_dir_all(&storyboards_dir)?;
                 std::fs::write(
@@ -166,6 +179,43 @@ async fn main() -> Result<()> {
                 count += 1;
             }
             println!("done: {count} new render(s)");
+        }
+        Command::Script { spec, reroll } => {
+            let ctx = AppCtx::new(root, cfg);
+            let needle = spec.to_lowercase();
+            let prd = ctx
+                .scan()?
+                .into_iter()
+                .find(|p| {
+                    p.title.to_lowercase().contains(&needle) || p.id.contains(&needle)
+                })
+                .ok_or_else(|| anyhow::anyhow!("no spec matching {spec:?} in the feed"))?;
+            let cache_dir = ctx.state_dir().join("scripts");
+            if reroll {
+                // Drop any cached takes for this spec so the next write pays
+                // for a fresh one.
+                if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                    for e in entries.flatten() {
+                        if e.file_name().to_string_lossy().starts_with(&prd.sha256) {
+                            let _ = std::fs::remove_file(e.path());
+                        }
+                    }
+                }
+            }
+            let key = doomscrum::secrets::get(&["OPENROUTER_API_KEY"]);
+            let duration = ctx.cfg.video.with_pipeline(&prd.sha256).max_duration_sec;
+            let script = doomscrum::scriptwriter::write_script(
+                &ctx.cfg.script,
+                key.as_deref(),
+                &prd,
+                duration,
+                &cache_dir,
+            )
+            .await?;
+            println!("spec: {} ({}s clip)", prd.title, duration);
+            println!("model: {}", script.model);
+            println!("script ({} words):\n  {}", script.script.split_whitespace().count(), script.script);
+            println!("scene:\n  {}", script.scene);
         }
         Command::Report => {
             let ctx = AppCtx::new(root, cfg);

@@ -14,6 +14,7 @@ pub struct Config {
     pub repo: RepoConfig,
     pub feed: FeedConfig,
     pub video: VideoConfig,
+    pub script: ScriptConfig,
     pub agent: AgentConfig,
     /// Named video overrides so cheap local iteration and real content
     /// generation coexist in one file (`[profiles.dev]`, `[profiles.content]`).
@@ -137,6 +138,33 @@ impl VideoConfig {
             x -= w;
         }
         cfg
+    }
+}
+
+/// How spoken scripts are written. Specs arrive in arbitrary shapes from
+/// arbitrary repos, so the default is an LLM reading the full raw spec;
+/// the deterministic template planner survives only as the offline path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScriptConfig {
+    /// "llm" (default — real renders refuse to fall back silently) or
+    /// "templates" (deterministic, offline, free).
+    pub mode: String,
+    /// OpenAI-compatible chat-completions model id. Kimi K2.6 is the
+    /// default: top-tier creative writing at ~$0.002 per script.
+    pub model: String,
+    /// OpenAI-compatible API base. OpenRouter by default (one key, any
+    /// model); key resolved from OPENROUTER_API_KEY (env or ~/.secrets).
+    pub base_url: String,
+}
+
+impl Default for ScriptConfig {
+    fn default() -> Self {
+        Self {
+            mode: "llm".into(),
+            model: "moonshotai/kimi-k2.6".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+        }
     }
 }
 
