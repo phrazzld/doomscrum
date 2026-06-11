@@ -23,32 +23,104 @@ pub struct AppCtx {
     pub cfg: Config,
     /// Project root (where doomscrum.toml lives).
     pub root: PathBuf,
-    pub dispatcher: Arc<Dispatcher>,
+    /// The currently synced repo — switchable at runtime via /api/repo.
+    repo_sel: Arc<std::sync::RwLock<PathBuf>>,
 }
 
 impl AppCtx {
     pub fn new(root: PathBuf, cfg: Config) -> Self {
         let repo = root.join(&cfg.repo.path);
-        let state_dir = root.join(&cfg.repo.state_dir);
-        let dispatcher = Arc::new(Dispatcher {
-            repo,
-            dispatches_dir: state_dir.join("dispatches"),
-            worktrees_dir: state_dir.join("worktrees"),
-            agent: cfg.agent.clone(),
-        });
+        let repo = repo.canonicalize().unwrap_or(repo);
         Self {
             cfg,
             root,
-            dispatcher,
+            repo_sel: Arc::new(std::sync::RwLock::new(repo)),
         }
     }
 
     pub fn repo(&self) -> PathBuf {
-        self.root.join(&self.cfg.repo.path)
+        self.repo_sel.read().expect("repo lock").clone()
     }
 
+    /// The repo named in doomscrum.toml — its state stays in the legacy
+    /// flat layout so existing renders/dispatches survive.
+    fn default_repo(&self) -> PathBuf {
+        let repo = self.root.join(&self.cfg.repo.path);
+        repo.canonicalize().unwrap_or(repo)
+    }
+
+    /// Per-repo state: the configured repo keeps `<root>/<state_dir>`;
+    /// any other synced repo gets `<root>/<state_dir>/repos/<slug>-<hash>`
+    /// so renders, events, and dispatches never bleed across repos.
     pub fn state_dir(&self) -> PathBuf {
-        self.root.join(&self.cfg.repo.state_dir)
+        let base = self.root.join(&self.cfg.repo.state_dir);
+        let current = self.repo();
+        if current == self.default_repo() {
+            return base;
+        }
+        let s = current.to_string_lossy();
+        let name = current
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "repo".into());
+        base.join("repos")
+            .join(format!("{}-{}", crate::util::slug(&name), crate::util::short(&crate::util::sha256_hex(s.as_bytes()))))
+    }
+
+    /// Switch the synced repo. Validates the path and records it in the
+    /// recents file. The feed, renders, and dispatches all follow.
+    pub fn set_repo(&self, path: &str) -> anyhow::Result<PathBuf> {
+        let expanded = if let Some(rest) = path.strip_prefix("~/") {
+            PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(rest)
+        } else {
+            PathBuf::from(path)
+        };
+        let repo = expanded
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("no such directory {path:?}: {e}"))?;
+        let backlog = repo.join(&self.cfg.repo.backlog_dir);
+        anyhow::ensure!(
+            backlog.is_dir(),
+            "{} has no {}/ — not a syncable backlog repo",
+            repo.display(),
+            self.cfg.repo.backlog_dir
+        );
+        *self.repo_sel.write().expect("repo lock") = repo.clone();
+        let _ = self.remember_repo(&repo);
+        Ok(repo)
+    }
+
+    fn recents_path(&self) -> PathBuf {
+        self.root.join(&self.cfg.repo.state_dir).join("repos.json")
+    }
+
+    pub fn recent_repos(&self) -> Vec<String> {
+        std::fs::read_to_string(self.recents_path())
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default()
+    }
+
+    fn remember_repo(&self, repo: &std::path::Path) -> anyhow::Result<()> {
+        let mut recents = self.recent_repos();
+        let entry = repo.to_string_lossy().to_string();
+        recents.retain(|r| r != &entry);
+        recents.insert(0, entry);
+        recents.truncate(8);
+        std::fs::create_dir_all(self.root.join(&self.cfg.repo.state_dir))?;
+        std::fs::write(self.recents_path(), serde_json::to_string_pretty(&recents)?)?;
+        Ok(())
+    }
+
+    /// Dispatcher for the currently synced repo.
+    pub fn dispatcher(&self) -> Arc<Dispatcher> {
+        let state_dir = self.state_dir();
+        Arc::new(Dispatcher {
+            repo: self.repo(),
+            dispatches_dir: state_dir.join("dispatches"),
+            worktrees_dir: state_dir.join("worktrees"),
+            agent: self.cfg.agent.clone(),
+        })
     }
 
     pub fn renders_dir(&self) -> PathBuf {
@@ -103,12 +175,39 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/swipe", post(api_swipe))
         .route("/api/spec/{prd_id}", get(api_spec))
         .route("/api/dispatches", get(api_dispatches))
+        .route("/api/repo", get(api_repo_get).post(api_repo_set))
         .route("/media/{sha}/{file}", get(media))
         .with_state(ctx)
 }
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+async fn api_repo_get(State(ctx): State<AppCtx>) -> Response {
+    Json(json!({
+        "current": ctx.repo().to_string_lossy(),
+        "name": ctx.repo().file_name().map(|n| n.to_string_lossy().to_string()),
+        "recents": ctx.recent_repos(),
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct RepoBody {
+    path: String,
+}
+
+async fn api_repo_set(State(ctx): State<AppCtx>, Json(body): Json<RepoBody>) -> Response {
+    match ctx.set_repo(&body.path) {
+        Ok(repo) => Json(json!({
+            "current": repo.to_string_lossy(),
+            "name": repo.file_name().map(|n| n.to_string_lossy().to_string()),
+            "recents": ctx.recent_repos(),
+        }))
+        .into_response(),
+        Err(err) => error_response(StatusCode::BAD_REQUEST, format!("{err:#}")),
+    }
 }
 
 fn error_response(status: StatusCode, message: impl std::fmt::Display) -> Response {
@@ -143,7 +242,7 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     };
     let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
-    let receipts = load_receipts(&ctx.dispatcher.dispatches_dir).unwrap_or_default();
+    let receipts = load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
     let events = events::read_all(&ctx.events_path()).unwrap_or_default();
 
     let items: Vec<Value> = prds
@@ -339,7 +438,7 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
             Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
         },
         Some(kind) => {
-            let receipt = match ctx.dispatcher.create(&prd, kind) {
+            let receipt = match ctx.dispatcher().create(&prd, kind) {
                 Ok(r) => r,
                 Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
             };
@@ -354,7 +453,7 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
                 event_kind,
                 Some(format!("dispatch {}", receipt.id)),
             );
-            let dispatcher = ctx.dispatcher.clone();
+            let dispatcher = ctx.dispatcher();
             let queued = receipt.clone();
             tokio::spawn(async move {
                 dispatcher.run(queued, prd).await;
@@ -382,7 +481,7 @@ async fn api_spec(State(ctx): State<AppCtx>, UrlPath(prd_id): UrlPath<String>) -
 }
 
 async fn api_dispatches(State(ctx): State<AppCtx>) -> Response {
-    match load_receipts(&ctx.dispatcher.dispatches_dir) {
+    match load_receipts(&ctx.dispatcher().dispatches_dir) {
         Ok(receipts) => Json(json!({ "dispatches": receipts })).into_response(),
         Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     }

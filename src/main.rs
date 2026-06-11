@@ -222,7 +222,7 @@ async fn main() -> Result<()> {
             let prds = ctx.scan()?;
             let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
             let dispatches =
-                dispatch::load_receipts(&ctx.dispatcher.dispatches_dir).unwrap_or_default();
+                dispatch::load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
             println!("specs={}", prds.len());
             println!(
                 "spend=${:.2} cap=${:.2}",

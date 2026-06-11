@@ -270,6 +270,149 @@ async fn left_swipe_dispatches_shape_agent_that_edits_the_spec() {
     assert!(!local.contains("sharpened by agent"));
 }
 
+/// The demo-day contract for arbitrary repos: when `repo.path` points at a
+/// foreign repo, the worktree, branch, commit, push, and PR all happen
+/// against THAT repo — while runtime state stays under the operator root.
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_against_a_foreign_repo_routes_to_that_repos_remote() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("operator");
+    std::fs::create_dir_all(&root).unwrap();
+
+    // The foreign repo: its own git history, backlog, and bare origin.
+    let target = tmp.path().join("olympus");
+    let target_bare = tmp.path().join("olympus.git");
+    std::fs::create_dir_all(target.join("backlog.d")).unwrap();
+    std::fs::write(
+        target.join("backlog.d/001-foreign.md"),
+        "# Foreign Spec\n\n## Goal\nProve dispatch routes here.\n",
+    )
+    .unwrap();
+    sh(&target, &["git", "init", "-q", "-b", "main"]);
+    sh(&target, &["git", "config", "user.email", "t@doomscrum.local"]);
+    sh(&target, &["git", "config", "user.name", "DoomScrum Test"]);
+    sh(&target, &["git", "config", "commit.gpgsign", "false"]);
+    sh(&target, &["git", "add", "-A"]);
+    sh(&target, &["git", "commit", "-qm", "init"]);
+    sh(tmp.path(), &["git", "init", "-q", "--bare", "olympus.git"]);
+    sh(
+        &target,
+        &["git", "remote", "add", "origin", target_bare.to_str().unwrap()],
+    );
+
+    let mut cfg = Config::default();
+    cfg.repo.path = target.to_string_lossy().to_string();
+    cfg.agent.implement_cmd = vec![
+        "sh".into(),
+        "-c".into(),
+        "echo done > foreign-marker.txt".into(),
+    ];
+    cfg.agent.pr_cmd = vec!["sh".into(), "-c".into(), "echo https://example.test/pr/7".into()];
+
+    let ctx = AppCtx::new(root.clone(), cfg);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router(ctx)).await.unwrap();
+    });
+    let app = TestApp {
+        addr,
+        root: root.clone(),
+        bare: target_bare.clone(),
+        _tmp: tmp,
+    };
+
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"][0]["prd"]["title"], "Foreign Spec");
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": prd_id, "action": "implement" }),
+        )
+        .await;
+    assert_eq!(status, 200, "swipe failed: {body}");
+    let id = body["dispatch"]["id"].as_str().unwrap().to_string();
+    let branch = body["dispatch"]["branch"].as_str().unwrap().to_string();
+
+    let receipt = app.await_dispatch(&id).await;
+    assert_eq!(receipt["status"], "pr_opened", "receipt: {receipt}");
+
+    // The branch + agent commit landed on the FOREIGN repo's remote.
+    let refs = app.git_stdout(
+        &app.bare,
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    );
+    assert!(refs.contains(&branch), "foreign remote refs: {refs}");
+    let files = app.git_stdout(&app.bare, &["ls-tree", "--name-only", &branch]);
+    assert!(files.contains("foreign-marker.txt"), "files: {files}");
+
+    // Operator root never became a git repo; state stayed on its side.
+    assert!(!root.join(".git").exists());
+    assert!(root.join(".doomscrum/dispatches").exists());
+}
+
+/// Demo-day flow: switch the synced repo from the UI without a restart;
+/// feed follows, state stays namespaced per repo.
+#[tokio::test(flavor = "multi_thread")]
+async fn repo_switch_at_runtime_swaps_the_feed_and_isolates_state() {
+    let app = spawn_app().await;
+
+    // A second repo with its own backlog appears on disk.
+    let other = app.root.parent().unwrap().join("otherrepo");
+    std::fs::create_dir_all(other.join("backlog.d")).unwrap();
+    std::fs::write(
+        other.join("backlog.d/001-other.md"),
+        "# Other Repo Spec\n\n## Goal\nBe someone else's backlog.\n",
+    )
+    .unwrap();
+
+    // Render the default repo first so we can prove isolation.
+    let (_, body) = app.post("/api/generate", json!({})).await;
+    assert_eq!(body["renders"].as_array().unwrap().len(), 3);
+
+    let (status, body) = app.get("/api/repo").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["name"], "project");
+
+    // Switch; the feed now serves the other repo, unrendered.
+    let (status, body) = app
+        .post("/api/repo", json!({ "path": other.to_string_lossy() }))
+        .await;
+    assert_eq!(status, 200, "switch failed: {body}");
+    assert_eq!(body["name"], "otherrepo");
+    assert_eq!(body["recents"].as_array().unwrap().len(), 1);
+
+    let (_, state) = app.get("/api/state").await;
+    let items = state["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["prd"]["title"], "Other Repo Spec");
+    assert!(
+        items[0]["render"].is_null(),
+        "default repo's renders bled into the other repo"
+    );
+
+    // Switch back: original feed and its renders are still there.
+    let (status, _) = app
+        .post("/api/repo", json!({ "path": app.root.to_string_lossy() }))
+        .await;
+    assert_eq!(status, 200);
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"].as_array().unwrap().len(), 3);
+    assert!(!state["items"][0]["render"].is_null());
+
+    // Junk paths are rejected.
+    let (status, _) = app.post("/api/repo", json!({ "path": "/nope/zilch" })).await;
+    assert_eq!(status, 400);
+    let no_backlog = app.root.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&no_backlog).unwrap();
+    let (status, _) = app
+        .post("/api/repo", json!({ "path": no_backlog.to_string_lossy() }))
+        .await;
+    assert_eq!(status, 400);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn skip_swipe_is_durable_and_nondestructive() {
     let app = spawn_app().await;
