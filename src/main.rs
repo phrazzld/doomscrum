@@ -19,6 +19,10 @@ struct Cli {
     /// Project root containing doomscrum.toml (defaults to cwd).
     #[arg(long, global = true)]
     root: Option<PathBuf>,
+    /// Render profile from [profiles.<name>] (overrides the `profile` key,
+    /// e.g. dev for free local iteration, content for real renders).
+    #[arg(long, global = true)]
+    profile: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -64,7 +68,7 @@ async fn main() -> Result<()> {
         Some(root) => root.canonicalize()?,
         None => std::env::current_dir()?,
     };
-    let mut cfg = Config::load(&root)?;
+    let mut cfg = Config::load_with_profile(&root, cli.profile.as_deref())?;
 
     match cli.command {
         Command::Serve { host, port } => {

@@ -1,5 +1,10 @@
 # DoomScrum configuration. Every field is optional; these are the defaults.
 
+# Active render profile (see [profiles.*] at the bottom). "dev" keeps all
+# local iteration FREE (fake provider); switch to "content" — or run with
+# `--profile content` — only when actually iterating on generated media.
+profile = "dev"
+
 [repo]
 # The repository DoomScrum is synced to. Backlog specs are read from
 # `<path>/<backlog_dir>`, and agent worktrees are created from this repo.
@@ -65,6 +70,21 @@ weight = 2
 model = "bytedance/seedance-2.0/fast/text-to-video" # $0.2419/s showpiece
 duration_sec = 12                                   # $2.90/clip
 weight = 1
+
+# ---- Render profiles -------------------------------------------------
+# Partial [video] overrides; unset fields keep the base values above.
+# dev: free offline fixtures — the everyday default for working on the
+# app itself. Once the stills pipeline (backlog 026) ships, dev should
+# point at it (~$0.05/clip bespoke) instead of the fixture.
+[profiles.dev]
+provider = "fake"
+mix = []
+
+# content: the real weighted render portfolio (avg ≈ $0.77/clip).
+# Use via `doomscrum generate --profile content --provider fal` or by
+# flipping the `profile` key while iterating on brainrot quality.
+[profiles.content]
+provider = "fal"
 
 [agent]
 # Right swipe runs implement_cmd in a fresh worktree; left swipe runs

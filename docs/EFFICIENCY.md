@@ -15,6 +15,11 @@ multiplies the others.
    cheap/short, a weighted few land hero. Current default averages
    **$0.77/clip** vs $1.20 flat sora. Mix entries are config — tuning the
    average is a one-line change.
+   *Profiles (shipped 2026-06-10):* `[profiles.<name>]` tables override
+   provider/model/mix per context; `profile = "dev"` keeps everyday local
+   work on the free fixture provider, `--profile content` flips to the
+   paid mix only when iterating on generated media. Once 026 lands, the
+   dev profile should point at the stills pipeline instead of the fixture.
 3. **Stills pipeline: image + Ken Burns + TTS** (backlog 026). Keyframe
    image (~$0.03) + free parallax motion + TTS voiceover (~$0.01) + our
    caption/ribbon overlay ≈ **$0.05/clip**, fully bespoke per spec.

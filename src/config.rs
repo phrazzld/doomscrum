@@ -8,10 +8,28 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
+    /// Active render profile (a key of `profiles`). Empty = base [video]
+    /// config as written. CLI `--profile` overrides this.
+    pub profile: String,
     pub repo: RepoConfig,
     pub feed: FeedConfig,
     pub video: VideoConfig,
     pub agent: AgentConfig,
+    /// Named video overrides so cheap local iteration and real content
+    /// generation coexist in one file (`[profiles.dev]`, `[profiles.content]`).
+    pub profiles: std::collections::BTreeMap<String, ProfileConfig>,
+}
+
+/// Partial video override applied when its profile is active. Unset fields
+/// keep the base [video] values; `mix = []` explicitly clears the mix.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ProfileConfig {
+    pub provider: Option<String>,
+    pub fal_model: Option<String>,
+    pub max_duration_sec: Option<u32>,
+    pub max_total_spend_usd: Option<f64>,
+    pub mix: Option<Vec<MixEntry>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,13 +192,53 @@ impl Default for AgentConfig {
 
 impl Config {
     pub fn load(root: &Path) -> Result<Self> {
+        Self::load_with_profile(root, None)
+    }
+
+    pub fn load_with_profile(root: &Path, profile: Option<&str>) -> Result<Self> {
         let path = root.join("doomscrum.toml");
-        if !path.exists() {
-            return Ok(Self::default());
+        let mut cfg: Config = if path.exists() {
+            let raw = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?
+        } else {
+            Self::default()
+        };
+        if let Some(name) = profile {
+            cfg.profile = name.to_string();
         }
-        let raw = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+        cfg.apply_active_profile()?;
+        Ok(cfg)
+    }
+
+    fn apply_active_profile(&mut self) -> Result<()> {
+        if self.profile.is_empty() {
+            return Ok(());
+        }
+        let Some(p) = self.profiles.get(&self.profile).cloned() else {
+            let known: Vec<&str> = self.profiles.keys().map(String::as_str).collect();
+            anyhow::bail!(
+                "unknown profile {:?}; available profiles: {}",
+                self.profile,
+                if known.is_empty() { "(none defined)".to_string() } else { known.join(", ") }
+            );
+        };
+        if let Some(v) = p.provider {
+            self.video.provider = v;
+        }
+        if let Some(v) = p.fal_model {
+            self.video.fal_model = v;
+        }
+        if let Some(v) = p.max_duration_sec {
+            self.video.max_duration_sec = v;
+        }
+        if let Some(v) = p.max_total_spend_usd {
+            self.video.max_total_spend_usd = v;
+        }
+        if let Some(v) = p.mix {
+            self.video.mix = v;
+        }
+        Ok(())
     }
 }
 
@@ -291,6 +349,73 @@ weight = 1
         let v = cfg.with_pipeline("deadbeef00000000");
         assert_eq!(v.fal_model, cfg.fal_model);
         assert_eq!(v.max_duration_sec, cfg.max_duration_sec);
+    }
+
+    fn profile_toml() -> &'static str {
+        r#"
+profile = "dev"
+
+[video]
+provider = "fal"
+fal_model = "fal-ai/sora-2/text-to-video"
+max_duration_sec = 12
+
+[[video.mix]]
+model = "fal-ai/ltx-2.3/text-to-video/fast"
+duration_sec = 8
+weight = 5
+
+[[video.mix]]
+model = "fal-ai/sora-2/text-to-video"
+duration_sec = 12
+weight = 1
+
+[profiles.dev]
+provider = "fake"
+mix = []
+
+[profiles.content]
+provider = "fal"
+"#
+    }
+
+    #[test]
+    fn active_profile_overrides_video_at_load() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("doomscrum.toml"), profile_toml()).unwrap();
+        let cfg = Config::load(dir.path()).unwrap();
+        // dev profile: free provider, mix cleared, base model untouched.
+        assert_eq!(cfg.video.provider, "fake");
+        assert!(cfg.video.mix.is_empty());
+        assert_eq!(cfg.video.fal_model, "fal-ai/sora-2/text-to-video");
+    }
+
+    #[test]
+    fn cli_profile_override_beats_the_toml_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("doomscrum.toml"), profile_toml()).unwrap();
+        let cfg = Config::load_with_profile(dir.path(), Some("content")).unwrap();
+        // content profile leaves the render mix intact.
+        assert_eq!(cfg.video.provider, "fal");
+        assert_eq!(cfg.video.mix.len(), 2);
+    }
+
+    #[test]
+    fn unknown_profile_is_an_error_naming_the_options() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("doomscrum.toml"), profile_toml()).unwrap();
+        let err = Config::load_with_profile(dir.path(), Some("nope")).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("nope"), "{msg}");
+        assert!(msg.contains("dev"), "{msg}");
+    }
+
+    #[test]
+    fn no_profile_keys_keeps_legacy_behavior() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::load(dir.path()).unwrap();
+        assert_eq!(cfg.profile, "");
+        assert!(cfg.profiles.is_empty());
     }
 
     #[test]
