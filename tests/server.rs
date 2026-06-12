@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use doomscrum::config::Config;
+use doomscrum::providers::{save_render, VideoRender};
+use doomscrum::server::{router, AppCtx};
 use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-use doomscrum::config::Config;
-use doomscrum::server::{router, AppCtx};
 
 struct TestApp {
     addr: SocketAddr,
@@ -182,6 +183,32 @@ impl TestApp {
     }
 }
 
+fn render_fixture(
+    prd_id: &str,
+    prd_sha256: &str,
+    id: &str,
+    provider: &str,
+    created_at: &str,
+) -> VideoRender {
+    let asset_file = format!("{id}.mp4");
+    VideoRender {
+        id: id.into(),
+        prd_id: prd_id.into(),
+        prd_sha256: prd_sha256.into(),
+        storyboard_id: format!("{id}-storyboard"),
+        provider: provider.into(),
+        model: "test-model".into(),
+        native_audio: true,
+        status: "ready".into(),
+        asset_url: format!("/media/{prd_sha256}/{asset_file}"),
+        asset_file,
+        provider_job_id: Some(format!("{id}-job")),
+        cost_estimate_usd: 0.0,
+        latency_ms: 1,
+        created_at: created_at.into(),
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn feed_renders_and_serves_video() {
     let app = spawn_app().await;
@@ -220,6 +247,105 @@ async fn feed_renders_and_serves_video() {
     // Regenerate is idempotent unless forced.
     let (_, body) = app.post("/api/generate", json!({})).await;
     assert_eq!(body["renders"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn state_selects_newest_ready_render_even_when_fixture_is_newer_than_real() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = &state["items"][0]["prd"];
+    let prd_id = prd["id"].as_str().unwrap();
+    let prd_sha256 = prd["sha256"].as_str().unwrap();
+
+    save_render(
+        &app.root.join(".doomscrum/renders"),
+        &render_fixture(
+            prd_id,
+            prd_sha256,
+            "old-real-render",
+            "fal",
+            "2026-01-01T00:00:00.000Z",
+        ),
+    )
+    .unwrap();
+    save_render(
+        &app.root.join(".doomscrum/renders"),
+        &render_fixture(
+            prd_id,
+            prd_sha256,
+            "new-fixture-render",
+            "fake-local",
+            "2026-01-01T00:00:01.000Z",
+        ),
+    )
+    .unwrap();
+
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"][0]["render"]["id"], "new-fixture-render");
+    assert_eq!(state["items"][0]["render"]["provider"], "fake-local");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forced_regeneration_preserves_old_json_and_updates_gallery_metadata() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = &state["items"][0]["prd"];
+    let prd_id = prd["id"].as_str().unwrap().to_string();
+    let prd_sha256 = prd["sha256"].as_str().unwrap().to_string();
+    let prd_path = prd["path"].as_str().unwrap();
+    let source_path = app.root.join(prd_path);
+    let source_before = std::fs::read(&source_path).unwrap();
+
+    let (status, first_body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id }),
+        )
+        .await;
+    assert_eq!(status, 200, "first generate failed: {first_body}");
+    let first = &first_body["renders"][0];
+    let first_id = first["id"].as_str().unwrap().to_string();
+    let first_url = first["asset_url"].as_str().unwrap().to_string();
+
+    let (status, second_body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id, "force": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "forced generate failed: {second_body}");
+    let second = &second_body["renders"][0];
+    let second_id = second["id"].as_str().unwrap().to_string();
+    let second_url = second["asset_url"].as_str().unwrap().to_string();
+
+    assert_ne!(first_id, second_id);
+    assert_ne!(first_url, second_url);
+
+    let render_dir = app.root.join(".doomscrum/renders").join(&prd_sha256);
+    let mut json_files: Vec<_> = std::fs::read_dir(&render_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            (path.extension().is_some_and(|ext| ext == "json")).then_some(path)
+        })
+        .collect();
+    json_files.sort();
+    assert_eq!(json_files.len(), 2, "render JSON files: {json_files:?}");
+    assert!(render_dir.join(format!("{first_id}.json")).exists());
+    assert!(render_dir.join(format!("{second_id}.json")).exists());
+
+    let source_after = std::fs::read(&source_path).unwrap();
+    assert_eq!(source_before, source_after);
+
+    let (_, refreshed) = app.get("/api/state").await;
+    assert_eq!(refreshed["items"][0]["render"]["id"], second_id);
+    assert_eq!(refreshed["items"][0]["render"]["asset_url"], second_url);
+}
+
+#[test]
+fn gallery_card_signature_tracks_render_media_url() {
+    let html = include_str!("../assets/index.html");
+    assert!(html.contains("item && item.render && item.render.asset_url"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -277,8 +403,13 @@ async fn real_render_route_requires_cost_confirmation_and_daily_budget() {
     })
     .await;
 
-    let (status, body) = app.post("/api/generate", json!({ "provider": "fal" })).await;
-    assert_eq!(status, 409, "unconfirmed fal render should stop early: {body}");
+    let (status, body) = app
+        .post("/api/generate", json!({ "provider": "fal" }))
+        .await;
+    assert_eq!(
+        status, 409,
+        "unconfirmed fal render should stop early: {body}"
+    );
     assert_eq!(body["requires_confirmation"], true);
     assert_eq!(body["render_count"], 3);
     assert!(
@@ -292,7 +423,10 @@ async fn real_render_route_requires_cost_confirmation_and_daily_budget() {
             json!({ "provider": "fal", "confirmed_cost": true }),
         )
         .await;
-    assert_eq!(status, 429, "daily budget should fail before FAL key lookup: {body}");
+    assert_eq!(
+        status, 429,
+        "daily budget should fail before FAL key lookup: {body}"
+    );
     assert!(body["error"]
         .as_str()
         .unwrap()
@@ -319,9 +453,9 @@ async fn real_render_budget_counts_in_flight_reservations() {
         .await;
     Mock::given(method("GET"))
         .and(path("/files/out.mp4"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(
-            b"\x00\x00\x00\x18ftypmp42-doomscrum-test",
-        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_bytes(b"\x00\x00\x00\x18ftypmp42-doomscrum-test"),
+        )
         .mount(&fal)
         .await;
 
@@ -353,7 +487,10 @@ async fn real_render_budget_counts_in_flight_reservations() {
             json!({ "provider": "fal", "prd_id": second, "confirmed_cost": true }),
         )
         .await;
-    assert_eq!(status, 429, "pending first render must count against daily cap: {body}");
+    assert_eq!(
+        status, 429,
+        "pending first render must count against daily cap: {body}"
+    );
     assert_eq!(body["daily_pending_usd"], 1.2);
     assert_eq!(body["planned_usd"], 1.2);
     assert!(body["reset_at"].as_str().unwrap().contains('T'));
@@ -412,7 +549,10 @@ async fn dispatches_are_capped_queued_and_deduped_while_active() {
         .iter()
         .find(|d| d["id"] == second_id)
         .unwrap();
-    assert_eq!(second_receipt["status"], "queued", "second receipt: {second_receipt}");
+    assert_eq!(
+        second_receipt["status"], "queued",
+        "second receipt: {second_receipt}"
+    );
 
     let first_receipt = app.await_dispatch(&first_id).await;
     let second_receipt = app.await_dispatch(&second_id).await;
@@ -473,7 +613,10 @@ async fn dispatch_against_a_foreign_repo_routes_to_that_repos_remote() {
     )
     .unwrap();
     sh(&target, &["git", "init", "-q", "-b", "main"]);
-    sh(&target, &["git", "config", "user.email", "t@doomscrum.local"]);
+    sh(
+        &target,
+        &["git", "config", "user.email", "t@doomscrum.local"],
+    );
     sh(&target, &["git", "config", "user.name", "DoomScrum Test"]);
     sh(&target, &["git", "config", "commit.gpgsign", "false"]);
     sh(&target, &["git", "add", "-A"]);
@@ -481,7 +624,13 @@ async fn dispatch_against_a_foreign_repo_routes_to_that_repos_remote() {
     sh(tmp.path(), &["git", "init", "-q", "--bare", "olympus.git"]);
     sh(
         &target,
-        &["git", "remote", "add", "origin", target_bare.to_str().unwrap()],
+        &[
+            "git",
+            "remote",
+            "add",
+            "origin",
+            target_bare.to_str().unwrap(),
+        ],
     );
 
     let mut cfg = Config::default();
@@ -491,7 +640,11 @@ async fn dispatch_against_a_foreign_repo_routes_to_that_repos_remote() {
         "-c".into(),
         "echo done > foreign-marker.txt".into(),
     ];
-    cfg.agent.pr_cmd = vec!["sh".into(), "-c".into(), "echo https://example.test/pr/7".into()];
+    cfg.agent.pr_cmd = vec![
+        "sh".into(),
+        "-c".into(),
+        "echo https://example.test/pr/7".into(),
+    ];
 
     let ctx = AppCtx::new(root.clone(), cfg);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -646,7 +799,9 @@ async fn repo_switch_at_runtime_swaps_the_feed_and_isolates_state() {
     assert!(!state["items"][0]["render"].is_null());
 
     // Junk paths are rejected.
-    let (status, _) = app.post("/api/repo", json!({ "path": "/nope/zilch" })).await;
+    let (status, _) = app
+        .post("/api/repo", json!({ "path": "/nope/zilch" }))
+        .await;
     assert_eq!(status, 400);
     let no_backlog = app.root.parent().unwrap().join("plain");
     std::fs::create_dir_all(&no_backlog).unwrap();

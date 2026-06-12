@@ -110,10 +110,13 @@ returns that receipt instead of launching a duplicate agent.
 
 The source spec stays authoritative. Every render records provider, model,
 spec sha256, storyboard hash, latency, and job id in
-`.doomscrum/renders/<spec-sha>/<render-id>.json`. MP4s are served with HTTP
-byte ranges and streamed from disk, so browser seek and loop requests do not
-buffer the full render in memory. Every decision (skip, dispatch) is appended
-to `.doomscrum/events.ndjson`. Deleting `.doomscrum/` destroys only generated
+`.doomscrum/renders/<spec-sha>/<render-id>.json`. Render IDs and media URLs
+are cache-distinct for each successful generation, and the feed selects the
+newest ready provenance for a spec while leaving older JSON readable for
+audit. MP4s are served with HTTP byte ranges and streamed from disk, so
+browser seek and loop requests do not buffer the full render in memory. Every
+decision (skip, dispatch) is appended to `.doomscrum/events.ndjson`. Deleting
+`.doomscrum/` destroys only generated
 state — never specs.
 
 ## Development

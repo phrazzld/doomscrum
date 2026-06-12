@@ -2,11 +2,16 @@ pub mod fake;
 pub mod fal;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::distill::Storyboard;
+use crate::util::sha256_hex;
+
+static RENDER_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Provenance for one generated MP4. The source spec stays authoritative;
 /// every render points back at the spec hash and storyboard that produced it.
@@ -70,6 +75,24 @@ pub fn save_render(renders_dir: &Path, render: &VideoRender) -> Result<()> {
         .with_context(|| format!("writing {}", path.display()))
 }
 
+pub(crate) fn cache_distinct_render_id(seed: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let counter = RENDER_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let digest = sha256_hex(format!("{seed}:{nanos}:{counter}").as_bytes());
+    format!("{nanos:020}-{counter:06x}-{}", &digest[..12])
+}
+
+/// Freshness ordering for render provenance. `created_at` is the primary key;
+/// render id is a deterministic tie-breaker for same-millisecond writes.
+pub fn compare_render_freshness(a: &VideoRender, b: &VideoRender) -> std::cmp::Ordering {
+    a.created_at
+        .cmp(&b.created_at)
+        .then_with(|| a.id.cmp(&b.id))
+}
+
 /// All render provenance files, newest first.
 pub fn load_renders(renders_dir: &Path) -> Result<Vec<VideoRender>> {
     let mut renders = Vec::new();
@@ -93,6 +116,6 @@ pub fn load_renders(renders_dir: &Path) -> Result<Vec<VideoRender>> {
             }
         }
     }
-    renders.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    renders.sort_by(|a, b| compare_render_freshness(b, a));
     Ok(renders)
 }
