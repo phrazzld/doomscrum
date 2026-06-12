@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 
 use doomscrum::config::Config;
 use doomscrum::dispatch;
+use doomscrum::gc::{self, GcOptions};
 use doomscrum::providers::load_renders;
 use doomscrum::server::{self, AppCtx};
 
@@ -67,6 +68,21 @@ enum Command {
     },
     /// Print a summary of specs, renders, and dispatches.
     Report,
+    /// Garbage-collect generated renders, dispatch worktrees, and event logs.
+    Gc {
+        /// Print actions without deleting or rotating anything.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        /// Delete terminal dispatch worktrees at least this many days old.
+        #[arg(long, default_value_t = 7)]
+        worktree_max_age_days: u64,
+        /// Rotate events.ndjson once it exceeds this many bytes.
+        #[arg(long, default_value_t = 5_000_000)]
+        events_max_bytes: u64,
+        /// Keep this many recent bytes, rounded to complete event lines.
+        #[arg(long, default_value_t = 200_000)]
+        events_keep_bytes: u64,
+    },
 }
 
 #[tokio::main]
@@ -252,6 +268,24 @@ async fn main() -> Result<()> {
                     d.pr_url.clone().unwrap_or_default()
                 );
             }
+        }
+        Command::Gc {
+            dry_run,
+            worktree_max_age_days,
+            events_max_bytes,
+            events_keep_bytes,
+        } => {
+            let ctx = AppCtx::new(root, cfg);
+            let report = gc::collect(
+                &ctx,
+                GcOptions {
+                    dry_run,
+                    worktree_max_age_days,
+                    events_max_bytes,
+                    events_keep_bytes,
+                },
+            )?;
+            print!("{}", report.render_cli());
         }
     }
     Ok(())

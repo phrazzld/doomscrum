@@ -27,6 +27,9 @@ cargo run --release -- generate
 
 # 2. Serve the feed
 cargo run --release -- serve        # http://127.0.0.1:4173
+
+# Inspect generated-state cleanup without deleting anything
+cargo run --release -- gc --dry-run
 ```
 
 Tap the splash screen (sound gate), then swipe.
@@ -120,6 +123,14 @@ decision (skip, dispatch) and human vibe rating is appended to
 of mutating render JSON or source specs. Deleting `.doomscrum/` destroys only
 generated state — never specs.
 
+`doomscrum gc` keeps generated state bounded. It preserves every render JSON
+for audit, deletes only superseded MP4 assets (the latest ready render per
+spec/provider survives), runs `git worktree prune`, removes terminal dispatch
+worktrees past the age policy, and rotates `events.ndjson` by archiving the
+full ledger before keeping recent complete event lines. Use `--dry-run` to
+print the actions without touching source specs, open dispatches, renders, or
+logs.
+
 ## Development
 
 ```bash
@@ -143,8 +154,9 @@ src/
   providers/       fake (embedded fixture) and fal (real) video generation
   dispatch.rs      swipe → worktree → agent → commit → push → PR
   events.rs        durable NDJSON decision ledger
+  gc.rs            generated-state lifecycle and dry-run reporting
   server.rs        axum API + embedded UI
-  main.rs          CLI: serve | generate | report
+  main.rs          CLI: serve | generate | script | report | gc
 assets/index.html  the feed UI (single embedded file; the only non-Rust surface)
 backlog.d/         this repo's own sample specs
 docs/archive/      the original (superseded) MVP spec

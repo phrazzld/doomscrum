@@ -3,6 +3,7 @@ pub mod config;
 pub mod dispatch;
 pub mod distill;
 pub mod events;
+pub mod gc;
 pub mod providers;
 pub mod scriptwriter;
 pub mod secrets;
