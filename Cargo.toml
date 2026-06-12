@@ -20,6 +20,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
 
 [dev-dependencies]
+headless_chrome = "1.0.22"
 tempfile = "3"
 wiremock = "0.6"
 

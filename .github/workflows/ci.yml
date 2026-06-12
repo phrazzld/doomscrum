@@ -32,6 +32,9 @@ jobs:
         with:
           shared-key: doomscrum-ci
 
+      - name: Show Chrome version
+        run: google-chrome --version || google-chrome-stable --version || chromium --version || chromium-browser --version
+
       - name: Check formatting
         run: cargo fmt --check
 
