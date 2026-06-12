@@ -202,7 +202,10 @@ fn gc_prunes_terminal_worktrees_but_keeps_open_dispatch_state() {
     assert!(!completed.exists());
     for status in active_statuses {
         assert!(dispatcher.worktrees_dir.join(status).exists());
-        assert!(dispatcher.dispatches_dir.join(format!("{status}.json")).exists());
+        assert!(dispatcher
+            .dispatches_dir
+            .join(format!("{status}.json"))
+            .exists());
     }
 }
 

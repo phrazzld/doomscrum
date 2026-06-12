@@ -258,7 +258,11 @@ impl Config {
             anyhow::bail!(
                 "unknown profile {:?}; available profiles: {}",
                 self.profile,
-                if known.is_empty() { "(none defined)".to_string() } else { known.join(", ") }
+                if known.is_empty() {
+                    "(none defined)".to_string()
+                } else {
+                    known.join(", ")
+                }
             );
         };
         if let Some(v) = p.provider {

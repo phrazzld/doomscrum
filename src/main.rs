@@ -128,9 +128,9 @@ async fn main() -> Result<()> {
                 .scan()?
                 .into_iter()
                 .filter(|prd| {
-                    spec_filter.as_ref().is_none_or(|f| {
-                        prd.title.to_lowercase().contains(f) || prd.id.contains(f)
-                    })
+                    spec_filter
+                        .as_ref()
+                        .is_none_or(|f| prd.title.to_lowercase().contains(f) || prd.id.contains(f))
                 })
                 .filter(|prd| {
                     let already = existing
@@ -209,9 +209,7 @@ async fn main() -> Result<()> {
             let prd = ctx
                 .scan()?
                 .into_iter()
-                .find(|p| {
-                    p.title.to_lowercase().contains(&needle) || p.id.contains(&needle)
-                })
+                .find(|p| p.title.to_lowercase().contains(&needle) || p.id.contains(&needle))
                 .ok_or_else(|| anyhow::anyhow!("no spec matching {spec:?} in the feed"))?;
             let cache_dir = ctx.state_dir().join("scripts");
             if reroll {
@@ -237,7 +235,11 @@ async fn main() -> Result<()> {
             .await?;
             println!("spec: {} ({}s clip)", prd.title, duration);
             println!("model: {}", script.model);
-            println!("script ({} words):\n  {}", script.script.split_whitespace().count(), script.script);
+            println!(
+                "script ({} words):\n  {}",
+                script.script.split_whitespace().count(),
+                script.script
+            );
             println!("scene:\n  {}", script.scene);
         }
         Command::Report => {

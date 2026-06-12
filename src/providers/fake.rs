@@ -288,10 +288,11 @@ mod tests {
         let mut script = std::fs::File::create(&fake_ffmpeg).unwrap();
         writeln!(
             script,
-            "#!/bin/sh\nif [ \"$1\" = \"-hide_banner\" ]; then printf ' T.C drawtext V->V Draw text\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > '{}'\nlast=''\nfor arg do last=\"$arg\"; done\nprintf 'fake mp4' > \"$last\"\n",
+            "#!/bin/sh\nif [ \"$1\" = \"-hide_banner\" ]; then printf ' T.C drawtext V->V Draw text\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > '{}'\nlast=''\nfor arg in \"$@\"; do last=\"$arg\"; done\nprintf 'fake mp4' > \"$last\"\n",
             log.display()
         )
         .unwrap();
+        drop(script);
         let mut perms = std::fs::metadata(&fake_ffmpeg).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake_ffmpeg, perms).unwrap();

@@ -217,10 +217,22 @@ fn known_models_have_verified_prices_and_durations() {
 
     assert_eq!(clip_duration("fal-ai/sora-2/text-to-video", 8), 8);
     assert_eq!(clip_duration("fal-ai/sora-2/text-to-video", 9), 12);
-    assert_eq!(clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 8), 10);
-    assert_eq!(clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 4), 5);
-    assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 8), 8);
-    assert_eq!(clip_duration("bytedance/seedance-2.0/fast/text-to-video", 20), 15);
+    assert_eq!(
+        clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 8),
+        10
+    );
+    assert_eq!(
+        clip_duration("fal-ai/kling-video/v2.6/pro/text-to-video", 4),
+        5
+    );
+    assert_eq!(
+        clip_duration("bytedance/seedance-2.0/fast/text-to-video", 8),
+        8
+    );
+    assert_eq!(
+        clip_duration("bytedance/seedance-2.0/fast/text-to-video", 20),
+        15
+    );
     assert_eq!(clip_duration("fal-ai/veo3.1/fast", 8), 8);
     assert_eq!(clip_duration("fal-ai/veo3.1/lite", 12), 8);
 }

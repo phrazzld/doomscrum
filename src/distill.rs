@@ -200,24 +200,24 @@ pub fn word_budget(duration_sec: u32) -> usize {
 const DANGLERS: &[&str] = &[
     "so", "and", "or", "but", "the", "a", "an", "to", "of", "for", "on", "in", "with", "by",
     "that", "which", "until", "when", "while", "as", "is", "are", "its", "their", "it", "what",
-    "who", "how", "why", "where", "whether", "every", "each", "instead", "without", "via",
-    "from", "into", "than", "then", "also", "does", "do", "did", "can", "cannot", "could",
-    "should", "would", "will", "must", "may", "might", "has", "have", "had", "be", "been",
-    "was", "were", "not", "never",
+    "who", "how", "why", "where", "whether", "every", "each", "instead", "without", "via", "from",
+    "into", "than", "then", "also", "does", "do", "did", "can", "cannot", "could", "should",
+    "would", "will", "must", "may", "might", "has", "have", "had", "be", "been", "was", "were",
+    "not", "never",
 ];
 
 /// Words that can open a mid-sentence clause run and still read like the
 /// start of a sentence (articles, demonstratives, pronouns, quantifiers).
 const RUN_STARTERS: &[&str] = &[
-    "the", "a", "an", "this", "that", "these", "those", "it", "we", "you", "they", "no",
-    "every", "each", "all", "our", "your", "its",
+    "the", "a", "an", "this", "that", "these", "those", "it", "we", "you", "they", "no", "every",
+    "each", "all", "our", "your", "its",
 ];
 
 /// Words that open a subordinate intro phrase ("After a swipe, …"): a
 /// clause run starting here is not a sentence on its own.
 const INTRO_SUBORDINATORS: &[&str] = &[
-    "after", "before", "when", "while", "once", "if", "as", "until", "during", "upon",
-    "without", "unless", "since", "with",
+    "after", "before", "when", "while", "once", "if", "as", "until", "during", "upon", "without",
+    "unless", "since", "with",
 ];
 
 /// Spoken lines double as on-screen captions: start them like sentences.
@@ -472,8 +472,12 @@ pub fn plan_script(
     let remaining = budget.saturating_sub(used);
     // "Not done until" costs 3 words; only speak the criterion if at least
     // a few words of it fit — a truncated stump is worse than silence.
-    let criterion = (remaining >= 6)
-        .then(|| format!("Not done until {}.", tighten(criterion, remaining.saturating_sub(3))));
+    let criterion = (remaining >= 6).then(|| {
+        format!(
+            "Not done until {}.",
+            tighten(criterion, remaining.saturating_sub(3))
+        )
+    });
     SpokenScript {
         hook,
         goal: goal_line,
@@ -556,12 +560,24 @@ fn format_prompt(
     let scene = match format {
         BrainrotFormat::FruitDrama => {
             let accuser = pick(
-                &["furious strawberry", "seething grape", "heartbroken peach", "betrayed pineapple"],
-                seed, 1,
+                &[
+                    "furious strawberry",
+                    "seething grape",
+                    "heartbroken peach",
+                    "betrayed pineapple",
+                ],
+                seed,
+                1,
             );
             let accused = pick(
-                &["guilty mango", "smug banana", "scheming lime", "innocent-looking blueberry"],
-                seed, 2,
+                &[
+                    "guilty mango",
+                    "smug banana",
+                    "scheming lime",
+                    "innocent-looking blueberry",
+                ],
+                seed,
+                2,
             );
             let set = pick(
                 &[
@@ -569,7 +585,8 @@ fn format_prompt(
                     "A picnic table at golden hour",
                     "A farmers-market stall at dawn",
                 ],
-                seed, 3,
+                seed,
+                3,
             );
             let confession = match &script.criterion {
                 Some(c) => format!(" The {accused} looks away and whispers: \"{c}\""),
@@ -590,7 +607,8 @@ fn format_prompt(
                     "in a parked car, phone on the dashboard",
                     "at a dorm desk lit by RGB strips",
                 ],
-                seed, 1,
+                seed,
+                1,
             );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\" Vine boom on the last line."),
@@ -611,7 +629,8 @@ fn format_prompt(
                     "The Mothman",
                     "A surprisingly photogenic swamp creature",
                 ],
-                seed, 1,
+                seed,
+                1,
             );
             let locale = pick(
                 &[
@@ -619,7 +638,8 @@ fn format_prompt(
                     "a misty mountain trail",
                     "a golden autumn birch forest",
                 ],
-                seed, 2,
+                seed,
+                2,
             );
             let tail = match &script.criterion {
                 Some(c) => format!(" Then, deadpan to camera: \"{c}\""),
@@ -643,7 +663,8 @@ fn format_prompt(
                     "one you invent yourself: fuse one everyday household object with one \
                      animal; do NOT use a crocodile, shark, or coffee cup; surprise us",
                 ],
-                seed, 1,
+                seed,
+                1,
             );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\""),
@@ -665,7 +686,8 @@ fn format_prompt(
                     "a former scrum master turned hover-cab driver",
                     "the last human programmer, now a beloved celebrity",
                 ],
-                seed, 2,
+                seed,
+                2,
             );
             let tail = match &script.criterion {
                 Some(c) => format!(" \"{c}\""),
@@ -686,7 +708,8 @@ fn format_prompt(
                     "a wood-paneled garage workshop set",
                     "a late-night shopping-channel desk with a spinning product pedestal",
                 ],
-                seed, 1,
+                seed,
+                1,
             );
             let tail = match &script.criterion {
                 Some(c) => {
@@ -695,7 +718,8 @@ fn format_prompt(
                          A giant starburst graphic flashes behind him as the studio audience gasps."
                     )
                 }
-                None => " A giant starburst graphic flashes as the studio audience applauds.".to_string(),
+                None => " A giant starburst graphic flashes as the studio audience applauds."
+                    .to_string(),
             };
             format!(
                 "A 1990s late-night TV infomercial shot on slightly grainy videotape with cheesy \
@@ -901,7 +925,10 @@ mod tests {
             );
             // ...and the canonical criterion line survives every template.
             assert!(
-                s.criterion.as_deref().unwrap_or("").starts_with("Not done until"),
+                s.criterion
+                    .as_deref()
+                    .unwrap_or("")
+                    .starts_with("Not done until"),
                 "seed {seed} lost the criterion line: {:?}",
                 s.criterion
             );
@@ -937,8 +964,16 @@ mod tests {
         let brief = distill(&p);
         let sb = compile_with_format(&p, &brief, 12, BrainrotFormat::Infomercial);
         // 90s infomercial scene with the spec spoken by the pitchman.
-        assert!(sb.provider_prompt.contains("infomercial"), "{}", sb.provider_prompt);
-        assert!(sb.provider_prompt.contains("starburst"), "{}", sb.provider_prompt);
+        assert!(
+            sb.provider_prompt.contains("infomercial"),
+            "{}",
+            sb.provider_prompt
+        );
+        assert!(
+            sb.provider_prompt.contains("starburst"),
+            "{}",
+            sb.provider_prompt
+        );
         // Shared header: captions are oversized meme text and the camera keeps moving.
         for format in BrainrotFormat::ALL {
             let prompt = compile_with_format(&p, &brief, 12, format).provider_prompt;
@@ -1014,7 +1049,10 @@ mod tests {
             "Stand up CI"
         );
         assert_eq!(
-            tighten("Garbage-collect generated state: renders, worktrees, media", 4),
+            tighten(
+                "Garbage-collect generated state: renders, worktrees, media",
+                4
+            ),
             "Garbage-collect generated state"
         );
         // No clause boundary: clip, then drop danglers like "every".
@@ -1058,8 +1096,13 @@ mod tests {
                               selected by provenance timestamp and never an older stale render";
         for duration in [4u32, 6, 8, 12] {
             for seed in 0..6 {
-                let script =
-                    plan_script("Cache Chaos Exorcism", &long_goal, long_criterion, duration, seed);
+                let script = plan_script(
+                    "Cache Chaos Exorcism",
+                    &long_goal,
+                    long_criterion,
+                    duration,
+                    seed,
+                );
                 assert!(
                     script.word_count() <= word_budget(duration),
                     "{} words exceeds budget {} at {duration}s seed {seed}",
@@ -1099,7 +1142,9 @@ mod tests {
         let brief = distill(&p);
         let sb = compile_storyboard(&p, &brief, 8);
         assert!(sb.provider_prompt.contains("FINISHED by second 6"));
-        assert!(sb.provider_prompt.contains("Dialogue starts within the first second"));
+        assert!(sb
+            .provider_prompt
+            .contains("Dialogue starts within the first second"));
         assert!(sb.provider_prompt.contains("Never cut off mid-sentence"));
         assert!(sb.provider_prompt.contains("words total"));
     }

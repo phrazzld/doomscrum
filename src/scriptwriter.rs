@@ -105,7 +105,10 @@ async fn call_llm(
         ],
     });
     let resp = client
-        .post(format!("{}/chat/completions", cfg.base_url.trim_end_matches('/')))
+        .post(format!(
+            "{}/chat/completions",
+            cfg.base_url.trim_end_matches('/')
+        ))
         .bearer_auth(api_key)
         .json(&body)
         .send()
@@ -176,14 +179,12 @@ pub async fn storyboard(
     cache_dir: &Path,
     paid_render: bool,
 ) -> Result<Storyboard> {
-    let mut board =
-        distill::compile_storyboard(prd, &distill::distill(prd), duration_sec);
+    let mut board = distill::compile_storyboard(prd, &distill::distill(prd), duration_sec);
     if script_cfg.mode != "llm" || !paid_render {
         return Ok(board);
     }
     let llm = write_script(script_cfg, api_key, prd, duration_sec, cache_dir).await?;
-    board.provider_prompt =
-        distill::compose_provider_prompt(&llm.scene, &llm.script, duration_sec);
+    board.provider_prompt = distill::compose_provider_prompt(&llm.scene, &llm.script, duration_sec);
     board.expected_script = llm.script;
     board.tone = format!("llm:{}", llm.model);
     Ok(board)
@@ -277,7 +278,9 @@ mod tests {
             serde_json::to_string(&cached).unwrap(),
         )
         .unwrap();
-        let board = storyboard(&cfg, None, &p, 12, dir.path(), true).await.unwrap();
+        let board = storyboard(&cfg, None, &p, 12, dir.path(), true)
+            .await
+            .unwrap();
         assert_eq!(board.expected_script, cached.script);
         assert!(board.provider_prompt.contains(&cached.scene));
         assert!(board.provider_prompt.contains(&cached.script));
