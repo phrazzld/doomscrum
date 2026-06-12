@@ -117,6 +117,23 @@ impl TestApp {
         (status, res.json().await.unwrap_or(Value::Null))
     }
 
+    async fn get_range(
+        &self,
+        path: &str,
+        range: &str,
+    ) -> (u16, reqwest::header::HeaderMap, Vec<u8>) {
+        let res = reqwest::Client::new()
+            .get(self.url(path))
+            .header(reqwest::header::RANGE, range)
+            .send()
+            .await
+            .unwrap();
+        let status = res.status().as_u16();
+        let headers = res.headers().clone();
+        let bytes = res.bytes().await.unwrap().to_vec();
+        (status, headers, bytes)
+    }
+
     async fn post(&self, path: &str, body: Value) -> (u16, Value) {
         let res = reqwest::Client::new()
             .post(self.url(path))
@@ -183,6 +200,15 @@ async fn feed_renders_and_serves_video() {
     assert_eq!(res.headers()["content-type"], "video/mp4");
     let bytes = res.bytes().await.unwrap();
     assert_eq!(&bytes[4..8], b"ftyp", "served asset is a real MP4");
+    let total_len = bytes.len();
+
+    let (status, headers, range_bytes) = app.get_range(url, "bytes=4-7").await;
+    assert_eq!(status, 206);
+    assert_eq!(headers["content-type"], "video/mp4");
+    assert_eq!(headers["accept-ranges"], "bytes");
+    assert_eq!(headers["content-length"], "4");
+    assert_eq!(headers["content-range"], format!("bytes 4-7/{total_len}"));
+    assert_eq!(range_bytes, b"ftyp");
 
     // Regenerate is idempotent unless forced.
     let (_, body) = app.post("/api/generate", json!({})).await;

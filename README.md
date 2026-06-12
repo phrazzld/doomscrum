@@ -102,9 +102,11 @@ that can take a prompt and edit a worktree.
 
 The source spec stays authoritative. Every render records provider, model,
 spec sha256, storyboard hash, latency, and job id in
-`.doomscrum/renders/<spec-sha>/<render-id>.json`. Every decision (skip,
-dispatch) is appended to `.doomscrum/events.ndjson`. Deleting `.doomscrum/`
-destroys only generated state — never specs.
+`.doomscrum/renders/<spec-sha>/<render-id>.json`. MP4s are served with HTTP
+byte ranges and streamed from disk, so browser seek and loop requests do not
+buffer the full render in memory. Every decision (skip, dispatch) is appended
+to `.doomscrum/events.ndjson`. Deleting `.doomscrum/` destroys only generated
+state — never specs.
 
 ## Development
 

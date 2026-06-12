@@ -268,8 +268,7 @@ fn strip_danglers(text: &str) -> String {
 /// must never be read aloud.
 fn remove_asides(text: &str) -> String {
     let mut out = text.replace('`', "");
-    loop {
-        let Some(first) = out.find('—') else { break };
+    while let Some(first) = out.find('—') {
         let Some(second_rel) = out[first + '—'.len_utf8()..].find('—') else {
             break;
         };
@@ -279,9 +278,10 @@ fn remove_asides(text: &str) -> String {
         next.push_str(out[second + '—'.len_utf8()..].trim_start());
         out = next;
     }
-    loop {
-        let Some(open) = out.find('(') else { break };
-        let Some(close_rel) = out[open..].find(')') else { break };
+    while let Some(open) = out.find('(') {
+        let Some(close_rel) = out[open..].find(')') else {
+            break;
+        };
         let mut next = out[..open].trim_end().to_string();
         next.push(' ');
         next.push_str(out[open + close_rel + 1..].trim_start());

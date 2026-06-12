@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::body::Body;
 use axum::extract::{Path as UrlPath, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
@@ -8,6 +9,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
 
 use crate::backlog::{self, PrdSource};
 use crate::config::Config;
@@ -568,7 +571,8 @@ fn parse_byte_range(value: &str, len: u64) -> Option<(u64, u64)> {
 }
 
 /// Serve render MP4s with HTTP Range support — browsers' media stacks
-/// require 206 responses to start playback and to seek/loop.
+/// require 206 responses to start playback and to seek/loop. Stream from disk
+/// so a range request never buffers the whole render.
 async fn media(
     State(ctx): State<AppCtx>,
     UrlPath((sha, file)): UrlPath<(String, String)>,
@@ -583,37 +587,74 @@ async fn media(
         return error_response(StatusCode::FORBIDDEN, "forbidden");
     }
     let path = ctx.renders_dir().join(&sha).join(&file);
-    let Ok(bytes) = std::fs::read(&path) else {
+    let Ok(metadata) = tokio::fs::metadata(&path).await else {
         return error_response(StatusCode::NOT_FOUND, "no such render");
     };
-    let len = bytes.len() as u64;
-    let base_headers = [
-        (header::CONTENT_TYPE, "video/mp4".to_string()),
-        (header::ACCEPT_RANGES, "bytes".to_string()),
-        (header::CACHE_CONTROL, "no-cache".to_string()),
-    ];
+    if !metadata.is_file() {
+        return error_response(StatusCode::NOT_FOUND, "no such render");
+    }
+    let len = metadata.len();
     let range = headers
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())
         .map(|v| parse_byte_range(v, len));
     match range {
-        None => (StatusCode::OK, base_headers, bytes).into_response(),
-        Some(Some((start, end))) => {
-            let slice = bytes[start as usize..=end as usize].to_vec();
-            (
-                StatusCode::PARTIAL_CONTENT,
-                base_headers,
-                [(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))],
-                slice,
+        None => {
+            let Ok(file) = tokio::fs::File::open(&path).await else {
+                return error_response(StatusCode::NOT_FOUND, "no such render");
+            };
+            media_stream_response(
+                StatusCode::OK,
+                len,
+                None,
+                Body::from_stream(ReaderStream::new(file)),
             )
-                .into_response()
         }
-        Some(None) => (
+        Some(Some((start, end))) => {
+            let Ok(mut file) = tokio::fs::File::open(&path).await else {
+                return error_response(StatusCode::NOT_FOUND, "no such render");
+            };
+            if let Err(err) = file.seek(std::io::SeekFrom::Start(start)).await {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, err);
+            }
+            let body_len = end - start + 1;
+            media_stream_response(
+                StatusCode::PARTIAL_CONTENT,
+                body_len,
+                Some(format!("bytes {start}-{end}/{len}")),
+                Body::from_stream(ReaderStream::new(file.take(body_len))),
+            )
+        }
+        Some(None) => media_stream_response(
             StatusCode::RANGE_NOT_SATISFIABLE,
-            [(header::CONTENT_RANGE, format!("bytes */{len}"))],
-        )
-            .into_response(),
+            0,
+            Some(format!("bytes */{len}")),
+            Body::empty(),
+        ),
     }
+}
+
+fn media_stream_response(
+    status: StatusCode,
+    content_len: u64,
+    content_range: Option<String>,
+    body: Body,
+) -> Response {
+    let mut builder = Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "video/mp4")
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::CONTENT_LENGTH, content_len.to_string());
+    if let Some(content_range) = content_range {
+        builder = builder.header(header::CONTENT_RANGE, content_range);
+    }
+    builder.body(body).unwrap_or_else(|err| {
+        error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("building media response: {err}"),
+        )
+    })
 }
 
 #[cfg(test)]
