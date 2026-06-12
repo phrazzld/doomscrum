@@ -70,6 +70,12 @@ The spoken dialogue in every format quotes the spec's actual goal and first
 acceptance criterion — the video must communicate the spec, not just vibe.
 Prompts forbid inventing features or claiming anything shipped.
 
+The offline fixture provider stays free and local. When `ffmpeg` is available
+with the `drawtext` filter, it renders a short spec-specific MP4 with the spec
+title and brainrot format over distinct format colors. Without that filter, it
+falls back to the embedded fixture so tests and demos still work with no
+runtime media dependency.
+
 ## Syncing to a repo
 
 Point `doomscrum.toml` at any repository:
