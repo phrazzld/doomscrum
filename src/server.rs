@@ -7,9 +7,12 @@ use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use tokio_util::io::ReaderStream;
 
 use crate::backlog::{self, PrdSource};
@@ -32,17 +35,36 @@ pub struct AppCtx {
     /// UI-triggered renders run detached so a page refresh can't abort a
     /// paid job; the feed poll reads this map for progress/failure.
     cooking: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// Concurrency limiter for agent dispatches. Receipts are created before
+    /// acquiring a permit so excess swipes are durable and visible as queued.
+    dispatch_slots: Arc<Semaphore>,
+    /// Serializes dedupe + receipt creation inside this server process.
+    dispatch_create_lock: Arc<AsyncMutex<()>>,
+    /// Paid render spend that has been approved and started but not yet
+    /// persisted as render provenance.
+    render_reservations: Arc<AsyncMutex<Vec<RenderReservation>>>,
+}
+
+#[derive(Clone)]
+struct RenderReservation {
+    id: String,
+    amount_usd: f64,
+    created_at: DateTime<Utc>,
 }
 
 impl AppCtx {
     pub fn new(root: PathBuf, cfg: Config) -> Self {
         let repo = root.join(&cfg.repo.path);
         let repo = repo.canonicalize().unwrap_or(repo);
+        let slots = cfg.agent.max_concurrent_dispatches.max(1);
         Self {
             cfg,
             root,
             repo_sel: Arc::new(std::sync::RwLock::new(repo)),
             cooking: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            dispatch_slots: Arc::new(Semaphore::new(slots)),
+            dispatch_create_lock: Arc::new(AsyncMutex::new(())),
+            render_reservations: Arc::new(AsyncMutex::new(Vec::new())),
         }
     }
 
@@ -139,6 +161,14 @@ impl AppCtx {
         self.state_dir().join("events.ndjson")
     }
 
+    async fn release_render_reservation(&self, id: Option<&str>) {
+        let Some(id) = id else {
+            return;
+        };
+        let mut reservations = self.render_reservations.lock().await;
+        reservations.retain(|r| r.id != id);
+    }
+
     pub fn scan(&self) -> anyhow::Result<Vec<PrdSource>> {
         backlog::scan(
             &self.repo(),
@@ -225,11 +255,76 @@ fn error_response(status: StatusCode, message: impl std::fmt::Display) -> Respon
 
 /// Total estimated spend on real renders, summed from provenance on disk.
 pub fn total_spend(renders: &[VideoRender]) -> f64 {
-    renders
+    let sum = renders
         .iter()
         .filter(|r| r.provider == "fal")
         .map(|r| r.cost_estimate_usd)
+        .sum();
+    clean_money(sum)
+}
+
+/// Spend on real renders whose provenance timestamp falls on the UTC date of
+/// `now`. The reset boundary is UTC so it is stable across operator machines.
+pub fn daily_spend(renders: &[VideoRender], now: DateTime<Utc>) -> f64 {
+    let today = now.date_naive();
+    let sum = renders
+        .iter()
+        .filter(|r| r.provider == "fal")
+        .filter(|r| {
+            DateTime::parse_from_rfc3339(&r.created_at)
+                .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
+                .unwrap_or(false)
+        })
+        .map(|r| r.cost_estimate_usd)
+        .sum();
+    clean_money(sum)
+}
+
+fn clean_money(value: f64) -> f64 {
+    if value.abs() < f64::EPSILON {
+        0.0
+    } else {
+        value
+    }
+}
+
+fn pending_total_spend(reservations: &[RenderReservation]) -> f64 {
+    clean_money(reservations.iter().map(|r| r.amount_usd).sum())
+}
+
+fn pending_daily_spend(reservations: &[RenderReservation], now: DateTime<Utc>) -> f64 {
+    let today = now.date_naive();
+    clean_money(
+        reservations
+            .iter()
+            .filter(|r| r.created_at.date_naive() == today)
+            .map(|r| r.amount_usd)
+            .sum(),
+    )
+}
+
+pub fn next_daily_reset_at(now: DateTime<Utc>) -> String {
+    let tomorrow = now
+        .date_naive()
+        .succ_opt()
+        .unwrap_or_else(|| now.date_naive());
+    let reset = tomorrow.and_hms_opt(0, 0, 0).unwrap();
+    DateTime::<Utc>::from_naive_utc_and_offset(reset, Utc)
+        .to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+pub fn planned_fal_spend(video: &crate::config::VideoConfig, prds: &[PrdSource]) -> f64 {
+    prds.iter()
+        .map(|p| crate::providers::fal::unit_cost(&video.with_pipeline(&p.sha256)))
         .sum()
+}
+
+pub fn render_provider_id(provider_name: &str) -> anyhow::Result<&'static str> {
+    match provider_name {
+        "fake" => Ok("fake-local"),
+        "fal" => Ok("fal"),
+        other => anyhow::bail!("unknown video provider '{other}' (expected fake|fal)"),
+    }
 }
 
 /// Latest render for a spec, preferring real provider output over fixtures.
@@ -253,6 +348,10 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
     let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
     let receipts = load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
     let events = events::read_all(&ctx.events_path()).unwrap_or_default();
+    let now = Utc::now();
+    let reservations = ctx.render_reservations.lock().await.clone();
+    let pending_usd = pending_total_spend(&reservations);
+    let pending_daily_usd = pending_daily_spend(&reservations, now);
 
     let items: Vec<Value> = prds
         .iter()
@@ -300,6 +399,11 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         "spend": {
             "total_usd": total_spend(&renders),
             "cap_usd": ctx.cfg.video.max_total_spend_usd,
+            "pending_usd": pending_usd,
+            "daily_usd": daily_spend(&renders, now),
+            "daily_pending_usd": pending_daily_usd,
+            "daily_cap_usd": ctx.cfg.video.max_daily_spend_usd,
+            "daily_reset_at": next_daily_reset_at(now),
             "price_per_render_usd": crate::providers::fal::avg_unit_cost(&ctx.cfg.video),
         },
     }))
@@ -311,6 +415,7 @@ struct GenerateBody {
     provider: Option<String>,
     prd_id: Option<String>,
     force: Option<bool>,
+    confirmed_cost: Option<bool>,
 }
 
 async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>>) -> Response {
@@ -318,7 +423,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     let provider_name = body
         .provider
         .unwrap_or_else(|| ctx.cfg.video.provider.clone());
-    let provider = match ctx.provider(&provider_name) {
+    let render_provider = match render_provider_id(&provider_name) {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::BAD_REQUEST, err),
     };
@@ -329,41 +434,127 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
     let force = body.force.unwrap_or(false);
 
+    let active_cooking: BTreeSet<String> = if provider_name == "fal" {
+        ctx.cooking
+            .lock()
+            .expect("cooking lock")
+            .iter()
+            .filter(|(_, status)| status.as_str() == "cooking")
+            .map(|(prd_id, _)| prd_id.clone())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    if body
+        .prd_id
+        .as_ref()
+        .is_some_and(|id| active_cooking.contains(id))
+    {
+        return Json(json!({ "started": true, "deduped": true })).into_response();
+    }
+
     let targets: Vec<_> = prds
         .into_iter()
         .filter(|prd| body.prd_id.as_ref().is_none_or(|id| &prd.id == id))
+        .filter(|prd| !active_cooking.contains(&prd.id))
         .filter(|prd| {
             force
                 || !existing
                     .iter()
-                    .any(|r| r.prd_id == prd.id && r.provider == provider.name())
+                    .any(|r| r.prd_id == prd.id && r.provider == render_provider)
         })
         .collect();
 
-    // Wallet guard: refuse real generation that would blow the spend cap.
-    if matches!(provider, Provider::Fal(_)) {
+    let mut render_reservation_id: Option<String> = None;
+    // Wallet guards: quote first, then refuse real generation that would blow
+    // either the lifetime or daily cap. This runs before provider construction
+    // so budget failures do not require a FAL key.
+    if provider_name == "fal" {
         let spent = total_spend(&existing);
-        let planned: f64 = targets
-            .iter()
-            .map(|p| crate::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&p.sha256)))
-            .sum();
+        let planned = planned_fal_spend(&ctx.cfg.video, &targets);
+        if planned > 0.0 && body.confirmed_cost != Some(true) {
+            let now = Utc::now();
+            let reservations = ctx.render_reservations.lock().await.clone();
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": format!(
+                        "confirm estimated real render cost: ${planned:.2} for {} render(s)",
+                        targets.len()
+                    ),
+                    "requires_confirmation": true,
+                    "planned_usd": planned,
+                    "render_count": targets.len(),
+                    "price_per_render_usd": crate::providers::fal::avg_unit_cost(&ctx.cfg.video),
+                    "pending_usd": pending_total_spend(&reservations),
+                    "daily_spent_usd": daily_spend(&existing, now),
+                    "daily_pending_usd": pending_daily_spend(&reservations, now),
+                    "daily_cap_usd": ctx.cfg.video.max_daily_spend_usd,
+                    "daily_reset_at": next_daily_reset_at(now),
+                })),
+            )
+                .into_response();
+        }
+        let now = Utc::now();
+        let mut reservations = ctx.render_reservations.lock().await;
+        let pending_total = pending_total_spend(&reservations);
+        let pending_daily = pending_daily_spend(&reservations, now);
         let cap = ctx.cfg.video.max_total_spend_usd;
-        if spent + planned > cap {
+        if spent + pending_total + planned > cap {
             return error_response(
                 StatusCode::PAYMENT_REQUIRED,
                 format!(
-                    "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
+                    "spend cap: ${spent:.2} already spent + ${pending_total:.2} pending + ${planned:.2} planned for {} render(s) \
                      exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
                     targets.len()
                 ),
             );
+        }
+        let today = daily_spend(&existing, now);
+        let daily_cap = ctx.cfg.video.max_daily_spend_usd;
+        if today + pending_daily + planned > daily_cap {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({
+                    "error": format!(
+                        "daily render budget: ${today:.2} already spent today + ${pending_daily:.2} pending + ${planned:.2} planned for {} render(s) \
+                         exceeds max_daily_spend_usd ${daily_cap:.2}",
+                        targets.len()
+                    ),
+                    "daily_spent_usd": today,
+                    "daily_pending_usd": pending_daily,
+                    "planned_usd": planned,
+                    "daily_cap_usd": daily_cap,
+                    "reset_at": next_daily_reset_at(now),
+                })),
+            )
+                .into_response();
+        }
+        if planned > 0.0 {
+            let id = crate::util::sha256_hex(
+                format!(
+                    "{}:{planned}:{now}",
+                    targets
+                        .iter()
+                        .map(|p| p.sha256.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+                .as_bytes(),
+            );
+            reservations.push(RenderReservation {
+                id: id.clone(),
+                amount_usd: planned,
+                created_at: now,
+            });
+            render_reservation_id = Some(id);
         }
     }
 
     // Single-spec paid render (the card's "cook with AI" button): run
     // detached so a page refresh cannot abort a job that costs money. The
     // feed poll watches ctx.cooking for progress and failure.
-    if body.prd_id.is_some() && matches!(provider, Provider::Fal(_)) {
+    if body.prd_id.is_some() && provider_name == "fal" {
         let Some(prd) = targets.into_iter().next() else {
             return error_response(StatusCode::CONFLICT, "already rendered (use force)");
         };
@@ -374,17 +565,22 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
             .insert(id.clone(), "cooking".into());
         let bg = ctx.clone();
         let pname = provider_name.clone();
+        let reservation_id = render_reservation_id.clone();
         tokio::spawn(async move {
             let outcome = render_one(&bg, &pname, &prd).await;
-            let mut map = bg.cooking.lock().expect("cooking lock");
-            match outcome {
-                Ok(_) => {
-                    map.remove(&id);
-                }
-                Err(err) => {
-                    map.insert(id, format!("failed: {err:#}"));
+            {
+                let mut map = bg.cooking.lock().expect("cooking lock");
+                match outcome {
+                    Ok(_) => {
+                        map.remove(&id);
+                    }
+                    Err(err) => {
+                        map.insert(id, format!("failed: {err:#}"));
+                    }
                 }
             }
+            bg.release_render_reservation(reservation_id.as_deref())
+                .await;
         });
         return Json(json!({ "started": true })).into_response();
     }
@@ -394,6 +590,8 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         match render_one(&ctx, &provider_name, &prd).await {
             Ok(render) => rendered.push(render),
             Err(err) => {
+                ctx.release_render_reservation(render_reservation_id.as_deref())
+                    .await;
                 return error_response(
                     StatusCode::BAD_GATEWAY,
                     format!("render failed for '{}': {err:#}", prd.title),
@@ -401,6 +599,8 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
             }
         }
     }
+    ctx.release_render_reservation(render_reservation_id.as_deref())
+        .await;
     Json(json!({ "renders": rendered })).into_response()
 }
 
@@ -474,9 +674,21 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
             Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
         },
         Some(kind) => {
-            let receipt = match ctx.dispatcher().create(&prd, kind) {
-                Ok(r) => r,
-                Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+            let dispatcher = ctx.dispatcher();
+            let receipt = {
+                let _guard = ctx.dispatch_create_lock.lock().await;
+                if let Ok(receipts) = load_receipts(&dispatcher.dispatches_dir) {
+                    if let Some(existing) = receipts.into_iter().find(|r| {
+                        r.prd_id == prd.id && r.kind == kind && active_dispatch_status(&r.status)
+                    }) {
+                        return Json(json!({ "dispatch": existing, "deduped": true }))
+                            .into_response();
+                    }
+                }
+                match dispatcher.create(&prd, kind) {
+                    Ok(r) => r,
+                    Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+                }
             };
             let event_kind = match kind {
                 DispatchKind::Implement => "dispatch_implement",
@@ -490,13 +702,21 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
                 Some(format!("dispatch {}", receipt.id)),
             );
             let dispatcher = ctx.dispatcher();
+            let slots = ctx.dispatch_slots.clone();
             let queued = receipt.clone();
             tokio::spawn(async move {
+                let Ok(_permit) = slots.acquire_owned().await else {
+                    return;
+                };
                 dispatcher.run(queued, prd).await;
             });
             Json(json!({ "dispatch": receipt })).into_response()
         }
     }
+}
+
+fn active_dispatch_status(status: &str) -> bool {
+    matches!(status, "queued" | "agent_running" | "opening_pr")
 }
 
 async fn api_spec(State(ctx): State<AppCtx>, UrlPath(prd_id): UrlPath<String>) -> Response {

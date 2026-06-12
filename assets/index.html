@@ -325,8 +325,50 @@
   async function api(path, opts) {
     const res = await fetch(path, opts);
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || res.statusText);
+    if (!res.ok) {
+      const err = new Error(body.error || res.statusText);
+      err.status = res.status;
+      err.body = body;
+      throw err;
+    }
     return body;
+  }
+
+  function dollars(n) {
+    return "$" + Number(n || 0).toFixed(2);
+  }
+
+  function confirmRealRenderCost(renderCount, plannedUsd) {
+    const s = window.__spend || {};
+    const planned = plannedUsd == null
+      ? Number(s.price_per_render_usd || 0) * renderCount
+      : Number(plannedUsd || 0);
+    const today = `${dollars(s.daily_usd)} / ${dollars(s.daily_cap_usd)} today`;
+    return window.confirm(
+      `Cook ${renderCount} real AI render${renderCount === 1 ? "" : "s"} for about ${dollars(planned)}?\n\n` +
+      `${today}. Spec-derived prompts leave this machine for fal.ai.`
+    );
+  }
+
+  async function generateWithCostConfirmation(body, fallbackCount) {
+    try {
+      return await api("/api/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      if (err.status === 409 && err.body && err.body.requires_confirmation) {
+        const count = Number(err.body.render_count || fallbackCount || 1);
+        if (!confirmRealRenderCost(count, err.body.planned_usd)) return null;
+        return api("/api/generate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...body, confirmed_cost: true }),
+        });
+      }
+      throw err;
+    }
   }
 
   async function load(keepPosition = true) {
@@ -335,9 +377,10 @@
     items = state.items;
     window.__falConfigured = state.fal_configured;
     window.__cooking = state.cooking || {};
+    window.__spend = state.spend || {};
     if (state.spend) {
       const s = state.spend;
-      $("spend").textContent = `$${s.total_usd.toFixed(2)} / $${s.cap_usd.toFixed(0)} cap`;
+      $("spend").textContent = `${dollars(s.total_usd)} / $${s.cap_usd.toFixed(0)} cap · ${dollars(s.daily_usd)} today`;
       $("spend").style.color = s.total_usd > s.cap_usd * 0.8 ? "var(--warn)" : "var(--dead)";
     }
     if (keepPosition && currentId) {
@@ -399,13 +442,18 @@
             : "set FAL_API_KEY to enable real AI video"}</p>
       </div></div>`;
       const cook = async (provider) => {
+        const real = provider === "fal";
+        const count = items.filter((it) => !it.render || it.render.provider !== "fal").length;
         showToast("cooking videos… hold tight");
         try {
-          await api("/api/generate", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ provider }),
-          });
+          const result = real
+            ? await generateWithCostConfirmation({ provider }, count)
+            : await api("/api/generate", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ provider }),
+            });
+          if (result === null) { showToast("AI cook cancelled"); return; }
           await load();
           showToast("feed is cooked");
         } catch (e) { showToast(e.message, true); }
@@ -444,11 +492,8 @@
       aiify.onclick = async (e) => {
         e.stopPropagation();
         try {
-          await api("/api/generate", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ provider: "fal", prd_id: prd.id }),
-          });
+          const result = await generateWithCostConfirmation({ provider: "fal", prd_id: prd.id }, 1);
+          if (result === null) { showToast("AI cook cancelled"); return; }
           showToast("AI render kicked off — watch the sticker");
           await load();
         } catch (err) { showToast(err.message, true); }

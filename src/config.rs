@@ -30,6 +30,7 @@ pub struct ProfileConfig {
     pub fal_model: Option<String>,
     pub max_duration_sec: Option<u32>,
     pub max_total_spend_usd: Option<f64>,
+    pub max_daily_spend_usd: Option<f64>,
     pub mix: Option<Vec<MixEntry>>,
 }
 
@@ -81,6 +82,9 @@ pub struct VideoConfig {
     /// Hard wallet guard: real renders are refused once estimated total
     /// spend (summed from render provenance) would exceed this.
     pub max_total_spend_usd: f64,
+    /// Independent daily guard for real renders. Exceeding it returns 429
+    /// from HTTP routes and aborts CLI generation before provider startup.
+    pub max_daily_spend_usd: f64,
     /// Weighted render portfolio. When non-empty, each spec draws one
     /// (model, duration) deterministically by content hash — most specs
     /// land on cheap/short pipelines, a weighted few on hero models, and
@@ -111,6 +115,7 @@ impl Default for VideoConfig {
             max_duration_sec: 8,
             price_per_second_usd: 0.15,
             max_total_spend_usd: 25.0,
+            max_daily_spend_usd: 5.0,
             mix: Vec::new(),
         }
     }
@@ -179,6 +184,9 @@ pub struct AgentConfig {
     pub pr_cmd: Vec<String>,
     /// When false, dispatch stops after the agent commits (no push, no PR).
     pub open_pr: bool,
+    /// Maximum agent runs allowed at once; additional swipes persist queued
+    /// receipts and start when a slot opens.
+    pub max_concurrent_dispatches: usize,
 }
 
 impl Default for AgentConfig {
@@ -215,6 +223,7 @@ impl Default for AgentConfig {
             .map(|s| s.to_string())
             .collect(),
             open_pr: true,
+            max_concurrent_dispatches: 2,
         }
     }
 }
@@ -264,6 +273,9 @@ impl Config {
         if let Some(v) = p.max_total_spend_usd {
             self.video.max_total_spend_usd = v;
         }
+        if let Some(v) = p.max_daily_spend_usd {
+            self.video.max_daily_spend_usd = v;
+        }
         if let Some(v) = p.mix {
             self.video.mix = v;
         }
@@ -295,8 +307,10 @@ mod tests {
         let cfg = Config::load(dir.path()).unwrap();
         assert_eq!(cfg.feed.max_items, 10);
         assert_eq!(cfg.video.provider, "fake");
+        assert_eq!(cfg.video.max_daily_spend_usd, 5.0);
         assert_eq!(cfg.repo.backlog_dir, "backlog.d");
         assert!(cfg.agent.open_pr);
+        assert_eq!(cfg.agent.max_concurrent_dispatches, 2);
         assert_eq!(cfg.agent.implement_cmd[0], "codex");
     }
 

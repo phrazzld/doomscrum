@@ -9,6 +9,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 use doomscrum::config::Config;
 use doomscrum::server::{router, AppCtx};
 
@@ -49,6 +51,10 @@ const SPECS: &[(&str, &str)] = &[
 ];
 
 async fn spawn_app() -> TestApp {
+    spawn_app_with(|_| {}).await
+}
+
+async fn spawn_app_with(configure: impl FnOnce(&mut Config)) -> TestApp {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("project");
     let bare = tmp.path().join("origin.git");
@@ -91,6 +97,7 @@ async fn spawn_app() -> TestApp {
         "-c".into(),
         "echo https://example.test/pr/42".into(),
     ];
+    configure(&mut cfg);
 
     let ctx = AppCtx::new(root.clone(), cfg);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -260,6 +267,157 @@ async fn right_swipe_dispatches_agent_and_opens_pr() {
         state["items"][0]["dispatch"]["pr_url"],
         "https://example.test/pr/42"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn real_render_route_requires_cost_confirmation_and_daily_budget() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 0.01;
+    })
+    .await;
+
+    let (status, body) = app.post("/api/generate", json!({ "provider": "fal" })).await;
+    assert_eq!(status, 409, "unconfirmed fal render should stop early: {body}");
+    assert_eq!(body["requires_confirmation"], true);
+    assert_eq!(body["render_count"], 3);
+    assert!(
+        body["planned_usd"].as_f64().unwrap() > 0.01,
+        "planned cost should be quoted before provider construction: {body}"
+    );
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fal", "confirmed_cost": true }),
+        )
+        .await;
+    assert_eq!(status, 429, "daily budget should fail before FAL key lookup: {body}");
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("daily render budget"));
+    assert_eq!(body["daily_cap_usd"], 0.01);
+    assert!(body["reset_at"].as_str().unwrap().contains('T'));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn real_render_budget_counts_in_flight_reservations() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let fal = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/test-model"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(json!({
+                    "video": { "url": format!("{}/files/out.mp4", fal.uri()) }
+                })),
+        )
+        .expect(1)
+        .mount(&fal)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/files/out.mp4"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(
+            b"\x00\x00\x00\x18ftypmp42-doomscrum-test",
+        ))
+        .mount(&fal)
+        .await;
+
+    let app = spawn_app_with(|cfg| {
+        cfg.script.mode = "templates".into();
+        cfg.video.fal_model = "fal-ai/test-model".into();
+        cfg.video.fal_base_url = fal.uri();
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 1.8;
+        cfg.video.price_per_second_usd = 0.15;
+    })
+    .await;
+    let (_, state) = app.get("/api/state").await;
+    let first = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let second = state["items"][1]["prd"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fal", "prd_id": first, "confirmed_cost": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "first paid render should start: {body}");
+    assert_eq!(body["started"], true);
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fal", "prd_id": second, "confirmed_cost": true }),
+        )
+        .await;
+    assert_eq!(status, 429, "pending first render must count against daily cap: {body}");
+    assert_eq!(body["daily_pending_usd"], 1.2);
+    assert_eq!(body["planned_usd"], 1.2);
+    assert!(body["reset_at"].as_str().unwrap().contains('T'));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatches_are_capped_queued_and_deduped_while_active() {
+    let app = spawn_app_with(|cfg| {
+        cfg.agent.open_pr = false;
+        cfg.agent.max_concurrent_dispatches = 1;
+        cfg.agent.implement_cmd = vec![
+            "sh".into(),
+            "-c".into(),
+            "sleep 1; echo implemented > impl-marker.txt".into(),
+        ];
+    })
+    .await;
+    let (_, state) = app.get("/api/state").await;
+    let first = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let second = state["items"][1]["prd"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": first, "action": "implement" }),
+        )
+        .await;
+    assert_eq!(status, 200, "first swipe failed: {body}");
+    let first_id = body["dispatch"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": first, "action": "implement" }),
+        )
+        .await;
+    assert_eq!(status, 200, "duplicate swipe failed: {body}");
+    assert_eq!(body["deduped"], true);
+    assert_eq!(body["dispatch"]["id"], first_id);
+
+    let (status, body) = app
+        .post(
+            "/api/swipe",
+            json!({ "prd_id": second, "action": "implement" }),
+        )
+        .await;
+    assert_eq!(status, 200, "second swipe failed: {body}");
+    let second_id = body["dispatch"]["id"].as_str().unwrap().to_string();
+    assert_ne!(first_id, second_id);
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let (_, body) = app.get("/api/dispatches").await;
+    let second_receipt = body["dispatches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == second_id)
+        .unwrap();
+    assert_eq!(second_receipt["status"], "queued", "second receipt: {second_receipt}");
+
+    let first_receipt = app.await_dispatch(&first_id).await;
+    let second_receipt = app.await_dispatch(&second_id).await;
+    assert_eq!(first_receipt["status"], "completed_local");
+    assert_eq!(second_receipt["status"], "completed_local");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
             }
             let provider_name = provider.unwrap_or_else(|| cfg.video.provider.clone());
             let ctx = AppCtx::new(root, cfg);
-            let provider = ctx.provider(&provider_name)?;
+            let render_provider = server::render_provider_id(&provider_name)?;
             let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
 
             let spec_filter = spec.map(|s| s.to_lowercase());
@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
                 .filter(|prd| {
                     let already = existing
                         .iter()
-                        .any(|r| r.prd_id == prd.id && r.provider == provider.name());
+                        .any(|r| r.prd_id == prd.id && r.provider == render_provider);
                     if already && !force {
                         println!("skip   {} (already rendered)", prd.title);
                     }
@@ -127,16 +127,11 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            if matches!(provider, doomscrum::providers::Provider::Fal(_)) {
+            if provider_name == "fal" {
                 let spent = server::total_spend(&existing);
                 // Each spec may draw a different pipeline from the mix, so
                 // the planned spend is the sum of per-spec unit costs.
-                let planned: f64 = targets
-                    .iter()
-                    .map(|p| {
-                        doomscrum::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&p.sha256))
-                    })
-                    .sum();
+                let planned = server::planned_fal_spend(&ctx.cfg.video, &targets);
                 let cap = ctx.cfg.video.max_total_spend_usd;
                 anyhow::ensure!(
                     spent + planned <= cap,
@@ -144,7 +139,19 @@ async fn main() -> Result<()> {
                      exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
                     targets.len()
                 );
-                println!("wallet: ${spent:.2} spent, ${planned:.2} planned, ${cap:.2} cap");
+                let now = chrono::Utc::now();
+                let today = server::daily_spend(&existing, now);
+                let daily_cap = ctx.cfg.video.max_daily_spend_usd;
+                anyhow::ensure!(
+                    today + planned <= daily_cap,
+                    "daily render budget: ${today:.2} already spent today + ${planned:.2} planned for {} render(s) \
+                     exceeds max_daily_spend_usd ${daily_cap:.2}; resets at {}",
+                    targets.len(),
+                    server::next_daily_reset_at(now)
+                );
+                println!(
+                    "wallet: ${spent:.2} spent lifetime, ${today:.2} spent today, ${planned:.2} planned, ${cap:.2} lifetime cap, ${daily_cap:.2} daily cap"
+                );
             }
 
             let script_key = doomscrum::secrets::get(&["OPENROUTER_API_KEY"]);

@@ -41,8 +41,11 @@ cargo run --release -- generate --provider fal --limit 1
 
 or use **cook with AI** in the app. Real generation costs money per render
 and sends spec-derived prompt text to fal.ai — treat it as a disclosure
-event. The fixture provider (`fake`) is the default and never leaves the
-machine.
+event. DoomScrum quotes the estimated batch cost before the UI starts a real
+render, enforces both `max_total_spend_usd` and an independent
+`max_daily_spend_usd`, and returns `429` with the next reset time when the
+daily budget is exhausted. The fixture provider (`fake`) is the default and
+never leaves the machine.
 
 ## Brainrot formats
 
@@ -97,6 +100,11 @@ Every dispatch writes a staged receipt to `.doomscrum/dispatches/<id>.json`
 links to opened PRs. The agent command is yours to choose in
 `doomscrum.toml` — codex by default; point it at claude, or anything else
 that can take a prompt and edit a worktree.
+
+Agent work is throttled by `agent.max_concurrent_dispatches` (default `2`).
+Swipes beyond the limit remain as visible `queued` receipts until a slot
+opens, and swiping the same spec/action while a receipt is still active
+returns that receipt instead of launching a duplicate agent.
 
 ## Provenance
 
