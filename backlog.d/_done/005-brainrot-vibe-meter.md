@@ -1,6 +1,6 @@
 # Brainrot Vibe Meter
 
-Priority: P2 · Status: pending · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## User
 Operator comparing multiple generated PRD videos.

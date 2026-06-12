@@ -26,6 +26,7 @@ use crate::providers::{
 use crate::secrets;
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
+const VIBE_RATINGS: &[&str] = &["cursed", "brainrot", "solid", "corporate"];
 
 #[derive(Clone)]
 pub struct AppCtx {
@@ -216,6 +217,7 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/", get(index))
         .route("/api/state", get(api_state))
         .route("/api/generate", post(api_generate))
+        .route("/api/vibe", post(api_vibe))
         .route("/api/swipe", post(api_swipe))
         .route("/api/spec/{prd_id}", get(api_spec))
         .route("/api/dispatches", get(api_dispatches))
@@ -359,6 +361,9 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         .iter()
         .map(|prd| {
             let render = latest_render(&prd.id, &renders);
+            let vibe_rating = render
+                .as_ref()
+                .and_then(|render| latest_vibe_rating(&prd.id, &render.id, &events));
             let dispatch = receipts.iter().find(|r| r.prd_id == prd.id);
             let skipped = events
                 .iter()
@@ -379,6 +384,7 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
                     "priority": prd.priority,
                 },
                 "render": render,
+                "vibe_rating": vibe_rating,
                 "dispatch": dispatch.map(|d| json!({
                     "id": d.id,
                     "kind": d.kind,
@@ -413,6 +419,66 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
         })),
     )
         .into_response()
+}
+
+fn latest_vibe_rating(prd_id: &str, render_id: &str, events: &[events::Event]) -> Option<String> {
+    events
+        .iter()
+        .rev()
+        .find(|event| {
+            event.kind == "vibe_rating"
+                && event.prd_id == prd_id
+                && event.render_id.as_deref() == Some(render_id)
+        })
+        .and_then(|event| event.rating.clone())
+}
+
+#[derive(Deserialize)]
+struct VibeBody {
+    prd_id: String,
+    render_id: String,
+    rating: String,
+}
+
+async fn api_vibe(State(ctx): State<AppCtx>, Json(body): Json<VibeBody>) -> Response {
+    if !VIBE_RATINGS.contains(&body.rating.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!(
+                    "unknown vibe rating '{}' (expected one of: {})",
+                    body.rating,
+                    VIBE_RATINGS.join(", ")
+                ),
+                "ratings": VIBE_RATINGS,
+            })),
+        )
+            .into_response();
+    }
+    let prds = match ctx.scan() {
+        Ok(p) => p,
+        Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+    };
+    let Some(prd) = prds.into_iter().find(|p| p.id == body.prd_id) else {
+        return error_response(StatusCode::NOT_FOUND, "spec not found");
+    };
+    let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
+    let Some(render) = renders
+        .iter()
+        .find(|r| r.prd_id == prd.id && r.id == body.render_id && r.status == "ready")
+    else {
+        return error_response(StatusCode::NOT_FOUND, "ready render not found for spec");
+    };
+    match events::append_rating(
+        &ctx.events_path(),
+        &prd.id,
+        &prd.sha256,
+        &render.id,
+        &body.rating,
+    ) {
+        Ok(event) => Json(json!({ "event": event, "rating": body.rating })).into_response(),
+        Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+    }
 }
 
 #[derive(Deserialize, Default)]

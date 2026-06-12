@@ -127,6 +127,19 @@
   .sticker.prio { bottom: -14px; left: -16px; transform: rotate(-5deg); background: var(--pink); color: #fff; }
   @keyframes throb { from { transform: rotate(6deg) scale(1); } to { transform: rotate(6deg) scale(1.08); } }
 
+  .vibe {
+    position: absolute; left: 10px; right: 10px; bottom: 92px; z-index: 4;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+  }
+  .vibe button {
+    min-width: 0; padding: 7px 4px; border: 2px solid #000;
+    background: rgba(7,9,11,.78); color: var(--ink);
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    box-shadow: 2px 2px 0 #000; cursor: pointer;
+  }
+  .vibe button.on { background: var(--acid); color: #000; }
+
   .hint {
     position: fixed; z-index: 9; font-size: 11px; letter-spacing: .14em;
     text-transform: uppercase; color: var(--dead); pointer-events: none;
@@ -314,6 +327,7 @@
     opening_pr: "opening pr", pr_opened: "pr opened",
     completed_local: "done (local)", failed: "agent flopped",
   };
+  const vibeRatings = ["cursed", "brainrot", "solid", "corporate"];
 
   function showToast(msg, isErr) {
     toast.textContent = msg;
@@ -409,6 +423,7 @@
       idx, items.length, item && item.prd.id,
       item && item.render && item.render.id,
       item && item.render && item.render.asset_url,
+      item && item.vibe_rating,
       item && item.dispatch && item.dispatch.pr_url,
       window.__falConfigured,
     ]);
@@ -479,6 +494,9 @@
             : (vid.provider === "fake-local" && window.__falConfigured
               ? '<button class="sticker aiify" id="aiify">fixture → cook with AI ($)</button>' : ""))}
         ${cook && cook !== "cooking" ? `<div class="logbox failed" style="display:block">${esc(cook)}</div>` : ""}
+        <div class="vibe" id="vibe" aria-label="brainrot vibe rating">
+          ${vibeRatings.map((rating) => `<button data-vibe="${esc(rating)}" class="${item.vibe_rating === rating ? "on" : ""}">${esc(rating)}</button>`).join("")}
+        </div>
         <div class="logbox" id="logbox" style="display:none"></div>
         <div class="caption">
           <div class="meme">${esc(prd.title)}</div>
@@ -487,6 +505,25 @@
       </div>`;
     const video = $("vid");
     if (started) { video.muted = false; video.play().catch(() => {}); }
+    const vibe = $("vibe");
+    if (vibe) {
+      vibe.onpointerdown = (e) => e.stopPropagation();
+      vibe.onclick = async (e) => {
+        const button = e.target.closest("button[data-vibe]");
+        if (!button) return;
+        e.stopPropagation();
+        try {
+          await api("/api/vibe", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ prd_id: prd.id, render_id: vid.id, rating: button.dataset.vibe }),
+          });
+          item.vibe_rating = button.dataset.vibe;
+          render();
+          showToast(`vibe logged: ${button.dataset.vibe}`);
+        } catch (err) { showToast(err.message, true); }
+      };
+    }
     const aiify = $("aiify");
     if (aiify) {
       aiify.onpointerdown = (e) => e.stopPropagation();
@@ -672,7 +709,7 @@
     if (e.target === repoOverlay) repoOverlay.classList.remove("show");
   });
 
-  document.addEventListener("keydown", (e) => {
+	document.addEventListener("keydown", (e) => {
     if (repoOverlay.classList.contains("show")) {
       if (e.key === "Escape") repoOverlay.classList.remove("show");
       return;
@@ -681,6 +718,7 @@
       if (e.key === "Escape") overlay.classList.remove("show");
       return;
     }
+    if (e.target.closest("button, a, input, textarea, select")) return;
     const card = $("card");
     if (e.key === "ArrowRight" && card) fly(card, "right", () => { swipe("implement"); go(1); });
     else if (e.key === "ArrowLeft" && card) fly(card, "left", () => { swipe("shape"); go(1); });

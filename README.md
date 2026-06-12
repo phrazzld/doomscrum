@@ -115,9 +115,10 @@ are cache-distinct for each successful generation, and the feed selects the
 newest ready provenance for a spec while leaving older JSON readable for
 audit. MP4s are served with HTTP byte ranges and streamed from disk, so
 browser seek and loop requests do not buffer the full render in memory. Every
-decision (skip, dispatch) is appended to `.doomscrum/events.ndjson`. Deleting
-`.doomscrum/` destroys only generated
-state — never specs.
+decision (skip, dispatch) and human vibe rating is appended to
+`.doomscrum/events.ndjson`; ratings point at the render id they judge instead
+of mutating render JSON or source specs. Deleting `.doomscrum/` destroys only
+generated state — never specs.
 
 ## Development
 

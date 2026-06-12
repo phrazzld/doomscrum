@@ -346,6 +346,9 @@ async fn forced_regeneration_preserves_old_json_and_updates_gallery_metadata() {
 fn gallery_card_signature_tracks_render_media_url() {
     let html = include_str!("../assets/index.html");
     assert!(html.contains("item && item.render && item.render.asset_url"));
+    assert!(html.contains("item && item.vibe_rating"));
+    assert!(html.contains("/api/vibe"));
+    assert!(html.contains("data-vibe"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -827,6 +830,108 @@ async fn skip_swipe_is_durable_and_nondestructive() {
     // Skipping never creates a dispatch.
     let (_, body) = app.get("/api/dispatches").await;
     assert_eq!(body["dispatches"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vibe_rating_is_render_scoped_and_nondestructive() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = &state["items"][0]["prd"];
+    let prd_id = prd["id"].as_str().unwrap().to_string();
+    let prd_sha256 = prd["sha256"].as_str().unwrap().to_string();
+    let prd_path = prd["path"].as_str().unwrap();
+    let source_path = app.root.join(prd_path);
+    let source_before = std::fs::read(&source_path).unwrap();
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id }),
+        )
+        .await;
+    assert_eq!(status, 200, "generate failed: {body}");
+    let render_id = body["renders"][0]["id"].as_str().unwrap().to_string();
+    let render_json = app
+        .root
+        .join(".doomscrum/renders")
+        .join(&prd_sha256)
+        .join(format!("{render_id}.json"));
+    let render_json_before = std::fs::read(&render_json).unwrap();
+
+    let (status, body) = app
+        .post(
+            "/api/vibe",
+            json!({ "prd_id": prd_id, "render_id": render_id, "rating": "cursed" }),
+        )
+        .await;
+    assert_eq!(status, 200, "vibe rating failed: {body}");
+    assert_eq!(body["event"]["kind"], "vibe_rating");
+    assert_eq!(body["event"]["render_id"], render_id);
+    assert_eq!(body["event"]["rating"], "cursed");
+
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"][0]["vibe_rating"], "cursed");
+
+    let events = std::fs::read_to_string(app.root.join(".doomscrum/events.ndjson")).unwrap();
+    assert!(events.contains("\"kind\":\"vibe_rating\""), "{events}");
+    assert!(events.contains("\"rating\":\"cursed\""), "{events}");
+    assert_eq!(source_before, std::fs::read(&source_path).unwrap());
+    assert_eq!(render_json_before, std::fs::read(&render_json).unwrap());
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fake", "prd_id": prd_id, "force": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "forced generate failed: {body}");
+    let new_render_id = body["renders"][0]["id"].as_str().unwrap();
+    assert_ne!(new_render_id, render_id);
+
+    let (_, state) = app.get("/api/state").await;
+    assert_eq!(state["items"][0]["render"]["id"], new_render_id);
+    assert!(state["items"][0]["vibe_rating"].is_null());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vibe_rating_rejects_unknown_rating_and_wrong_render() {
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let (status, body) = app
+        .post(
+            "/api/vibe",
+            json!({ "prd_id": prd_id, "render_id": "nope", "rating": "cursed" }),
+        )
+        .await;
+    assert_eq!(status, 404, "missing render should be rejected: {body}");
+
+    let (status, body) = app
+        .post("/api/generate", json!({ "provider": "fake" }))
+        .await;
+    assert_eq!(status, 200, "generate failed: {body}");
+    let render_id = body["renders"][0]["id"].as_str().unwrap().to_string();
+
+    let (_, state) = app.get("/api/state").await;
+    let other_prd_id = state["items"][1]["prd"]["id"].as_str().unwrap().to_string();
+    let (status, body) = app
+        .post(
+            "/api/vibe",
+            json!({ "prd_id": other_prd_id, "render_id": render_id, "rating": "cursed" }),
+        )
+        .await;
+    assert_eq!(
+        status, 404,
+        "render from a different spec should be rejected: {body}"
+    );
+
+    let (status, body) = app
+        .post(
+            "/api/vibe",
+            json!({ "prd_id": prd_id, "render_id": render_id, "rating": "shareholder" }),
+        )
+        .await;
+    assert_eq!(status, 400, "unknown rating should be rejected: {body}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
