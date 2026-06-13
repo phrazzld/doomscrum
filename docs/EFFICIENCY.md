@@ -20,12 +20,13 @@ multiplies the others.
    work on the free fixture provider, `--profile content` flips to the
    paid mix only when iterating on generated media. Once 026 lands, the
    dev profile should point at the stills pipeline instead of the fixture.
-3. **Stills pipeline: image + Ken Burns + TTS** (backlog 026). Keyframe
-   image (~$0.03) + free parallax motion + TTS voiceover (~$0.01) + our
-   caption/ribbon overlay ≈ **$0.05/clip**, fully bespoke per spec.
-   Becomes the heaviest weight in the mix once built. Deterministic audio
-   also eliminates both paid re-roll classes (silent duds, garbled
-   diction).
+3. **Stills pipeline: image + Ken Burns + deterministic audio/captions**
+   (backlog 026). Keyframe image (~$0.03) + free parallax motion +
+   local/cheap TTS + forced-aligned caption overlay ≈ **$0.05/clip**,
+   fully bespoke per spec. Becomes the heaviest weight in the mix once
+   built. The script, audio, and captions become the controlled layer; video
+   models are only responsible for visuals unless a hero profile explicitly
+   opts into native audio. See docs/VIDEO_QUALITY_PIPELINE.md.
 4. **Local open weights** (backlog 028). LTX-2 19B distilled FP8 runs on
    16GB consumer GPUs; Wan 1.3B does 5s/720p in ~45s on a 4090. Marginal
    cost ≈ electricity. The audience is developers — many own the
@@ -36,11 +37,16 @@ multiplies the others.
    cheapest pipelines; BYOK fal key or bundled credits carry the premium
    ones. Vendor COGS per free user ≈ pennies under strategies 1–4.
 
-## Pipeline price ladder (verified 2026-06-10)
+## Pipeline price ladder
+
+Base vendor prices were verified on 2026-06-10; the deterministic
+audio/caption routing decision was refreshed on 2026-06-13. Exact provider
+prices must still be quoted at render time.
 
 | Pipeline | $/clip | Notes |
 |---|---|---|
-| stills + Ken Burns + TTS | ~0.05 | not built yet (026); fully bespoke |
+| stills + Ken Burns + deterministic TTS/captions | ~0.05 | not built yet (026); fully bespoke |
+| cheap silent/visual video + deterministic TTS/captions | ~0.25-0.80 | motion upgrade; avoids native-audio transcript risk |
 | ltx-2.3 fast 8s 1080p | 0.32 | native audio; diction unverified |
 | veo3.1/lite 8s 720p | 0.40 | captions garble; no criterion at 8s |
 | sora-2 12s | 1.20 | speaks criterion; correct captions |
@@ -49,8 +55,12 @@ multiplies the others.
 
 ## Invariants that don't change
 
-- **No unverified paid render.** Every paid clip passes
-  `scripts/check_script_fit.py` regardless of pipeline.
+- **No unverified paid render.** Every paid clip passes the render verdict
+  gate (`scripts/check_script_fit.py` today, backlog 031 after promotion)
+  regardless of pipeline.
+- **Captions are product data, not model decoration.** Persist a word-level
+  caption artifact keyed to the expected script. Feed playback and archive
+  renders consume that artifact instead of trusting native model captions.
 - **Content-addressed caching stays.** A render is keyed by spec content
   hash; revisiting a spec replays the cached MP4. "Cheaper" never means
   "regenerate on every view." Storage is not the cost problem

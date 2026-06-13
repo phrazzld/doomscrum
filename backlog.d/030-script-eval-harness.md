@@ -17,6 +17,9 @@ scriptwriter are gated by a repeatable eval with thresholds, not eyeballs.
       report flags dimensions where the two judges disagree by >2 points.
 - [ ] Each production prompt/model change lands with a fresh
       docs/bench/<date>-*.md report justifying it.
+- [ ] The bench includes at least one downstream render check that scores
+      whether generated narration and captions preserve the ticket goal and
+      oracle phrase after alignment/transcription.
 
 ## Notes
 v0 shipped 2026-06-11: scripts/script_bench.py (7 models x 3 prompts x
@@ -29,3 +32,9 @@ specs, single generation per cell (temp 0.9 variance unmeasured), no
 scene-quality dimension fed back from actual video renders, judges not
 yet checked for self-consistency. **Why:** owner mandate 2026-06-11 —
 "build our own benchmarks and evals... actual science and engineering."
+
+Research 2026-06-13: script quality cannot stop at JSON parse and copy
+quality. The production pipeline treats the script as the source of truth, so
+the eval should catch scripts that technically fit a duration but lose the
+ticket's goal/oracle after TTS, forced alignment, captions, and transcript
+normalization.
