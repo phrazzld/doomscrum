@@ -53,6 +53,7 @@ impl FakeProvider {
             asset_url: format!("/media/{}/{}", storyboard.prd_sha256, asset_file),
             asset_file,
             caption_artifact_file: None,
+            degraded_reason: None,
             provider_job_id: Some(format!("fake-{}", crate::util::short(&id))),
             cost_estimate_usd: 0.0,
             latency_ms: started.elapsed().as_millis() as u64,

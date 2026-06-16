@@ -61,11 +61,20 @@ impl Default for RepoConfig {
 pub struct FeedConfig {
     /// Cap the feed to the top N specs by priority (filename order).
     pub max_items: usize,
+    /// How many specs ahead of the viewport cursor to keep warm with
+    /// just-in-time real renders. Serving the feed renders at most this many
+    /// specs in the window `[cursor, cursor + prefetch_depth)`; specs deeper in
+    /// the feed cost nothing until the cursor approaches them. 0 disables JIT
+    /// rendering entirely (renders only happen on explicit `generate`).
+    pub prefetch_depth: usize,
 }
 
 impl Default for FeedConfig {
     fn default() -> Self {
-        Self { max_items: 10 }
+        Self {
+            max_items: 10,
+            prefetch_depth: 3,
+        }
     }
 }
 
@@ -310,6 +319,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = Config::load(dir.path()).unwrap();
         assert_eq!(cfg.feed.max_items, 10);
+        assert_eq!(cfg.feed.prefetch_depth, 3);
         assert_eq!(cfg.video.provider, "fake");
         assert_eq!(cfg.video.max_daily_spend_usd, 5.0);
         assert_eq!(cfg.repo.backlog_dir, "backlog.d");

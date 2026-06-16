@@ -249,6 +249,7 @@ impl FalProvider {
             asset_url: format!("/media/{}/{}", storyboard.prd_sha256, asset_file),
             asset_file,
             caption_artifact_file: None,
+            degraded_reason: None,
             provider_job_id: result.request_id.or(Some(url)),
             cost_estimate_usd: self.render_cost(storyboard),
             latency_ms: started.elapsed().as_millis() as u64,

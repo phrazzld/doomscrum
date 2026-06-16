@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{Path as UrlPath, State};
+use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -344,7 +344,179 @@ fn latest_render(prd_id: &str, renders: &[VideoRender]) -> Option<VideoRender> {
         .cloned()
 }
 
-async fn api_state(State(ctx): State<AppCtx>) -> Response {
+#[derive(Deserialize, Default)]
+struct StateQuery {
+    /// The viewport cursor: the feed index the user is currently on. Drives
+    /// just-in-time prefetch of the specs ahead of it. Absent = a bare query
+    /// (no viewport), so no prefetch and no spend — only a feed viewer sends it.
+    cursor: Option<usize>,
+}
+
+/// Specs in the viewport window `[cursor, cursor + depth)` that still need a
+/// render: no ready render yet (a revisit replays the cached render — no
+/// second spend) and not already cooking (idempotent across the feed's poll).
+/// Specs deeper than the window are never returned, so they cost nothing until
+/// the cursor approaches them.
+fn prefetch_window<'a>(
+    prds: &'a [PrdSource],
+    renders: &[VideoRender],
+    cooking: &std::collections::HashMap<String, String>,
+    cursor: usize,
+    depth: usize,
+) -> Vec<&'a PrdSource> {
+    let start = cursor.min(prds.len());
+    let end = cursor.saturating_add(depth).min(prds.len());
+    prds[start..end]
+        .iter()
+        .filter(|prd| latest_render(&prd.id, renders).is_none())
+        .filter(|prd| !cooking.contains_key(&prd.id))
+        .collect()
+}
+
+/// How a windowed spec gets rendered. The wallet gate refuses over-cap real
+/// renders, but the feed must never go dark — so an over-budget spec degrades
+/// to a free fixture badged with the reason instead of failing the request.
+#[derive(Debug, PartialEq)]
+enum RenderPlan {
+    Real { cost: f64 },
+    DegradedFake,
+    Fake,
+    Skip,
+}
+
+/// Decide how to render one window spec. `fal` over the lifetime or daily cap
+/// degrades to a badged fixture (oracle: the feed survives an exhausted wallet);
+/// `fal` within budget renders for real when a key is present, else is left for
+/// an explicit generate; a free provider just renders.
+fn render_plan(
+    provider: &str,
+    fal_key_present: bool,
+    cost: f64,
+    spent_total: f64,
+    spent_today: f64,
+    cap_total: f64,
+    cap_daily: f64,
+) -> RenderPlan {
+    if provider != "fal" {
+        return RenderPlan::Fake;
+    }
+    if spent_total + cost > cap_total || spent_today + cost > cap_daily {
+        RenderPlan::DegradedFake
+    } else if fal_key_present {
+        RenderPlan::Real { cost }
+    } else {
+        RenderPlan::Skip
+    }
+}
+
+/// Run one render detached: a page refresh or a fast feed poll must never abort
+/// a job that may cost money. Updates `cooking` on completion, tags a degraded
+/// substitute so the feed can badge it, and releases the reservation. The caller
+/// marks `cooking` before spawning so the job is visible on the next poll.
+fn spawn_render_job(
+    ctx: &AppCtx,
+    prd: PrdSource,
+    provider: String,
+    reservation_id: Option<String>,
+    degraded_reason: Option<String>,
+) {
+    let bg = ctx.clone();
+    tokio::spawn(async move {
+        let outcome = render_one(&bg, &provider, &prd).await;
+        {
+            let mut map = bg.cooking.lock().expect("cooking lock");
+            match &outcome {
+                Ok(_) => {
+                    map.remove(&prd.id);
+                }
+                Err(err) => {
+                    map.insert(prd.id.clone(), format!("failed: {err:#}"));
+                }
+            }
+        }
+        // Tag a degraded substitute so the feed badges it (overwrites the render
+        // JSON the provider just wrote at the same path).
+        if let (Ok(render), Some(reason)) = (&outcome, &degraded_reason) {
+            let mut tagged = render.clone();
+            tagged.degraded_reason = Some(reason.clone());
+            let _ = crate::providers::save_render(&bg.renders_dir(), &tagged);
+        }
+        bg.release_render_reservation(reservation_id.as_deref())
+            .await;
+    });
+}
+
+/// Just-in-time render the viewport window: keep the next `prefetch_depth` specs
+/// warm as the cursor advances, under the same wallet caps as `/api/generate`.
+/// Fire-and-forget — renders run detached so serving the feed never blocks on
+/// generation, and `cooking` makes re-polls idempotent.
+async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender], cursor: usize) {
+    let depth = ctx.cfg.feed.prefetch_depth;
+    if depth == 0 {
+        return;
+    }
+    let provider = ctx.cfg.video.provider.clone();
+    let fal_key = ctx.fal_key().is_some();
+    let now = Utc::now();
+    let cap_total = ctx.cfg.video.max_total_spend_usd;
+    let cap_daily = ctx.cfg.video.max_daily_spend_usd;
+
+    let mut reservations = ctx.render_reservations.lock().await;
+    let mut spent_total = total_spend(renders) + pending_total_spend(&reservations);
+    let mut spent_today = daily_spend(renders, now) + pending_daily_spend(&reservations, now);
+    let mut cooking = ctx.cooking.lock().expect("cooking lock");
+
+    // (spec, render provider, reservation id, degraded badge) — decided and
+    // reserved synchronously, then spawned after the locks drop.
+    let mut jobs: Vec<(PrdSource, &'static str, Option<String>, Option<String>)> = Vec::new();
+    for prd in prefetch_window(prds, renders, &cooking, cursor, depth) {
+        let cost = crate::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&prd.sha256));
+        match render_plan(
+            &provider,
+            fal_key,
+            cost,
+            spent_total,
+            spent_today,
+            cap_total,
+            cap_daily,
+        ) {
+            RenderPlan::Real { cost } => {
+                spent_total += cost;
+                spent_today += cost;
+                let id = crate::providers::cache_distinct_render_id(&prd.sha256);
+                reservations.push(RenderReservation {
+                    id: id.clone(),
+                    amount_usd: cost,
+                    created_at: now,
+                });
+                cooking.insert(prd.id.clone(), "cooking".into());
+                jobs.push((prd.clone(), "fal", Some(id), None));
+            }
+            RenderPlan::DegradedFake => {
+                cooking.insert(prd.id.clone(), "cooking".into());
+                jobs.push((
+                    prd.clone(),
+                    "fake",
+                    None,
+                    Some("render budget exhausted".into()),
+                ));
+            }
+            RenderPlan::Fake => {
+                cooking.insert(prd.id.clone(), "cooking".into());
+                jobs.push((prd.clone(), "fake", None, None));
+            }
+            RenderPlan::Skip => {}
+        }
+    }
+    drop(cooking);
+    drop(reservations);
+
+    for (prd, pname, reservation_id, degraded) in jobs {
+        spawn_render_job(ctx, prd, pname.to_string(), reservation_id, degraded);
+    }
+}
+
+async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Response {
     let prds = match ctx.scan() {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
@@ -397,6 +569,12 @@ async fn api_state(State(ctx): State<AppCtx>) -> Response {
             })
         })
         .collect();
+
+    // Command/query separation: only a cursor-bearing request (a feed viewer)
+    // prefetches its viewport. A bare /api/state query stays a read with no spend.
+    if let Some(cursor) = q.cursor {
+        maybe_prefetch(&ctx, &prds, &renders, cursor).await;
+    }
 
     (
         [(header::CACHE_CONTROL, "no-store")],
@@ -629,30 +807,17 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         let Some(prd) = targets.into_iter().next() else {
             return error_response(StatusCode::CONFLICT, "already rendered (use force)");
         };
-        let id = prd.id.clone();
         ctx.cooking
             .lock()
             .expect("cooking lock")
-            .insert(id.clone(), "cooking".into());
-        let bg = ctx.clone();
-        let pname = provider_name.clone();
-        let reservation_id = render_reservation_id.clone();
-        tokio::spawn(async move {
-            let outcome = render_one(&bg, &pname, &prd).await;
-            {
-                let mut map = bg.cooking.lock().expect("cooking lock");
-                match outcome {
-                    Ok(_) => {
-                        map.remove(&id);
-                    }
-                    Err(err) => {
-                        map.insert(id, format!("failed: {err:#}"));
-                    }
-                }
-            }
-            bg.release_render_reservation(reservation_id.as_deref())
-                .await;
-        });
+            .insert(prd.id.clone(), "cooking".into());
+        spawn_render_job(
+            &ctx,
+            prd,
+            provider_name.clone(),
+            render_reservation_id.clone(),
+            None,
+        );
         return Json(json!({ "started": true })).into_response();
     }
 
@@ -950,8 +1115,29 @@ fn media_stream_response(
 
 #[cfg(test)]
 mod tests {
-    use super::{latest_render, parse_byte_range};
+    use super::{latest_render, parse_byte_range, prefetch_window, render_plan, RenderPlan};
+    use crate::backlog::PrdSource;
     use crate::providers::VideoRender;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn prd(id: &str) -> PrdSource {
+        PrdSource {
+            id: id.into(),
+            sha256: format!("sha-{id}"),
+            rel_path: format!("backlog.d/{id}.md"),
+            abs_path: PathBuf::new(),
+            title: format!("Spec {id}"),
+            priority: 0,
+            raw: String::new(),
+        }
+    }
+
+    fn ready_render_for(prd_id: &str) -> VideoRender {
+        let mut r = render("rid", "fake-local", "ready", "2026-01-01T00:00:00Z");
+        r.prd_id = prd_id.into();
+        r
+    }
 
     fn render(id: &str, provider: &str, status: &str, created_at: &str) -> VideoRender {
         let asset_file = format!("{id}.mp4");
@@ -967,11 +1153,82 @@ mod tests {
             asset_url: format!("/media/sha-1/{asset_file}"),
             asset_file,
             caption_artifact_file: None,
+            degraded_reason: None,
             provider_job_id: Some(format!("{id}-job")),
             cost_estimate_usd: 0.0,
             latency_ms: 1,
             created_at: created_at.into(),
         }
+    }
+
+    #[test]
+    fn prefetch_window_covers_only_depth_specs_ahead_of_cursor() {
+        let prds = vec![prd("a"), prd("b"), prd("c"), prd("d"), prd("e")];
+        let renders: Vec<VideoRender> = vec![];
+        let cooking = HashMap::new();
+        // cursor 0, depth 3 -> the top three; d and e (deeper) cost nothing.
+        let win: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 0, 3)
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(win, vec!["a", "b", "c"]);
+        // cursor advances -> the window slides, bringing d and e into view.
+        let win2: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 2, 3)
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(win2, vec!["c", "d", "e"]);
+    }
+
+    #[test]
+    fn prefetch_window_skips_already_rendered_and_cooking_specs() {
+        let prds = vec![prd("a"), prd("b"), prd("c")];
+        let renders = vec![ready_render_for("a")]; // a is cached — revisit, no re-spend
+        let mut cooking = HashMap::new();
+        cooking.insert("b".to_string(), "cooking".to_string()); // b is in flight
+        let win: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 0, 3)
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(win, vec!["c"]); // only c still needs a render
+    }
+
+    #[test]
+    fn prefetch_window_is_empty_for_zero_depth_or_cursor_past_end() {
+        let prds = vec![prd("a"), prd("b")];
+        let renders: Vec<VideoRender> = vec![];
+        let cooking = HashMap::new();
+        assert!(prefetch_window(&prds, &renders, &cooking, 0, 0).is_empty());
+        assert!(prefetch_window(&prds, &renders, &cooking, 9, 3).is_empty());
+    }
+
+    #[test]
+    fn render_plan_degrades_over_budget_and_reals_within_it() {
+        // fal over the lifetime cap -> badged fixture instead of failing the feed.
+        assert_eq!(
+            render_plan("fal", true, 1.0, 24.5, 0.0, 25.0, 5.0),
+            RenderPlan::DegradedFake
+        );
+        // fal over the daily cap -> degrade too.
+        assert_eq!(
+            render_plan("fal", true, 1.0, 0.0, 4.5, 25.0, 5.0),
+            RenderPlan::DegradedFake
+        );
+        // fal within budget + key -> real render, cost carried for the reservation.
+        assert_eq!(
+            render_plan("fal", true, 1.0, 0.0, 0.0, 25.0, 5.0),
+            RenderPlan::Real { cost: 1.0 }
+        );
+        // fal within budget but no key -> leave it for an explicit generate.
+        assert_eq!(
+            render_plan("fal", false, 1.0, 0.0, 0.0, 25.0, 5.0),
+            RenderPlan::Skip
+        );
+        // a free provider always renders, never wallet-gated.
+        assert_eq!(
+            render_plan("fake", false, 0.0, 0.0, 0.0, 25.0, 5.0),
+            RenderPlan::Fake
+        );
     }
 
     #[test]

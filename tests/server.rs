@@ -173,6 +173,19 @@ impl TestApp {
         panic!("dispatch {id} never reached a terminal status");
     }
 
+    /// Poll `/api/state{query}` until the predicate holds. Prefetch renders run
+    /// detached, so a serve returns before they land — poll to observe them.
+    async fn poll_state(&self, query: &str, ready: impl Fn(&Value) -> bool) -> Value {
+        for _ in 0..100 {
+            let (_, body) = self.get(&format!("/api/state{query}")).await;
+            if ready(&body) {
+                return body;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("/api/state never satisfied the predicate");
+    }
+
     fn git_stdout(&self, cwd: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(args)
@@ -203,6 +216,7 @@ fn render_fixture(
         asset_url: format!("/media/{prd_sha256}/{asset_file}"),
         asset_file,
         caption_artifact_file: None,
+        degraded_reason: None,
         provider_job_id: Some(format!("{id}-job")),
         cost_estimate_usd: 0.0,
         latency_ms: 1,
@@ -981,4 +995,78 @@ async fn bad_requests_are_rejected() {
         .post("/api/generate", json!({ "provider": "nonsense" }))
         .await;
     assert_eq!(status, 400);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn serving_the_feed_prefetches_only_the_viewport_window() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.provider = "fake".into();
+        cfg.feed.prefetch_depth = 2;
+    })
+    .await;
+    // Serving the feed at the top triggers JIT renders for the window [0, 2).
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("?cursor=0", |b| {
+            b["items"][0]["render"].is_object() && b["items"][1]["render"].is_object()
+        })
+        .await;
+    // The two windowed specs render; the deeper spec stays $0 / unrendered.
+    assert!(body["items"][0]["render"].is_object(), "spec 0 rendered");
+    assert!(body["items"][1]["render"].is_object(), "spec 1 rendered");
+    assert!(
+        body["items"][2]["render"].is_null(),
+        "a spec deeper than the window must not render: {}",
+        body["items"][2]["render"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn revisiting_a_rendered_spec_replays_the_cache_without_respending() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.provider = "fake".into();
+        cfg.feed.prefetch_depth = 1;
+    })
+    .await;
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("?cursor=0", |b| b["items"][0]["render"].is_object())
+        .await;
+    let first = body["items"][0]["render"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // Re-serve the same position: the cached render replays, no new render id.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let again = app.get("/api/state?cursor=0").await.1;
+    assert_eq!(
+        again["items"][0]["render"]["id"].as_str().unwrap(),
+        first,
+        "revisit must replay the cached render, not spend on a new one"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn over_budget_jit_renders_degrade_to_a_badged_fixture() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.provider = "fal".into();
+        cfg.video.max_total_spend_usd = 0.0; // any real render is over the cap
+        cfg.feed.prefetch_depth = 1;
+    })
+    .await;
+    // The feed must serve even with the wallet exhausted (no 402/500).
+    let (status, _) = app.get("/api/state?cursor=0").await;
+    assert_eq!(status, 200);
+    let body = app
+        .poll_state("?cursor=0", |b| b["items"][0]["render"].is_object())
+        .await;
+    let render = &body["items"][0]["render"];
+    assert_eq!(
+        render["provider"], "fake-local",
+        "over-budget render degrades to the free provider"
+    );
+    assert_eq!(
+        render["degraded_reason"], "render budget exhausted",
+        "a degraded render must badge the reason"
+    );
 }
