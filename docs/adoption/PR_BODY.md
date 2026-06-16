@@ -60,4 +60,23 @@ The primary "COOK FIXTURE FEED" action keeps an acid fill — the loud
 consumer's one earned accent moment. Flag it if you'd rather it go ink
 like the rest.
 
+## Post-review remediation
+
+Fresh-context review (two model families + a live browser walk) surfaced three
+fixes, now applied — still all in `assets/index.html`:
+
+- **Fonts self-hosted.** Geist + Geist Mono are embedded as base64 `woff2` (OFL)
+  in a local `@font-face`; the three `fonts.googleapis.com`/`gstatic.com`
+  `<link>`s are gone. The page makes **zero external requests** again — the
+  "self-contained" claim above is now literally true, with no third-party font
+  CDN reached from a local tool. Verified: 0 `fonts.g*` requests on load.
+- **Contrast.** `--dead` (`#5c5c5c`, 2.80:1 on `--bg`) was readable text for the
+  spec-overlay path+sha256, the picker label, and the spend meter — all below
+  WCAG AA. Moved to `--muted` (`#8f8f8f`, 5.79:1).
+- **The success state got its color back.** `pr_opened` rendered acid —
+  identical to a fresh/default sticker — so "PR opened" (the payoff of a
+  right-swipe) was indistinguishable at a glance. It and `completed_local` now
+  use `--ok` (`#6fd2a8`), completing the status palette (queued/running
+  `--warn`, opening_pr `--cyan`, failed `--err`, done `--ok`).
+
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
