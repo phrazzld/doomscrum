@@ -807,10 +807,23 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         let Some(prd) = targets.into_iter().next() else {
             return error_response(StatusCode::CONFLICT, "already rendered (use force)");
         };
-        ctx.cooking
-            .lock()
-            .expect("cooking lock")
-            .insert(prd.id.clone(), "cooking".into());
+        // Atomic claim against the LIVE cooking map: a concurrent prefetch may
+        // have started this spec since active_cooking was sampled above. Whoever
+        // inserts first wins; the loser drops its reservation and dedupes, so a
+        // spec is never double-submitted to the paid provider.
+        let already_cooking = {
+            let mut cooking = ctx.cooking.lock().expect("cooking lock");
+            let present = cooking.contains_key(&prd.id);
+            if !present {
+                cooking.insert(prd.id.clone(), "cooking".into());
+            }
+            present
+        };
+        if already_cooking {
+            ctx.release_render_reservation(render_reservation_id.as_deref())
+                .await;
+            return Json(json!({ "started": true, "deduped": true })).into_response();
+        }
         spawn_render_job(
             &ctx,
             prd,
@@ -1223,6 +1236,11 @@ mod tests {
         assert_eq!(
             render_plan("fal", false, 1.0, 0.0, 0.0, 25.0, 5.0),
             RenderPlan::Skip
+        );
+        // exactly at the cap still renders for real (strict > means == is in budget).
+        assert_eq!(
+            render_plan("fal", true, 0.5, 24.5, 0.0, 25.0, 5.0),
+            RenderPlan::Real { cost: 0.5 }
         );
         // a free provider always renders, never wallet-gated.
         assert_eq!(

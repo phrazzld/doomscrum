@@ -1070,3 +1070,59 @@ async fn over_budget_jit_renders_degrade_to_a_badged_fixture() {
         "a degraded render must badge the reason"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bare_state_query_does_not_prefetch_or_spend() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.provider = "fake".into();
+        cfg.feed.prefetch_depth = 3;
+    })
+    .await;
+    // A bare /api/state (no cursor) is a pure read — it must never start renders.
+    for _ in 0..3 {
+        app.get("/api/state").await;
+    }
+    // Wait well past the fake-render latency a prefetch would have incurred.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let (_, body) = app.get("/api/state").await;
+    assert_eq!(
+        body["cooking"],
+        json!({}),
+        "a bare query must not start any render"
+    );
+    for (i, item) in body["items"].as_array().unwrap().iter().enumerate() {
+        assert!(
+            item["render"].is_null(),
+            "a bare query must not render spec {i}: {}",
+            item["render"]
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_prefetch_window_follows_the_cursor_as_it_advances() {
+    let app = spawn_app_with(|cfg| {
+        cfg.video.provider = "fake".into();
+        cfg.feed.prefetch_depth = 1;
+    })
+    .await;
+    // At the top, only spec 0 warms; spec 1 stays $0 until the cursor reaches it.
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("?cursor=0", |b| b["items"][0]["render"].is_object())
+        .await;
+    assert!(
+        body["items"][1]["render"].is_null(),
+        "spec 1 must stay $0 while the cursor sits at 0: {}",
+        body["items"][1]["render"]
+    );
+    // Advance the cursor — the window slides and spec 1 renders on arrival.
+    app.get("/api/state?cursor=1").await;
+    let body = app
+        .poll_state("?cursor=1", |b| b["items"][1]["render"].is_object())
+        .await;
+    assert!(
+        body["items"][1]["render"].is_object(),
+        "spec 1 renders once the cursor reaches it"
+    );
+}
