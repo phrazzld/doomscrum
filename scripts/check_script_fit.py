@@ -5,7 +5,7 @@ Usage: check_script_fit.py <render.mp4> [expected script text]
 
 Extracts the audio track, transcribes it through fal-ai/whisper (same
 account as generation), and reports:
-  - the transcript with segment timings
+  - the transcript with segment timings, or a fresh caption artifact
   - whether speech ends before the clip does (no cutoff)
   - what fraction of the expected script's words were actually spoken
 
@@ -13,6 +13,7 @@ Exit code 0 = script fits, 1 = cutoff or low coverage, 2 = usage/infra.
 """
 
 import base64
+import hashlib
 import json
 import re
 import subprocess
@@ -93,7 +94,7 @@ def transcribe(mp4: Path, key: str, chunk_level: str = "segment") -> dict:
 def transcribe_deepgram(mp4: Path, key: str) -> dict:
     """Deepgram fallback: direct binary upload, no storage hop. Returns the
     same {text, chunks:[{text, timestamp:[t0,t1]}]} shape as fal whisper
-    (word-level chunks)."""
+    (word-level chunks plus confidence when present)."""
     wav = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(mp4), "-ac", "1", "-ar", "16000",
          "-f", "wav", "-"],
@@ -109,36 +110,142 @@ def transcribe_deepgram(mp4: Path, key: str) -> dict:
     return {
         "text": alt.get("transcript", ""),
         "chunks": [
-            {"text": w["word"], "timestamp": [w["start"], w["end"]]}
+            {
+                "text": w["word"],
+                "timestamp": [w["start"], w["end"]],
+                "confidence": w.get("confidence"),
+            }
             for w in alt.get("words", [])
         ],
     }
 
 
-def transcribe_any(mp4: Path, chunk_level: str) -> dict:
+def transcribe_any(mp4: Path, chunk_level: str) -> tuple[str, dict]:
     """fal whisper first (account parity with generation); Deepgram when fal
     storage is unavailable (their upload endpoints started 403ing 2026-06-11)."""
     try:
-        return transcribe(mp4, fal_key(), chunk_level)
+        return "fal_whisper", transcribe(mp4, fal_key(), chunk_level)
     except urllib.error.HTTPError as e:
         dg = get_key("DEEPGRAM_API_KEY")
         if not dg:
             raise
         print(f"note      : fal transcription unavailable (HTTP {e.code}); using deepgram")
-        return transcribe_deepgram(mp4, dg)
+        return "deepgram", transcribe_deepgram(mp4, dg)
 
 
 def norm_words(text: str) -> list[str]:
     return [w for w in re.sub(r"[^a-z0-9 ]", " ", text.lower()).split() if w]
 
 
-def main() -> int:
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+def norm_text(text: str) -> str:
+    return " ".join(norm_words(text))
+
+
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_caption_artifact(path: Path) -> dict:
+    artifact = json.loads(path.read_text())
+    if not isinstance(artifact.get("words"), list):
+        raise ValueError(f"{path} is missing words[]")
+    return artifact
+
+
+def load_fresh_caption_artifact(path: Path, render_sha256: str) -> dict | None:
+    if not path.exists():
+        return None
+    artifact = load_caption_artifact(path)
+    return artifact if artifact.get("render_sha256") == render_sha256 else None
+
+
+def chunk_to_caption_word(chunk: dict, duration: float) -> dict:
+    t0, t1 = chunk["timestamp"]
+    start = 0 if t0 is None else t0
+    end = duration if t1 is None else t1
+    return {
+        "text": str(chunk.get("text", "")).strip(),
+        "start_ms": round(float(start) * 1000),
+        "end_ms": round(float(end) * 1000),
+        "confidence": chunk.get("confidence"),
+    }
+
+
+def result_to_caption_artifact(
+    source: str,
+    result: dict,
+    expected: str,
+    render_sha256: str,
+    duration: float,
+) -> dict:
+    chunks = result.get("chunks", [])
+    text = result.get("text", "").strip()
+    if not text:
+        text = " ".join(str(c.get("text", "")).strip() for c in chunks).strip()
+    return {
+        "source": source,
+        "render_sha256": render_sha256,
+        "normalized_expected": norm_text(expected),
+        "normalized_observed": norm_text(text),
+        "words": [chunk_to_caption_word(c, duration) for c in chunks],
+    }
+
+
+def caption_artifact_to_result(artifact: dict) -> dict:
+    words = artifact.get("words", [])
+    chunks = [
+        {
+            "text": word.get("text", ""),
+            "timestamp": [
+                float(word.get("start_ms", 0)) / 1000,
+                float(word.get("end_ms", 0)) / 1000,
+            ],
+        }
+        for word in words
+    ]
+    text = " ".join(str(word.get("text", "")).strip() for word in words).strip()
+    return {
+        "text": text or artifact.get("normalized_observed", ""),
+        "chunks": chunks,
+    }
+
+
+def parse_args(argv: list[str]) -> tuple[Path | None, Path | None, list[str]]:
     words_json = None
-    for i, a in enumerate(sys.argv[1:]):
-        if a == "--words-json":
-            words_json = Path(sys.argv[1:][i + 1])
-            args = [x for x in args if x != sys.argv[1:][i + 1]]
+    caption_artifact = None
+    positional = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--words-json":
+            i += 1
+            if i >= len(argv):
+                raise ValueError("--words-json requires a path")
+            words_json = Path(argv[i])
+        elif arg == "--caption-artifact":
+            i += 1
+            if i >= len(argv):
+                raise ValueError("--caption-artifact requires a path")
+            caption_artifact = Path(argv[i])
+        elif arg.startswith("--"):
+            raise ValueError(f"unknown option {arg}")
+        else:
+            positional.append(arg)
+        i += 1
+    return words_json, caption_artifact, positional
+
+
+def main() -> int:
+    try:
+        words_json, caption_artifact, args = parse_args(sys.argv[1:])
+    except ValueError as e:
+        print(e)
+        print(__doc__)
+        return 2
     if not args:
         print(__doc__)
         return 2
@@ -150,10 +257,31 @@ def main() -> int:
          "-of", "csv=p=0", str(mp4)],
         capture_output=True, text=True, check=True,
     ).stdout.strip())
+    render_sha256 = file_sha256(mp4)
 
-    # Word-level chunks time each spoken word (for caption overlays) and
-    # still give a valid speech-end for the cutoff check.
-    result = transcribe_any(mp4, "word" if words_json else "segment")
+    # Word-level chunks time each spoken word (for caption overlays), and a
+    # same-render artifact keeps QA from paying to re-transcribe the render.
+    artifact = (
+        load_fresh_caption_artifact(caption_artifact, render_sha256)
+        if caption_artifact
+        else None
+    )
+    if artifact:
+        result = caption_artifact_to_result(artifact)
+        print(f"captions  : reused fresh artifact -> {caption_artifact}")
+    else:
+        source, result = transcribe_any(mp4, "word" if (words_json or caption_artifact) else "segment")
+        if caption_artifact:
+            artifact = result_to_caption_artifact(
+                source,
+                result,
+                expected,
+                render_sha256,
+                duration,
+            )
+            caption_artifact.parent.mkdir(parents=True, exist_ok=True)
+            caption_artifact.write_text(json.dumps(artifact, indent=1))
+            print(f"captions  : saved {len(artifact['words'])} word timings -> {caption_artifact}")
     if words_json:
         words_json.write_text(json.dumps(result.get("chunks", []), indent=1))
         print(f"words     : saved {len(result.get('chunks', []))} word timings -> {words_json}")

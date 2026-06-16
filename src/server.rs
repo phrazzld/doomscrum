@@ -966,6 +966,7 @@ mod tests {
             status: status.into(),
             asset_url: format!("/media/sha-1/{asset_file}"),
             asset_file,
+            caption_artifact_file: None,
             provider_job_id: Some(format!("{id}-job")),
             cost_estimate_usd: 0.0,
             latency_ms: 1,

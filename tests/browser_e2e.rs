@@ -176,6 +176,10 @@ async fn browser_gestures_cover_skip_overlay_and_dispatch() {
 
     pointer_swipe(&tab, "#card", 0, -160);
     wait_until_status(&app, 0, "skipped").await;
+    wait_for_js(
+        &tab,
+        "document.querySelector('#card .meme')?.textContent.includes('Second Spec')",
+    );
 
     pointer_tap(&tab, "#card");
     wait_for_js(
