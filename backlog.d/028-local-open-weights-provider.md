@@ -49,3 +49,9 @@ works), buy a single 5090 box only if sustained volume justifies it; skip
 the Mac cluster for video. Audience is developers — many own the hardware.
 **Why:** owner picked this lane explicitly in the 2026-06-10 efficiency
 session and asked for the buy-vs-cluster-vs-rent tradeoff on 2026-06-10.
+
+Groom 2026-06-17: **Gate 2** in `docs/VISION.md` — keep P1 (owner-picked lane),
+but it is L-sized and not on the critical path to first value; sequence after
+the dispatch proof and the render-quality gate ([[031-render-verdict-gate]]). It
+makes the wallet cap irrelevant for self-hosters — strengthens the local-first
+story but doesn't gate it.
