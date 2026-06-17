@@ -55,6 +55,7 @@ fn render_fixture(
         asset_url: format!("/media/{prd_sha256}/{asset_file}"),
         asset_file,
         caption_artifact_file: None,
+        degraded_reason: None,
         provider_job_id: Some(format!("{id}-job")),
         cost_estimate_usd: 0.0,
         latency_ms: 1,

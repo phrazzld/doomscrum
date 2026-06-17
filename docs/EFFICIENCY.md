@@ -6,10 +6,13 @@ multiplies the others.
 
 ## The stack
 
-1. **Render the viewport, not the backlog** (backlog 027). Most specs are
-   never watched. Render just-in-time as items approach the top of the
-   feed; promote a spec to a hero pipeline only when engagement proves it
-   earns one. This is a unit-count cut (~10x), independent of unit price.
+1. **Render the viewport, not the backlog** (shipped 2026-06-16). Most specs
+   are never watched, so `feed.prefetch_depth` (default 3) renders just-in-time
+   as items approach the top of the feed; deeper specs cost $0 until the cursor
+   nears them, and an exhausted wallet degrades to a free fixture rather than
+   failing the feed. A unit-count cut (~10x), independent of unit price.
+   Promoting a lingered-on spec to a hero pipeline (engagement-driven) is a
+   follow-up.
 2. **Render-mix portfolio** (shipped — `[[video.mix]]` in doomscrum.toml).
    Each spec deterministically draws a pipeline by content hash: most land
    cheap/short, a weighted few land hero. Current default averages

@@ -91,6 +91,13 @@ sort order; only the top `feed.max_items` (default 10) enter the feed.
 Files starting with `_` are ignored (use `_done/`-style prefixes for
 archives).
 
+Real renders happen just-in-time: serving the feed renders at most
+`feed.prefetch_depth` (default 3) specs ahead of your viewport, so a long
+backlog costs a handful of clips, not one per spec. Specs deeper in the feed
+stay free until you scroll toward them, and if the wallet cap is exhausted a
+spec degrades to a free fixture (badged "render budget exhausted") instead of
+breaking the feed.
+
 ## What a swipe actually does
 
 Right swipe (implement) / left swipe (shape):

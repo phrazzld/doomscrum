@@ -37,6 +37,11 @@ pub struct VideoRender {
     pub cost_estimate_usd: f64,
     pub latency_ms: u64,
     pub created_at: String,
+    /// Set when this render is a degraded substitute — e.g. a free fixture
+    /// stood in for a real render the wallet gate refused. The feed badges
+    /// this reason verbatim (e.g. "render budget exhausted").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degraded_reason: Option<String>,
 }
 
 /// Provider-neutral source for persisted word-level caption timings.
@@ -343,6 +348,7 @@ mod tests {
             asset_file: "render-1.mp4".into(),
             asset_url: "/media/sha-1/render-1.mp4".into(),
             caption_artifact_file: Some("captions.json".into()),
+            degraded_reason: None,
             provider_job_id: Some("job-1".into()),
             cost_estimate_usd: 0.1,
             latency_ms: 10,

@@ -15,6 +15,11 @@ state_dir = ".doomscrum"
 [feed]
 # Only the top N specs (filename order = priority) enter the feed.
 max_items = 10
+# Just-in-time rendering (docs/EFFICIENCY.md strategy 1): serving the feed
+# renders at most this many specs ahead of the viewport cursor. Specs deeper
+# in the feed cost nothing until you scroll toward them; an exhausted wallet
+# degrades to a free fixture instead of failing the feed. 0 disables JIT.
+prefetch_depth = 3
 
 [video]
 # "fake" renders an embedded fixture (offline, free).
