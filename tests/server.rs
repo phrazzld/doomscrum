@@ -499,6 +499,28 @@ async fn real_render_budget_counts_in_flight_reservations() {
     assert_eq!(status, 200, "first paid render should start: {body}");
     assert_eq!(body["started"], true);
 
+    // The first render dispatches to fal in a detached task; wait for its POST
+    // to actually reach the mock before continuing. Without this the mock's
+    // expect(1) check (run when `fal` drops at function end) can race a
+    // not-yet-scheduled spawn under heavy parallel load and observe zero
+    // requests. Waiting also makes "pending first render" provably true: the
+    // response is delayed 2s, so the reservation is still in flight here.
+    let mut dispatched = false;
+    for _ in 0..100 {
+        let landed = fal
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .any(|r| r.url.path() == "/fal-ai/test-model");
+        if landed {
+            dispatched = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(dispatched, "first paid render never dispatched to fal");
+
     let (status, body) = app
         .post(
             "/api/generate",
