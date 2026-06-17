@@ -198,6 +198,11 @@ async fn browser_gestures_cover_skip_overlay_and_dispatch() {
         .unwrap();
     wait_for_js(&tab, "!document.querySelector('#overlay.show')");
     pointer_swipe(&tab, "#card", 160, 0);
+    // The first dispatch swipe against this repo opens the consent gate; accept.
+    tab.wait_for_element("#consentConfirm")
+        .unwrap()
+        .click()
+        .unwrap();
 
     let receipt = app.await_implemented().await;
     assert!(
@@ -216,6 +221,82 @@ async fn browser_gestures_cover_skip_overlay_and_dispatch() {
             .file_name()
             .to_string_lossy()
             .ends_with(".json")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn first_dispatch_swipe_requires_consent_then_remembers() {
+    let app = spawn_browser_app().await;
+    let (status, body) = app
+        .post("/api/generate", json!({ "provider": "fake" }))
+        .await;
+    assert_eq!(status, 200, "fixture generation failed: {body}");
+
+    let browser = launch_browser();
+    let tab = browser.new_tab().unwrap();
+    tab.set_default_timeout(Duration::from_secs(10));
+    tab.navigate_to(&app.url("/"))
+        .unwrap()
+        .wait_until_navigated()
+        .unwrap();
+    tab.wait_for_element("#splash").unwrap().click().unwrap();
+    wait_for_js(&tab, "Boolean(document.querySelector('#card video'))");
+
+    // A right swipe must NOT dispatch immediately — it opens the consent gate.
+    pointer_swipe(&tab, "#card", 160, 0);
+    wait_for_js(
+        &tab,
+        "Boolean(document.querySelector('#consentOverlay.show'))",
+    );
+
+    // Cancel dispatches nothing.
+    tab.wait_for_element("#consentCancel")
+        .unwrap()
+        .click()
+        .unwrap();
+    wait_for_js(&tab, "!document.querySelector('#consentOverlay.show')");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let (_, dispatches) = app.get("/api/dispatches").await;
+    assert!(
+        dispatches["dispatches"]
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(true),
+        "cancel must dispatch nothing, got: {dispatches}"
+    );
+
+    // Swipe again and confirm — now it dispatches for real.
+    pointer_swipe(&tab, "#card", 160, 0);
+    wait_for_js(
+        &tab,
+        "Boolean(document.querySelector('#consentOverlay.show'))",
+    );
+    tab.wait_for_element("#consentConfirm")
+        .unwrap()
+        .click()
+        .unwrap();
+    let receipt = app.await_implemented().await;
+    assert_eq!(receipt["status"], "pr_opened", "receipt: {receipt}");
+
+    // Consent persists across reload: a later dispatch swipe does not re-prompt.
+    tab.navigate_to(&app.url("/"))
+        .unwrap()
+        .wait_until_navigated()
+        .unwrap();
+    tab.wait_for_element("#splash").unwrap().click().unwrap();
+    wait_for_js(&tab, "Boolean(document.querySelector('#card video'))");
+    pointer_swipe(&tab, "#card", 160, 0);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let shown = tab
+        .evaluate(
+            "Boolean(document.querySelector('#consentOverlay.show'))",
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        shown.value,
+        Some(Value::Bool(false)),
+        "consent must not re-prompt after it was granted for this repo"
+    );
 }
 
 async fn wait_until_status(app: &TestApp, index: usize, expected: &str) {
