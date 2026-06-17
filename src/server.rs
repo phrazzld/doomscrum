@@ -1001,8 +1001,7 @@ async fn api_dispatch_log(State(ctx): State<AppCtx>, UrlPath(id): UrlPath<String
         return error_response(StatusCode::NOT_FOUND, "dispatch not found");
     };
     let raw = std::fs::read_to_string(&receipt.agent_log).unwrap_or_default();
-    let tail: Vec<&str> = raw.lines().rev().take(14).collect();
-    let tail: Vec<&str> = tail.into_iter().rev().collect();
+    let tail = log_tail(&raw, 14);
     let failing_stage = receipt
         .stages
         .iter()
@@ -1012,11 +1011,24 @@ async fn api_dispatch_log(State(ctx): State<AppCtx>, UrlPath(id): UrlPath<String
     Json(json!({
         "id": receipt.id,
         "status": receipt.status,
+        // `note` and the log file are already redacted at the persistence/write
+        // boundary (see dispatch::redacted_receipt and run_cmd), so receipts
+        // loaded here carry no raw secrets.
         "note": receipt.note,
         "failing_stage": failing_stage,
         "tail": tail,
     }))
     .into_response()
+}
+
+/// Last `n` lines of an agent log, secrets masked. The write path already
+/// scrubs, so redacting here is defense in depth: a log written before this
+/// shipped — or any future non-local `/log` bind — still cannot serve a key.
+fn log_tail(raw: &str, n: usize) -> Vec<String> {
+    let redacted = secrets::redact_env(raw);
+    let mut lines: Vec<String> = redacted.lines().rev().take(n).map(str::to_string).collect();
+    lines.reverse();
+    lines
 }
 
 /// Parse a `Range: bytes=start-end` header against a body of `len` bytes.
@@ -1128,7 +1140,9 @@ fn media_stream_response(
 
 #[cfg(test)]
 mod tests {
-    use super::{latest_render, parse_byte_range, prefetch_window, render_plan, RenderPlan};
+    use super::{
+        latest_render, log_tail, parse_byte_range, prefetch_window, render_plan, RenderPlan,
+    };
     use crate::backlog::PrdSource;
     use crate::providers::VideoRender;
     use std::collections::HashMap;
@@ -1247,6 +1261,21 @@ mod tests {
             render_plan("fake", false, 0.0, 0.0, 0.0, 25.0, 5.0),
             RenderPlan::Fake
         );
+    }
+
+    #[test]
+    fn log_tail_masks_secrets_and_keeps_last_lines() {
+        let raw = "line one\nagent printed sk-or-v1-DEADBEEF12345678\nlast line";
+        let tail = log_tail(raw, 14);
+        assert_eq!(tail.len(), 3);
+        assert!(
+            tail.iter()
+                .all(|l| !l.contains("sk-or-v1-DEADBEEF12345678")),
+            "{tail:?}"
+        );
+        assert!(tail.iter().any(|l| l.contains("[REDACTED]")), "{tail:?}");
+        assert_eq!(tail[0], "line one");
+        assert_eq!(tail[2], "last line");
     }
 
     #[test]

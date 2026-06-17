@@ -191,6 +191,16 @@ pub struct AgentConfig {
     pub implement_cmd: Vec<String>,
     pub shape_cmd: Vec<String>,
     pub pr_cmd: Vec<String>,
+    /// Environment variables the *untrusted* agent stage is allowed to inherit.
+    /// The agent runs spec content that can come from a foreign repo, so its
+    /// process env is built from this allowlist alone (`env_clear` + re-add) —
+    /// never the parent env. The default is the minimum to run a CLI (PATH/HOME/
+    /// locale/XDG): no API keys, since the agent's output is committed and
+    /// pushed, so any key in its env can be exfiltrated into a PR. Service-secret
+    /// names (`FAL_API_KEY`/`OPENROUTER_API_KEY`/git tokens) are dropped even if
+    /// listed. Operators whose agent authenticates via an env var add it here,
+    /// accepting that exposure.
+    pub env_allowlist: Vec<String>,
     /// When false, dispatch stops after the agent commits (no push, no PR).
     pub open_pr: bool,
     /// Maximum agent runs allowed at once; additional swipes persist queued
@@ -227,6 +237,34 @@ impl Default for AgentConfig {
                 "{title}",
                 "--body-file",
                 "{body_file}",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            env_allowlist: [
+                // Process + toolchain essentials any agent CLI needs to run.
+                "PATH",
+                "HOME",
+                "USER",
+                "LOGNAME",
+                "SHELL",
+                "TERM",
+                "TMPDIR",
+                "TZ",
+                "LANG",
+                "LC_ALL",
+                "LC_CTYPE",
+                // XDG dirs — agents that keep config/credentials there.
+                "XDG_CONFIG_HOME",
+                "XDG_CACHE_HOME",
+                "XDG_DATA_HOME",
+                // NB: NO provider API keys (OPENAI_API_KEY/ANTHROPIC_API_KEY) by
+                // default. The default agent (`codex exec`) authenticates via
+                // ~/.codex/auth.json (reached through HOME), so it needs none in
+                // env — and any key in the agent's env can be written to a file
+                // the dispatcher then commits and pushes. Operators whose agent
+                // authenticates via an env var add it here, accepting that it is
+                // exposed to untrusted spec-driven execution.
             ]
             .iter()
             .map(|s| s.to_string())
@@ -326,6 +364,27 @@ mod tests {
         assert!(cfg.agent.open_pr);
         assert_eq!(cfg.agent.max_concurrent_dispatches, 2);
         assert_eq!(cfg.agent.implement_cmd[0], "codex");
+    }
+
+    #[test]
+    fn agent_env_allowlist_excludes_doomscrum_secrets_keeps_runtime() {
+        let allow = AgentConfig::default().env_allowlist;
+        // Runtime essentials the default agent (codex) needs to start + auth.
+        assert!(allow.iter().any(|k| k == "PATH"), "{allow:?}");
+        assert!(allow.iter().any(|k| k == "HOME"), "{allow:?}");
+        // DoomScrum's service keys + git push tokens must never reach the agent.
+        for forbidden in [
+            "FAL_API_KEY",
+            "FAL_KEY",
+            "OPENROUTER_API_KEY",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+        ] {
+            assert!(
+                !allow.iter().any(|k| k == forbidden),
+                "allowlist leaks {forbidden}: {allow:?}"
+            );
+        }
     }
 
     #[test]
