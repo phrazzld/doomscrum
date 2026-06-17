@@ -17,6 +17,14 @@ Right and left swipes launch **real agents** that modify code and open
 **real pull requests**. That is the point. There is no sandbox theater
 beyond what your agent CLI provides.
 
+Because that consequence is real, the **first** implement/shape swipe against
+a repo opens a one-time confirmation that names exactly what will happen
+("launches a real agent and opens a real PR against `<repo>`") with
+**Cook it / Cancel**. Once acknowledged, DoomScrum does not ask again for that
+repo; switching to a different repo asks once more. Skip (↑) and back (↓) never
+dispatch and never prompt. This is consent, not a quota — dispatch stays
+unbounded once you've opted in.
+
 ## Quick start
 
 ```bash

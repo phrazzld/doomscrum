@@ -257,6 +257,18 @@
   }
   .picker .go:hover { opacity: .9; }
   .picker .go:active { transform: translateY(1px); }
+  .picker .cancel {
+    margin-top: 10px; width: 100%;
+    font-family: var(--mono); font-weight: 700; text-transform: uppercase;
+    font-size: 13px; padding: 10px; cursor: pointer;
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    transition: border-color var(--quick) var(--ease), color var(--quick) var(--ease);
+  }
+  .picker .cancel:hover { border-color: var(--ink); color: var(--ink); }
+  .consent-copy {
+    font-family: var(--mono); font-size: 13px; line-height: 1.6;
+    color: var(--ink); margin: 0 0 16px;
+  }
   .picker ul { list-style: none; margin-top: 20px; }
   .picker li {
     padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
@@ -334,6 +346,15 @@
     <button class="go" id="repoGo">sync it</button>
     <div class="lbl" id="recentsLbl" style="display:none">recent repos</div>
     <ul id="repoRecents"></ul>
+  </div>
+</div>
+
+<div class="overlay" id="consentOverlay">
+  <div class="head"><h2>dispatch a real agent?</h2><span class="hash" id="consentRepo"></span></div>
+  <div class="picker">
+    <p class="consent-copy">Swiping <b>right</b> launches a real coding agent in a fresh git worktree and opens a <b>real pull request</b>. Swiping <b>left</b> dispatches an agent to rewrite the spec file. This runs real commands and opens real PRs against this repo — not a preview.</p>
+    <button class="go" id="consentConfirm">Cook it — I get it</button>
+    <button class="cancel" id="consentCancel">Cancel</button>
   </div>
 </div>
 
@@ -591,7 +612,14 @@
   async function swipe(action) {
     const item = items[idx];
     if (!item || busy) return;
+    // Hold the busy lock across the consent prompt so a slow /api/repo fetch
+    // can't let a second swipe re-enter and orphan the first prompt's promise.
     busy = true;
+    if ((action === "implement" || action === "shape") && !(await ensureDispatchConsent())) {
+      busy = false;
+      showToast("dispatch cancelled");
+      return;
+    }
     try {
       if (action === "skip") {
         await api("/api/swipe", { method: "POST", headers: { "content-type": "application/json" },
@@ -704,6 +732,7 @@
   async function refreshRepoChip() {
     try {
       const r = await api("/api/repo");
+      window.__repo = r;
       $("repoChip").textContent = "repo: " + (r.name || "?");
       const recents = (r.recents || []).filter((p) => p !== r.current);
       $("recentsLbl").style.display = recents.length ? "block" : "none";
@@ -747,9 +776,51 @@
     if (e.target === repoOverlay) repoOverlay.classList.remove("show");
   });
 
+  // --- first-dispatch consent gate (one-time per repo) -------------
+  // A right/left swipe runs a real agent and opens a real PR. The first such
+  // swipe per repo must be acknowledged; the choice is remembered in
+  // localStorage keyed by the repo path, so it never nags again for that repo.
+  const consentOverlay = $("consentOverlay");
+  let consentResolve = null;
+  function consentKey() {
+    // Null when the repo identity is unknown (e.g. /api/repo failed). We then
+    // never read or persist consent, so an unknown repo always re-prompts
+    // rather than inheriting another repo's grant under a shared fallback key.
+    const cur = window.__repo && window.__repo.current;
+    return cur ? "doomscrum.dispatch_consent:" + cur : null;
+  }
+  function settleConsent(ok) {
+    consentOverlay.classList.remove("show");
+    if (ok) { const key = consentKey(); if (key) { try { localStorage.setItem(key, "1"); } catch {} } }
+    const resolve = consentResolve; consentResolve = null;
+    if (resolve) resolve(ok);
+  }
+  async function ensureDispatchConsent() {
+    // A consent prompt is already open: ignore the re-entry instead of
+    // overwriting the pending resolver and orphaning the first swipe's promise.
+    if (consentResolve) return false;
+    if (!window.__repo) { try { window.__repo = await api("/api/repo"); } catch {} }
+    const key = consentKey();
+    let consented = false;
+    if (key) { try { consented = localStorage.getItem(key) === "1"; } catch {} }
+    if (consented) return true;
+    $("consentRepo").textContent = "repo: " + ((window.__repo && window.__repo.name) || "this repo");
+    consentOverlay.classList.add("show");
+    return new Promise((resolve) => { consentResolve = resolve; });
+  }
+  $("consentConfirm").onclick = () => settleConsent(true);
+  $("consentCancel").onclick = () => settleConsent(false);
+  consentOverlay.addEventListener("pointerdown", (e) => {
+    if (e.target === consentOverlay) settleConsent(false);
+  });
+
 	document.addEventListener("keydown", (e) => {
     if (repoOverlay.classList.contains("show")) {
       if (e.key === "Escape") repoOverlay.classList.remove("show");
+      return;
+    }
+    if (consentOverlay.classList.contains("show")) {
+      if (e.key === "Escape") settleConsent(false);
       return;
     }
     if (overlay.classList.contains("show")) {
