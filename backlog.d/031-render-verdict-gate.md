@@ -18,6 +18,11 @@ the feed.
 - [ ] Paid renders with non-COMPLETE verdicts are not admitted to feed state.
 - [ ] The verdict packet includes reviewable artifacts: extracted audio,
       word/caption JSON, transcript diff, and a thumbnail sheet.
+- [ ] The verdict checker has a test asserting its own contract against the
+      embedded offline fixture — COMPLETE on the good fixture, INCOMPLETE on a
+      deliberately-cut one — running in `cargo test` and spending nothing.
+      (Groom 2026-06-17, test lane: turns 031 from "a script exists" into "the
+      gate is itself verified"; the missing link to [[030-script-eval-harness]].)
 
 ## Notes
 

@@ -1,6 +1,6 @@
 # Tinder-style swipe quotas and paid tiers
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P3 · Status: blocked · Estimate: M
 
 ## Goal
 Swipes are the scarce unit: free users get N dispatching swipes per day;
@@ -20,3 +20,10 @@ real and stays; this is product-shaped rationing on top, not agent
 "bounds" (dispatch behavior itself remains unbounded by design once a
 swipe is spent). BYOK fal key bypasses render quotas but not swipe quotas.
 **Why:** owner's tinder-model framing, 2026-06-10 efficiency session.
+
+Groom 2026-06-17: **demoted P2 → P3, blocked-on-adoption.** Rationing the wedge
+before strangers can reach the free path (017 distribution / 019 onboarding
+unshipped) monetizes a funnel with no top (product-value + premise lanes). This
+is sequencing, not a bounds objection — the ticket's own "rationing, not bounds"
+framing stands. Unblock after Gate 2 proves strangers reach value. See
+`docs/VISION.md`.

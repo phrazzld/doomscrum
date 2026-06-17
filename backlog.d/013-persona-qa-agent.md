@@ -12,3 +12,10 @@ A scheduled agent walks the running app as a skeptical first-time user and files
 
 ## Notes
 The dogfood loop: the product that turns specs into agent work should generate its own specs from QA.
+
+Groom 2026-06-17: sequence behind **Gate 0** (trustworthy dispatch). A QA agent
+that files tickets by walking the loop presumes the loop is trustworthy and the
+agent-PR path is safe + proven; today it is neither (see
+[[033-dispatch-untrusted-spec-hardening]], [[034-first-dispatch-consent-gate]],
+[[016-multi-repo-sync]] child 3). Keep P1 as a force-multiplier, but it is
+blocked-by the live dispatch proof — Gate 2, not now. See `docs/VISION.md`.

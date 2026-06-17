@@ -37,3 +37,12 @@ provider). The gap is UX (picker/sync), foreign-repo *dispatch* (untested),
 and the MCP source. Supersedes the old "sync multiple repos" framing —
 simultaneous multi-feed is child 1's follow-on, not the demo blocker.
 **Why:** owner is demoing soon against adminifi repos (olympus/habitat).
+
+Groom 2026-06-17: **Oracle line 3 — one real PR opened LIVE against olympus,
+end-to-end (not just the test-level child 2) — is the keystone of the entire
+product** and the single best next pickup once Gate 0's safety lands. Promote it
+to the active near-term slice. It is gated by
+[[033-dispatch-untrusted-spec-hardening]]: do not run live foreign-repo dispatch
+while the agent inherits the operator's secrets and ingests unfenced spec text.
+Children 3 (contract doc) and 4 (MCP source) remain later. See `docs/VISION.md`
+(Gate 0).
