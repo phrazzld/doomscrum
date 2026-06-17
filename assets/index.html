@@ -612,11 +612,14 @@
   async function swipe(action) {
     const item = items[idx];
     if (!item || busy) return;
+    // Hold the busy lock across the consent prompt so a slow /api/repo fetch
+    // can't let a second swipe re-enter and orphan the first prompt's promise.
+    busy = true;
     if ((action === "implement" || action === "shape") && !(await ensureDispatchConsent())) {
+      busy = false;
       showToast("dispatch cancelled");
       return;
     }
-    busy = true;
     try {
       if (action === "skip") {
         await api("/api/swipe", { method: "POST", headers: { "content-type": "application/json" },
@@ -780,18 +783,26 @@
   const consentOverlay = $("consentOverlay");
   let consentResolve = null;
   function consentKey() {
-    return "doomscrum.dispatch_consent:" + ((window.__repo && window.__repo.current) || "?");
+    // Null when the repo identity is unknown (e.g. /api/repo failed). We then
+    // never read or persist consent, so an unknown repo always re-prompts
+    // rather than inheriting another repo's grant under a shared fallback key.
+    const cur = window.__repo && window.__repo.current;
+    return cur ? "doomscrum.dispatch_consent:" + cur : null;
   }
   function settleConsent(ok) {
     consentOverlay.classList.remove("show");
-    if (ok) { try { localStorage.setItem(consentKey(), "1"); } catch {} }
+    if (ok) { const key = consentKey(); if (key) { try { localStorage.setItem(key, "1"); } catch {} } }
     const resolve = consentResolve; consentResolve = null;
     if (resolve) resolve(ok);
   }
   async function ensureDispatchConsent() {
+    // A consent prompt is already open: ignore the re-entry instead of
+    // overwriting the pending resolver and orphaning the first swipe's promise.
+    if (consentResolve) return false;
     if (!window.__repo) { try { window.__repo = await api("/api/repo"); } catch {} }
+    const key = consentKey();
     let consented = false;
-    try { consented = localStorage.getItem(consentKey()) === "1"; } catch {}
+    if (key) { try { consented = localStorage.getItem(key) === "1"; } catch {} }
     if (consented) return true;
     $("consentRepo").textContent = "repo: " + ((window.__repo && window.__repo.name) || "this repo");
     consentOverlay.classList.add("show");
