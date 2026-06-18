@@ -140,6 +140,43 @@ pub fn known_values() -> Vec<String> {
         .collect()
 }
 
+/// True if any *added* line of a unified `git diff` carries a secret-shaped
+/// token (or a `known` key value) — so a dispatch can refuse to push a diff that
+/// would exfiltrate a credential into a PR. Context/removed lines are ignored: a
+/// pre-existing secret in surrounding context is not a new leak.
+///
+/// Parses hunk structure rather than matching `+` prefixes, so an added line
+/// whose *content* begins with `+` (rendered `++…`/`+++…`) is still scanned —
+/// a naive `!starts_with("+++")` filter would skip it. Only lines inside a
+/// hunk (after `@@`) count; the `+++ b/path` file header sits before any hunk.
+/// Feed it `git diff --text` so binary blobs are diffed as text, not hidden
+/// behind "Binary files differ".
+pub fn diff_adds_secret(diff: &str, known: &[String]) -> bool {
+    let mut in_hunk = false;
+    for line in diff.lines() {
+        if line.starts_with("@@") {
+            in_hunk = true;
+            continue;
+        }
+        // The file-header block (`diff --git`, `--- `, `+++ b/path`, `index`)
+        // precedes the first `@@`, so it is never in_hunk — just skip it.
+        if !in_hunk {
+            continue;
+        }
+        // Inside a hunk, classify by the marker: a `+` line is added content
+        // (even if its content begins with `+`, rendering `++…`/`+++…`). A bare
+        // `diff --git` (no marker) is the next file's header, ending the hunk.
+        if let Some(added) = line.strip_prefix('+') {
+            if redact(added, known) != added {
+                return true;
+            }
+        } else if line.starts_with("diff --git") {
+            in_hunk = false;
+        }
+    }
+    false
+}
+
 /// Convenience: [`redact`] against the environment-resolved [`known_values`].
 pub fn redact_env(text: &str) -> String {
     redact(text, &known_values())
@@ -248,6 +285,89 @@ mod tests {
         // `:` is a token char now, but neither of these is hex:hex shaped.
         let line = "at 12:34:56 fetched https://queue.fal.run/path ok";
         assert_eq!(redact(line, &[]), line);
+    }
+
+    #[test]
+    fn diff_adds_secret_flags_only_added_credentials() {
+        // A credential introduced on an added line is a leak…
+        let leak = "\
+diff --git a/x b/x
+--- a/x
++++ b/x
+@@ -0,0 +1,2 @@
++let key = \"sk-or-v1-EXFIL1234567890\";
++fn main() {}";
+        assert!(diff_adds_secret(leak, &[]));
+
+        // …but a clean hunk (incl. a fal-ai model id) is fine…
+        let clean = "\
+diff --git a/m b/m
+--- a/m
++++ b/m
+@@ -0,0 +1,2 @@
++use fal_ai;
++const MODEL: &str = \"fal-ai/veo3.1/fast\";";
+        assert!(!diff_adds_secret(clean, &[]));
+
+        // …and a secret only in CONTEXT or REMOVED lines is not a new leak.
+        let not_added = "\
+@@ -1,2 +1,2 @@
+ context sk-or-v1-OLDCONTEXT1234567890
+-gone ghp_REMOVED1234567890
++clean line";
+        assert!(!diff_adds_secret(not_added, &[]));
+
+        // Known operator key values are caught by exact match on added lines.
+        let by_value = "@@ -0,0 +1 @@\n+echo SENTINEL-FAL-aaaa-bbbb-cccc";
+        assert!(diff_adds_secret(
+            by_value,
+            &["SENTINEL-FAL-aaaa-bbbb-cccc".into()]
+        ));
+    }
+
+    #[test]
+    fn diff_adds_secret_scans_every_commit_in_log_output() {
+        // Fed `git log -p` output: a secret ADDED in one commit and REMOVED in a
+        // later one must still be flagged — `git push` ships the whole history.
+        // Commit headers and indented messages must not derail the hunk parser.
+        let log = "\
+commit bbbbbbb
+Author: a <a@b>
+
+    remove the secret
+
+diff --git a/s.txt b/s.txt
+--- a/s.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-sk-or-v1-HISTEXFIL1234567890
+
+commit aaaaaaa
+Author: a <a@b>
+
+    add the secret
+
+diff --git a/s.txt b/s.txt
+--- /dev/null
++++ b/s.txt
+@@ -0,0 +1 @@
++sk-or-v1-HISTEXFIL1234567890";
+        assert!(diff_adds_secret(log, &[]));
+    }
+
+    #[test]
+    fn diff_adds_secret_catches_plus_prefixed_content() {
+        // Bypass guard: an added line whose CONTENT starts with `++` renders as
+        // `+++…`. A naive `!starts_with("+++")` filter would skip it; hunk-aware
+        // parsing must still scan it (only the pre-hunk `+++ b/path` is exempt).
+        let evasion = "\
+diff --git a/x b/x
+--- a/x
++++ b/x
+@@ -1 +1,2 @@
+ ctx
++++ leaked = \"sk-or-v1-EXFIL1234567890\";";
+        assert!(diff_adds_secret(evasion, &[]));
     }
 
     #[test]

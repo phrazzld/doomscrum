@@ -231,6 +231,30 @@ impl Dispatcher {
             bail!("agent produced no commits and no changes");
         }
 
+        // Refuse to advance if the agent's diff carries a secret-shaped token.
+        // An agent with filesystem access could write an accessible credential
+        // (an env var, ~/.secrets, ~/.codex/auth.json) into a committed file,
+        // which a push/PR would exfiltrate. 033 closed env egress; this closes
+        // the committed-file egress. (Restricting what the agent can *read* is
+        // tracked in ticket 039.)
+        // Scan per-commit patches (`log -p`), not the aggregate tree diff: a
+        // push ships the whole branch history, so a secret added in one commit
+        // and removed in a later one would still be exfiltrated. --text forces
+        // binary blobs to diff as text so a secret can't hide in a .bin file.
+        let diff = self
+            .git(
+                &worktree,
+                &["log", "-p", "--text", &format!("{base}..HEAD")],
+            )
+            .await?;
+        if crate::secrets::diff_adds_secret(&diff, &crate::secrets::known_values()) {
+            bail!(
+                "blocked: agent output contains a secret-shaped token — refusing to \
+                 push or open a PR that could exfiltrate a credential (log: {})",
+                receipt.agent_log
+            );
+        }
+
         if !self.agent.open_pr {
             receipt.status = "completed_local".into();
             receipt.note = Some("open_pr disabled; branch left local".into());
@@ -743,5 +767,98 @@ mod tests {
             "note leaked on read: {blob}"
         );
         assert!(blob.contains("[REDACTED]"), "{blob}");
+    }
+
+    fn run_git(repo: &std::path::Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("git")
+            .status
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    #[tokio::test]
+    async fn dispatch_blocks_push_when_agent_diff_carries_a_secret() {
+        // End-to-end: an agent that writes a credential into a committed file
+        // must NOT advance to push/PR — the dispatch fails with a clear note.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "-q", "-b", "main"]);
+        run_git(&repo, &["config", "user.email", "t@t"]);
+        run_git(&repo, &["config", "user.name", "t"]);
+        run_git(&repo, &["config", "commit.gpgsign", "false"]);
+        std::fs::write(repo.join("README.md"), "seed\n").unwrap();
+        run_git(&repo, &["add", "-A"]);
+        run_git(&repo, &["commit", "-qm", "seed"]);
+
+        let agent = AgentConfig {
+            implement_cmd: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf 'token = \"sk-or-v1-EXFIL1234567890\"\\n' > leaked.txt".into(),
+            ],
+            open_pr: false,
+            env_allowlist: vec!["PATH".into(), "HOME".into()],
+            ..AgentConfig::default()
+        };
+        let dispatcher = Dispatcher {
+            repo: repo.clone(),
+            dispatches_dir: dir.path().join("d"),
+            worktrees_dir: dir.path().join("w"),
+            agent,
+        };
+        let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        let done = dispatcher.run(receipt, prd()).await;
+
+        assert_eq!(done.status, "failed", "dispatch must not advance: {done:?}");
+        let note = done.note.unwrap_or_default();
+        assert!(
+            note.contains("secret-shaped token"),
+            "expected a secret-block note, got: {note}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_scan_sees_secrets_hidden_in_binary_files() {
+        // A secret in a file git treats as binary must still block — the scan
+        // diffs with --text so "Binary files differ" can't hide it.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "-q", "-b", "main"]);
+        run_git(&repo, &["config", "user.email", "t@t"]);
+        run_git(&repo, &["config", "user.name", "t"]);
+        run_git(&repo, &["config", "commit.gpgsign", "false"]);
+        std::fs::write(repo.join("README.md"), "seed\n").unwrap();
+        run_git(&repo, &["add", "-A"]);
+        run_git(&repo, &["commit", "-qm", "seed"]);
+
+        // A NUL byte makes git classify the file as binary.
+        let agent = AgentConfig {
+            implement_cmd: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf 'sk-or-v1-BINEXFIL1234567890\\0\\n' > leaked.bin".into(),
+            ],
+            open_pr: false,
+            env_allowlist: vec!["PATH".into(), "HOME".into()],
+            ..AgentConfig::default()
+        };
+        let dispatcher = Dispatcher {
+            repo: repo.clone(),
+            dispatches_dir: dir.path().join("d"),
+            worktrees_dir: dir.path().join("w"),
+            agent,
+        };
+        let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        let done = dispatcher.run(receipt, prd()).await;
+        assert_eq!(
+            done.status, "failed",
+            "secret hidden in a binary file must block: {done:?}"
+        );
     }
 }

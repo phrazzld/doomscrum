@@ -14,12 +14,17 @@ and pushes into the PR. Closes the gap env-scrubbing alone leaves open.
       explicit allowlist: a red-team spec that runs `cat ~/.secrets` in the agent
       gets nothing. A test dispatches such a spec and asserts the secret file is
       unreadable from the agent's sandbox.
-- [ ] The commit/push stage is gated by a secret scan (or the sandbox prevents
-      the read in the first place): a spec that writes `$SOME_KEY` or
-      `~/.codex/auth.json` into a worktree file does NOT produce a PR carrying
-      the raw value. (Env egress is already closed by 033 — the agent env holds
-      no API keys by default — but a sandbox-read of a HOME credential file could
-      still be written into the diff.)
+- [x] The commit/push stage is gated by a secret scan: a spec that writes a
+      secret-shaped token into a worktree file does NOT produce a PR carrying it.
+      DONE — `dispatch::run_inner` runs `secrets::diff_adds_secret` on the agent
+      diff (`git diff --text`, hunk-aware) before push/PR and bails on a hit.
+      (Env egress was closed by 033; this closes DoomScrum's *own* push channel.)
+- [ ] **Out-of-band agent egress:** the agent runs before that scan with git +
+      network + `HOME` credentials, so a hijacked agent can `git push` to its own
+      ref or `curl` a secret out mid-run — neither env-scrub nor the pre-push
+      scan stops it. Needs a network/fs sandbox (codex `--sandbox`, or
+      `sandbox-exec`/`bwrap` with no network + scrubbed `HOME`). A red-team spec
+      that pushes/curls a sentinel during the agent run gets nothing out.
 - [ ] The shipped `implement_cmd`/`shape_cmd` defaults keep codex's `--sandbox`
       (or an equivalent OS-level confinement — `sandbox-exec`/`bwrap` — with a
       scrubbed `HOME`), and the read policy of that sandbox is verified, not
