@@ -155,9 +155,11 @@ logs.
 ## Development
 
 ```bash
-cargo test           # unit + end-to-end HTTP tests (stub agents, real git remotes)
-cargo clippy --all-targets
-cargo fmt --check
+cargo run --bin doomscrum-ci  # aggregate local gate: fmt, clippy, tests
+
+cargo fmt --check             # focused lanes for debugging
+cargo clippy --all-targets -- -D warnings
+cargo test                    # unit + end-to-end HTTP tests (stub agents, real git remotes)
 ```
 
 The end-to-end tests exercise the actual HTTP routes: a right swipe in the

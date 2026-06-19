@@ -35,11 +35,5 @@ jobs:
       - name: Show Chrome version
         run: google-chrome --version || google-chrome-stable --version || chromium --version || chromium-browser --version
 
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Lint
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test
+      - name: Run local gate
+        run: cargo run --locked --bin doomscrum-ci

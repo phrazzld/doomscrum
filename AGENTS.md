@@ -7,7 +7,8 @@ non-Rust product surface. `demo/` is dev tooling (Remotion), not product.
 - Config: `doomscrum.toml` (model, durations, spend cap). State:
   `.doomscrum/` (renders, storyboards, launches — gitignored).
   `.brainrot/` is the pre-rename state dir; ignore it.
-- Gate: `cargo test`. Behavior changes get a failing test first.
+- Gate: `cargo run --bin doomscrum-ci` (wraps fmt, clippy, and test).
+  Behavior changes get a failing test first.
 - Anything that spends FAL money: use the `render-feed` skill
   (`.claude/skills/render-feed/`). No unverified paid render.
 - Demo recuts: use the project `demo` skill (`.claude/skills/demo/`).
