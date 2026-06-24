@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -42,12 +43,24 @@ pub struct DispatchReceipt {
     pub prd_id: String,
     pub prd_sha256: String,
     pub prd_title: String,
+    /// The spec's repo-relative path — the stable key across content edits
+    /// (`prd_id`/`prd_sha256` are content hashes and change on re-shape). Used
+    /// to badge a receipt `superseded` once its spec is re-shaped to a new sha.
+    #[serde(default)]
+    pub prd_rel_path: String,
     pub kind: DispatchKind,
     pub branch: String,
     pub worktree: String,
-    /// queued | agent_running | opening_pr | pr_opened | completed_local | failed
+    /// queued | agent_running | opening_pr | pr_opened | completed_local |
+    /// failed | cancelled
     pub status: String,
     pub stages: Vec<Stage>,
+    /// Added+removed lines in the agent's diff — the triage size signal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_lines: Option<u32>,
+    /// The agent's own one-line summary (its HEAD commit subject).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,6 +76,21 @@ pub struct Dispatcher {
     pub dispatches_dir: PathBuf,
     pub worktrees_dir: PathBuf,
     pub agent: AgentConfig,
+    /// Serializes the queued→cancelled (cancel) and queued→agent_running (claim)
+    /// transitions so a mis-swipe undo and the agent start can't both "win" —
+    /// exactly one flips the receipt out of `queued`. Shared across the cancel
+    /// request and the run task (cloned from AppCtx).
+    pub state_lock: Arc<Mutex<()>>,
+}
+
+/// Outcome of claiming a queued dispatch for execution.
+enum Claim {
+    /// Was `queued`; now `agent_running` — proceed.
+    Started,
+    /// Cancelled during the undo window — bail with zero git side-effects.
+    Cancelled,
+    /// Not `queued` (already running/terminal) — do not double-run.
+    Stale,
 }
 
 struct CmdResult {
@@ -118,11 +146,14 @@ impl Dispatcher {
             prd_id: prd.id.clone(),
             prd_sha256: prd.sha256.clone(),
             prd_title: prd.title.clone(),
+            prd_rel_path: prd.rel_path.clone(),
             kind,
             branch,
             worktree: worktree.to_string_lossy().to_string(),
             status: "queued".into(),
             stages: Vec::new(),
+            diff_lines: None,
+            plan: None,
             pr_url: None,
             note: None,
             agent_log: self
@@ -135,6 +166,61 @@ impl Dispatcher {
         };
         self.persist(&receipt)?;
         Ok(receipt)
+    }
+
+    /// Cancel a still-`queued` dispatch (the mis-swipe undo). Returns true if it
+    /// was queued and is now `cancelled`; false if it already started or is
+    /// unknown — so undo can never abort an agent that has touched git.
+    pub fn cancel(&self, id: &str) -> Result<bool> {
+        let _guard = self.lock();
+        let Some(mut receipt) = self.load_one(id) else {
+            return Ok(false);
+        };
+        if receipt.status != "queued" {
+            return Ok(false); // already started or terminal — too late to undo
+        }
+        receipt.status = "cancelled".into();
+        receipt.note = Some("cancelled during the undo window".into());
+        receipt.updated_at = now_rfc3339();
+        self.persist(&receipt)?;
+        Ok(true)
+    }
+
+    /// Atomically transition a queued dispatch to `agent_running`, or report it
+    /// cancelled/stale. Shares `state_lock` with [`cancel`](Self::cancel), so the
+    /// undo and the agent start can never both win the race past `queued`.
+    fn claim(&self, id: &str) -> Result<Claim> {
+        let _guard = self.lock();
+        let Some(mut receipt) = self.load_one(id) else {
+            return Ok(Claim::Stale);
+        };
+        match receipt.status.as_str() {
+            "queued" => {
+                receipt.status = "agent_running".into();
+                receipt.updated_at = now_rfc3339();
+                // Claim only if the transition is durable: if this persist fails,
+                // disk stays `queued` and a racing cancel could still "succeed"
+                // while we run — so propagate the error and don't start.
+                self.persist(&receipt)?;
+                Ok(Claim::Started)
+            }
+            "cancelled" => Ok(Claim::Cancelled),
+            _ => Ok(Claim::Stale),
+        }
+    }
+
+    /// Hold the state lock for an atomic status transition. Tolerates poisoning
+    /// (a panic mid-transition shouldn't wedge all future cancels/claims).
+    fn lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Load one receipt by id, if present and parseable.
+    fn load_one(&self, id: &str) -> Option<DispatchReceipt> {
+        let raw = std::fs::read_to_string(self.dispatches_dir.join(format!("{id}.json"))).ok()?;
+        serde_json::from_str::<DispatchReceipt>(&raw).ok()
     }
 
     /// Full pipeline: worktree → agent → commit → push → PR.
@@ -152,6 +238,18 @@ impl Dispatcher {
     }
 
     async fn run_inner(&self, receipt: &mut DispatchReceipt, prd: &PrdSource) -> Result<()> {
+        // Atomically claim the dispatch before any git work. If a cancel won the
+        // race (or already landed during the undo window), bail BEFORE the
+        // worktree stage so a mis-swipe leaves zero git side-effects.
+        match self.claim(&receipt.id)? {
+            Claim::Started => receipt.status = "agent_running".into(),
+            Claim::Cancelled => {
+                receipt.status = "cancelled".into();
+                return Ok(());
+            }
+            Claim::Stale => return Ok(()),
+        }
+
         let worktree = PathBuf::from(&receipt.worktree);
 
         // 1. Fresh worktree on a fresh branch.
@@ -190,8 +288,8 @@ impl Dispatcher {
                 ("title", prd.title.as_str()),
             ],
         );
-        receipt.status = "agent_running".into();
-        self.persist(receipt)?;
+        // `claim` already flipped the receipt to `agent_running` (and persisted
+        // it); the worktree stage re-persisted that status. No re-assert needed.
         // The agent stage is the one untrusted execution surface: its prompt
         // carries foreign-repo spec content. Scrub its environment to the
         // allowlist so DoomScrum's keys and git tokens are never in reach.
@@ -254,6 +352,25 @@ impl Dispatcher {
                 receipt.agent_log
             );
         }
+
+        // Triage signals: the diff size (added+removed lines) drives the
+        // fast-merge vs needs-review badge, and the agent's HEAD commit subject
+        // is its one-line plan. Best-effort — never fail a dispatch over these.
+        let numstat = self
+            .git(&worktree, &["diff", "--numstat", &format!("{base}..HEAD")])
+            .await
+            .unwrap_or_default();
+        receipt.diff_lines = Some(diff_line_count(&numstat));
+        if let Ok(subject) = self
+            .git(&worktree, &["log", "-1", "--format=%s", "HEAD"])
+            .await
+        {
+            let subject = subject.trim();
+            if !subject.is_empty() {
+                receipt.plan = Some(subject.to_string());
+            }
+        }
+        self.persist(receipt)?;
 
         if !self.agent.open_pr {
             receipt.status = "completed_local".into();
@@ -474,6 +591,53 @@ pub fn load_receipts(dispatches_dir: &Path) -> Result<Vec<DispatchReceipt>> {
     Ok(receipts)
 }
 
+/// Diff size above which a dispatch is flagged needs-review rather than
+/// fast-merge — the line between a glance and a real review.
+const REVIEW_THRESHOLD_LINES: u32 = 80;
+
+/// Total changed lines (added + removed) from `git diff --numstat` output.
+/// Binary files (`-\t-`) contribute nothing.
+fn diff_line_count(numstat: &str) -> u32 {
+    // u64 + saturating arithmetic so a pathological (attacker-controlled) diff
+    // can't overflow/panic or wrap to a small count; clamp to u32 for storage —
+    // a multi-billion-line diff is unambiguously "needs-review".
+    let total = numstat.lines().fold(0u64, |acc, l| {
+        let mut cols = l.split('\t');
+        let added = cols.next().and_then(|c| c.parse::<u64>().ok()).unwrap_or(0);
+        let removed = cols.next().and_then(|c| c.parse::<u64>().ok()).unwrap_or(0);
+        acc.saturating_add(added).saturating_add(removed)
+    });
+    total.min(u32::MAX as u64) as u32
+}
+
+/// Triage badge from a diff size: small diffs are `fast-merge`, larger ones
+/// `needs-review`. Keeps swipe-dispatch from becoming a firehose of
+/// unreviewable PRs.
+pub fn review_size(diff_lines: u32) -> &'static str {
+    if diff_lines <= REVIEW_THRESHOLD_LINES {
+        "fast-merge"
+    } else {
+        "needs-review"
+    }
+}
+
+/// True if this implement receipt targeted a spec version that has since been
+/// re-shaped: a current spec shares its path but carries a different content
+/// sha (`prd_id`/`prd_sha256` are content hashes, so a re-shape mints a new
+/// spec and orphans the old receipt). Such a PR implements a stale spec — badge
+/// it superseded rather than leave it dangling. `current` maps rel_path → sha256.
+pub fn is_superseded(
+    receipt: &DispatchReceipt,
+    current: &std::collections::HashMap<String, String>,
+) -> bool {
+    if receipt.kind != DispatchKind::Implement || receipt.prd_rel_path.is_empty() {
+        return false;
+    }
+    current
+        .get(&receipt.prd_rel_path)
+        .is_some_and(|cur_sha| cur_sha != &receipt.prd_sha256)
+}
+
 fn build_prompt(kind: DispatchKind, prd: &PrdSource, branch: &str) -> String {
     // The spec body is untrusted (it can come from a foreign repo); fence it so
     // embedded directives can't hijack the agent. The trusted task instruction
@@ -554,6 +718,7 @@ mod tests {
             dispatches_dir: dir.path().join("dispatches"),
             worktrees_dir: dir.path().join("worktrees"),
             agent: AgentConfig::default(),
+            state_lock: Arc::new(Mutex::new(())),
         };
         let a = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
         assert_eq!(a.status, "queued");
@@ -626,6 +791,7 @@ mod tests {
             dispatches_dir: dir.join("dispatches"),
             worktrees_dir: dir.join("worktrees"),
             agent: AgentConfig::default(),
+            state_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -810,6 +976,7 @@ mod tests {
             dispatches_dir: dir.path().join("d"),
             worktrees_dir: dir.path().join("w"),
             agent,
+            state_lock: Arc::new(Mutex::new(())),
         };
         let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
         let done = dispatcher.run(receipt, prd()).await;
@@ -853,6 +1020,7 @@ mod tests {
             dispatches_dir: dir.path().join("d"),
             worktrees_dir: dir.path().join("w"),
             agent,
+            state_lock: Arc::new(Mutex::new(())),
         };
         let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
         let done = dispatcher.run(receipt, prd()).await;
@@ -860,5 +1028,108 @@ mod tests {
             done.status, "failed",
             "secret hidden in a binary file must block: {done:?}"
         );
+    }
+
+    #[test]
+    fn cancel_flips_queued_to_cancelled_and_rejects_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+        let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        assert_eq!(receipt.status, "queued");
+        // queued → cancellable
+        assert!(dispatcher.cancel(&receipt.id).unwrap());
+        assert_eq!(
+            dispatcher.load_one(&receipt.id).unwrap().status,
+            "cancelled"
+        );
+        // already-cancelled (not queued) → rejected; unknown id → rejected
+        assert!(!dispatcher.cancel(&receipt.id).unwrap());
+        assert!(!dispatcher.cancel("nope").unwrap());
+    }
+
+    #[test]
+    fn claim_and_cancel_are_mutually_exclusive() {
+        // The race codex flagged: claim (queued→agent_running) and cancel
+        // (queued→cancelled) share state_lock, so exactly one wins.
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+
+        // claim first → it transitions to agent_running; a later cancel is refused.
+        let a = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        assert!(matches!(dispatcher.claim(&a.id).unwrap(), Claim::Started));
+        assert_eq!(dispatcher.load_one(&a.id).unwrap().status, "agent_running");
+        assert!(
+            !dispatcher.cancel(&a.id).unwrap(),
+            "cancel after the agent started must be rejected"
+        );
+
+        // cancel first → a later claim reports Cancelled and never starts.
+        let b = dispatcher.create(&prd(), DispatchKind::Shape).unwrap();
+        assert!(dispatcher.cancel(&b.id).unwrap());
+        assert!(matches!(dispatcher.claim(&b.id).unwrap(), Claim::Cancelled));
+        assert_eq!(dispatcher.load_one(&b.id).unwrap().status, "cancelled");
+    }
+
+    #[tokio::test]
+    async fn cancelled_dispatch_runs_with_zero_git_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+        let receipt = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        assert!(dispatcher.cancel(&receipt.id).unwrap());
+        // run() must bail before the worktree stage — no git touched at all.
+        let done = dispatcher.run(receipt.clone(), prd()).await;
+        assert_eq!(done.status, "cancelled");
+        assert!(
+            !std::path::Path::new(&receipt.worktree).exists(),
+            "cancel must leave no worktree dir"
+        );
+        assert!(
+            done.stages.is_empty(),
+            "no stages should run: {:?}",
+            done.stages
+        );
+    }
+
+    #[test]
+    fn diff_line_count_sums_changes_skipping_binary() {
+        assert_eq!(
+            diff_line_count("10\t2\tsrc/a.rs\n0\t5\tsrc/b.rs\n-\t-\tlogo.png\n"),
+            17
+        );
+        assert_eq!(diff_line_count(""), 0);
+        // A pathological diff clamps to u32::MAX (stays needs-review) — no panic,
+        // no wrap to a small fast-merge count.
+        assert_eq!(diff_line_count("9999999999\t9999999999\tbig.bin"), u32::MAX);
+        assert_eq!(
+            review_size(diff_line_count("9999999999\t9999999999\tx")),
+            "needs-review"
+        );
+    }
+
+    #[test]
+    fn review_size_badges_by_threshold() {
+        assert_eq!(review_size(0), "fast-merge");
+        assert_eq!(review_size(REVIEW_THRESHOLD_LINES), "fast-merge");
+        assert_eq!(review_size(REVIEW_THRESHOLD_LINES + 1), "needs-review");
+    }
+
+    #[test]
+    fn superseded_when_same_path_resolves_to_a_new_sha() {
+        use std::collections::HashMap;
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+        let r = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        let path = r.prd_rel_path.clone();
+
+        // same sha at the path → current, not superseded
+        let mut cur = HashMap::from([(path.clone(), r.prd_sha256.clone())]);
+        assert!(!is_superseded(&r, &cur));
+        // spec re-shaped to a new sha at the same path → superseded
+        cur.insert(path, "newsha".into());
+        assert!(is_superseded(&r, &cur));
+        // a shape receipt is never superseded; an unknown path isn't either
+        let shape = dispatcher.create(&prd(), DispatchKind::Shape).unwrap();
+        assert!(!is_superseded(&shape, &cur));
+        assert!(!is_superseded(&r, &HashMap::new()));
     }
 }

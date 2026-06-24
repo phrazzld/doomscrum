@@ -108,6 +108,10 @@ shape_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-writ
 # Placeholders: {branch} {title} {body_file} {worktree}.
 pr_cmd = ["gh", "pr", "create", "--head", "{branch}", "--title", "{title}", "--body-file", "{body_file}"]
 open_pr = true
+# Mis-swipe undo: a swipe sits queued and cancellable for this many seconds
+# before the agent starts. Cancelling within the window leaves zero git
+# side-effects (no worktree, branch, or PR). 0 disables the window.
+undo_window_sec = 5
 # The agent stage runs untrusted spec content (specs can come from a foreign
 # repo), so its process env is built from this allowlist alone — never the
 # parent env. The default is PATH/HOME/locale/XDG only: NO API keys, because the

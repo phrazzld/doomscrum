@@ -206,6 +206,10 @@ pub struct AgentConfig {
     /// Maximum agent runs allowed at once; additional swipes persist queued
     /// receipts and start when a slot opens.
     pub max_concurrent_dispatches: usize,
+    /// Seconds a dispatch sits `queued` and cancellable before the agent starts
+    /// — the mis-swipe undo window. Cancelling within it leaves zero git
+    /// side-effects (no worktree, branch, or PR). 0 disables the window.
+    pub undo_window_sec: u64,
 }
 
 impl Default for AgentConfig {
@@ -271,6 +275,7 @@ impl Default for AgentConfig {
             .collect(),
             open_pr: true,
             max_concurrent_dispatches: 2,
+            undo_window_sec: 5,
         }
     }
 }
@@ -363,6 +368,7 @@ mod tests {
         assert_eq!(cfg.repo.backlog_dir, "backlog.d");
         assert!(cfg.agent.open_pr);
         assert_eq!(cfg.agent.max_concurrent_dispatches, 2);
+        assert_eq!(cfg.agent.undo_window_sec, 5);
         assert_eq!(cfg.agent.implement_cmd[0], "codex");
     }
 

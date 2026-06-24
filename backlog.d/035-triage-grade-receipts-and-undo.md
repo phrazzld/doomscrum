@@ -7,15 +7,29 @@ Every dispatch is recoverable and pre-triaged, so swipe-driven dispatch can't
 become a firehose of stale, duplicate, or unreviewable PRs.
 
 ## Oracle
-- [ ] **Undo window:** a right/left swipe enters `queued` with a visible cancel
+- [x] **Undo window:** a right/left swipe enters `queued` with a visible cancel
       affordance for a short window before the worktree/agent starts; cancel
-      leaves zero git side-effects (no worktree, branch, or PR).
-- [ ] **Plan + size badge:** the dispatched agent writes a one-line plan and a
+      leaves zero git side-effects (no worktree, branch, or PR). DONE — a swipe
+      sits queued for `agent.undo_window_sec` (default 5) before claiming a slot;
+      `POST /api/dispatch/{id}/cancel` flips queued→cancelled, and `run_inner`
+      bails before the worktree stage. Cancel and the agent-start `claim` share a
+      lock so exactly one wins (no start-after-cancel race); the feed shows a
+      cancel button while queued. Live-QA'd: cancel → cancelled, agent never ran,
+      no worktree/branch/PR; a too-late cancel returns 409.
+- [x] **Plan + size badge:** the dispatched agent writes a one-line plan and a
       diff line-count into the receipt; the feed renders a "fast-merge" vs
-      "needs-review" sticker from a size threshold.
-- [ ] **Supersede-on-respec:** when a spec's sha256 changes (e.g. after a shape
+      "needs-review" sticker from a size threshold. DONE — `run_inner` records
+      `diff_lines` (`git diff --numstat`, u64-saturating) and `plan` (the HEAD
+      commit subject); `review_size()` thresholds at 80 lines; `/api/state`
+      serves `diff_lines`/`plan`/`review` and the feed renders the sticker +
+      plan line. Live-QA'd: a 100-line change → `needs-review`.
+- [x] **Supersede-on-respec:** when a spec's sha256 changes (e.g. after a shape
       PR merges), prior implement receipts for the old sha are badged
-      `superseded` rather than left dangling.
+      `superseded` rather than left dangling. DONE — receipts now store
+      `prd_rel_path` (the stable key, since id==content-hash); `is_superseded()`
+      flags an implement receipt whose path maps to a different current sha, and
+      `/api/state` sets a per-spec `superseded` flag (cleared once the spec has a
+      fresh implement). Live-QA'd: re-shape → superseded; re-implement → clears.
 
 ## Verification System
 - Claim: a mis-swipe is recoverable, and every PR arrives pre-triaged.

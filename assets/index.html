@@ -144,6 +144,10 @@
   .sticker.status.failed { border-color: var(--err); color: var(--err); }
   .sticker.status.skipped { border-color: var(--dead); color: var(--muted); }
   .sticker.prio { bottom: -12px; left: -12px; border-color: var(--pink); color: var(--pink); }
+  .sticker.review { top: -12px; left: -12px; }
+  .sticker.review.fast-merge { border-color: var(--ok); color: var(--ok); }
+  .sticker.review.needs-review { border-color: var(--warn); color: var(--warn); }
+  .sticker.superseded { top: 28px; left: -12px; border-color: var(--dead); color: var(--muted); }
 
   .vibe {
     position: absolute; left: 10px; right: 10px; bottom: 92px; z-index: 4;
@@ -545,6 +549,10 @@
         <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
         <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
         <span class="sticker prio">#${prd.priority + 1}</span>
+        ${item.dispatch && item.dispatch.review
+          ? `<span class="sticker review ${esc(item.dispatch.review)}">${esc(item.dispatch.review)}${item.dispatch.diff_lines != null ? " " + item.dispatch.diff_lines + "L" : ""}</span>`
+          : ""}
+        ${item.superseded ? '<span class="sticker superseded">superseded</span>' : ""}
         ${cook === "cooking"
           ? '<span class="sticker aiify cooking">AI render cooking… (~2-4 min, safe to refresh)</span>'
           : (cook
@@ -559,6 +567,7 @@
         <div class="caption">
           <div class="meme">${esc(prd.title)}</div>
           <div class="meta">${esc(vid.provider)}/${esc(vid.model)} · ${esc(prd.sha256.slice(0, 10))}${pr ? ` · <a style="color:var(--cyan)" href="${esc(pr)}">PR ↗</a>` : ""}</div>
+          ${item.dispatch && item.dispatch.plan ? `<div class="meta" style="opacity:.75">▶ ${esc(item.dispatch.plan)}</div>` : ""}
           ${vid.degraded_reason ? `<div style="margin-top:8px;display:inline-block;padding:3px 8px;border:1px solid var(--warn);color:var(--warn);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(vid.degraded_reason)}</div>` : ""}
         </div>
       </div>`;
@@ -708,12 +717,16 @@
     try {
       const log = await api(`/api/dispatch/${d.id}/log`);
       const tail = (log.tail || []).slice(failed ? -6 : -4).join("\n");
+      const queued = d.status === "queued";
       box.className = "logbox" + (failed ? " failed" : "");
       box.innerHTML = failed
         ? `<div class="lhead">agent flopped${log.failing_stage ? " @ " + esc(log.failing_stage) : ""}</div>` +
           `${esc(log.note || "")}\n${esc(tail)}` +
           `<br><button class="retry" id="retryBtn">run it back</button>`
-        : `<div class="lhead">agent cooking…</div>${esc(tail) || "(warming up)"}`;
+        : queued
+          ? `<div class="lhead">agent queued — undo window</div>` +
+            `<button class="retry" id="cancelBtn">cancel dispatch</button>`
+          : `<div class="lhead">agent cooking…</div>${esc(tail) || "(warming up)"}`;
       box.style.display = "block";
       box.onpointerdown = (e) => e.stopPropagation();
       const retry = $("retryBtn");
@@ -721,6 +734,17 @@
         e.stopPropagation();
         swipe(d.kind === "shape" ? "shape" : "implement");
         showToast("re-dispatched. run it back.");
+      };
+      const cancelBtn = $("cancelBtn");
+      if (cancelBtn) cancelBtn.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          await api(`/api/dispatch/${d.id}/cancel`, { method: "POST" });
+          showToast("dispatch cancelled — no PR");
+          await load();
+        } catch (err) {
+          showToast(err.status === 409 ? "too late — agent already started" : "cancel failed");
+        }
       };
     } catch { box.style.display = "none"; }
   }

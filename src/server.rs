@@ -44,6 +44,9 @@ pub struct AppCtx {
     dispatch_slots: Arc<Semaphore>,
     /// Serializes dedupe + receipt creation inside this server process.
     dispatch_create_lock: Arc<AsyncMutex<()>>,
+    /// Serializes a dispatch's queued→cancelled (undo) and queued→agent_running
+    /// (start) transitions, shared into every `Dispatcher` so they can't race.
+    dispatch_state_lock: Arc<std::sync::Mutex<()>>,
     /// Paid render spend that has been approved and started but not yet
     /// persisted as render provenance.
     render_reservations: Arc<AsyncMutex<Vec<RenderReservation>>>,
@@ -68,6 +71,7 @@ impl AppCtx {
             cooking: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             dispatch_slots: Arc::new(Semaphore::new(slots)),
             dispatch_create_lock: Arc::new(AsyncMutex::new(())),
+            dispatch_state_lock: Arc::new(std::sync::Mutex::new(())),
             render_reservations: Arc::new(AsyncMutex::new(Vec::new())),
         }
     }
@@ -157,6 +161,7 @@ impl AppCtx {
             dispatches_dir: state_dir.join("dispatches"),
             worktrees_dir: state_dir.join("worktrees"),
             agent: self.cfg.agent.clone(),
+            state_lock: self.dispatch_state_lock.clone(),
         })
     }
 
@@ -222,6 +227,7 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/spec/{prd_id}", get(api_spec))
         .route("/api/dispatches", get(api_dispatches))
         .route("/api/dispatch/{id}/log", get(api_dispatch_log))
+        .route("/api/dispatch/{id}/cancel", post(api_dispatch_cancel))
         .route("/api/repo", get(api_repo_get).post(api_repo_set))
         .route("/media/{sha}/{file}", get(media))
         .with_state(ctx)
@@ -523,6 +529,12 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
     };
     let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
     let receipts = load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
+    // rel_path → current sha, so a prior implement receipt for a now-re-shaped
+    // spec (same path, different sha) can be badged superseded.
+    let current_shas: std::collections::HashMap<String, String> = prds
+        .iter()
+        .map(|p| (p.rel_path.clone(), p.sha256.clone()))
+        .collect();
     let events = events::read_all(&ctx.events_path()).unwrap_or_default();
     let now = Utc::now();
     let reservations = ctx.render_reservations.lock().await.clone();
@@ -537,6 +549,15 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
                 .as_ref()
                 .and_then(|render| latest_vibe_rating(&prd.id, &render.id, &events));
             let dispatch = receipts.iter().find(|r| r.prd_id == prd.id);
+            // A prior implement PR for an older version of this same spec file…
+            let has_stale_implement = receipts.iter().any(|r| {
+                r.prd_rel_path == prd.rel_path && crate::dispatch::is_superseded(r, &current_shas)
+            });
+            // …but once the spec has a fresh implement of its own, the stale one
+            // is just history, not the current state — don't badge superseded.
+            let current_is_implement =
+                dispatch.is_some_and(|d| matches!(d.kind, DispatchKind::Implement));
+            let superseded = has_stale_implement && !current_is_implement;
             let skipped = events
                 .iter()
                 .rfind(|e| e.prd_id == prd.id)
@@ -564,7 +585,11 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
                     "branch": d.branch,
                     "pr_url": d.pr_url,
                     "note": d.note,
+                    "diff_lines": d.diff_lines,
+                    "plan": d.plan,
+                    "review": d.diff_lines.map(crate::dispatch::review_size),
                 })),
+                "superseded": superseded,
                 "status": status,
             })
         })
@@ -953,7 +978,14 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
             let dispatcher = ctx.dispatcher();
             let slots = ctx.dispatch_slots.clone();
             let queued = receipt.clone();
+            let undo = std::time::Duration::from_secs(ctx.cfg.agent.undo_window_sec);
             tokio::spawn(async move {
+                // Mis-swipe undo window: sit queued and cancellable without
+                // holding a slot. A cancel during this window flips the receipt
+                // to "cancelled"; run() re-reads it and bails before any git.
+                if !undo.is_zero() {
+                    tokio::time::sleep(undo).await;
+                }
                 let Ok(_permit) = slots.acquire_owned().await else {
                     return;
                 };
@@ -981,6 +1013,20 @@ async fn api_spec(State(ctx): State<AppCtx>, UrlPath(prd_id): UrlPath<String>) -
             .into_response(),
             None => error_response(StatusCode::NOT_FOUND, "spec not found"),
         },
+        Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+    }
+}
+
+/// Mis-swipe undo: cancel a dispatch that is still in its queued window, before
+/// the agent touches git. Rejects once the agent has started.
+async fn api_dispatch_cancel(State(ctx): State<AppCtx>, UrlPath(id): UrlPath<String>) -> Response {
+    match ctx.dispatcher().cancel(&id) {
+        Ok(true) => Json(json!({ "cancelled": true })).into_response(),
+        Ok(false) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "cancelled": false, "reason": "already started or unknown" })),
+        )
+            .into_response(),
         Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     }
 }
