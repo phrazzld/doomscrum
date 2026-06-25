@@ -66,10 +66,19 @@ of scope (the local single-operator trust model makes it premature — see
    prints the setup checklist + a live `doctor` readout. (A fully interactive
    TUI wizard remains a possible follow-up; the non-interactive scaffold is the
    testable, headless-safe core.)
-4. **Live proof, repo #1.** Dispatch against a real external repo; open a real
-   PR; capture the evidence packet. (Supersedes 016 child-3.)
-5. **Generality proof, repo #2.** Repeat against a second, differently-shaped
-   repo/backlog to prove it isn't repo-specific.
+4. **Live proof, repo #1.** ✅ DELIVERED 2026-06-25 — the full loop ran live for
+   the first time. An implement swipe on spec 022 dispatched a real
+   `opencode`/GLM-5.2 agent (OpenRouter) in a worktree; it implemented the spec
+   (+521/−7: LICENSE, docs/LEGAL.md, new src/egress.rs, server/UI disclosure
+   wiring), DoomScrum committed it, the pre-push secret scan passed, the branch
+   pushed, and `gh` opened a real PR — **https://github.com/phrazzld/doomscrum/pull/8**.
+   Stages: worktree✓ agent✓ push✓ pr✓. (Dispatch id 2edf16d4.) NOTE: this was a
+   *self*-dispatch (doomscrum→doomscrum). Foreign-repo *routing* is separately
+   covered by the e2e test `dispatch_against_a_foreign_repo_routes_to_that_repos_remote`;
+   a *live agent against a truly foreign repo* is child 5. PR #8 is raw,
+   unreviewed agent output — review/CI it; do not merge blind.
+5. **Generality proof, repo #2.** Repeat with a *live* agent against a second,
+   truly external repo/backlog to prove it isn't repo-specific. (Still open.)
 
 ## Notes
 **Why:** owner redirect 2026-06-25 — prioritize making the loop *actually work on
