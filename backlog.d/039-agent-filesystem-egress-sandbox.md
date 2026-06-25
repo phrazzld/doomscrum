@@ -1,12 +1,16 @@
 # Sandbox the dispatched agent's filesystem: close the secret-file egress vector
 
-Priority: P1 · Status: ready · Estimate: M
+Priority: P3 · Status: blocked · Estimate: M
 
-<!-- Groom 2026-06-25: raised P2→P1. This is the open half of the Gate-0
-keystone ("trust and proof of the dispatch loop outrank distribution",
-VISION.md) — it gates a *safe* live foreign-repo PR ([[016-multi-repo-sync]]
-child-3). Distribution tickets (017/018) sit behind it; its priority should
-outrank theirs. -->
+<!-- Owner redirect 2026-06-25: DEFERRED. DoomScrum v1 is a local single-operator
+tool — your machine, your repo, your backlog, your keys, your specs (VISION.md
+"Operating assumption"). Under that model the spec is not an adversary and the
+credentials are already yours, so agent sandboxing is premature. This is Gate 3
+("trust for strangers") — it re-activates only when DoomScrum runs OTHER people's
+specs (shared / multi-tenant / SaaS). Until then it is off the MVP path; do not
+build it before the loop is proven and the product is interesting. The sharpened
+oracle below is preserved for when it matters. Blocked-on: DoomScrum serving
+untrusted specs for non-operators. -->
 
 
 ## Goal

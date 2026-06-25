@@ -92,28 +92,45 @@ free path.
 - **Real consequences, by consent, unbounded.** Dispatch is gated by one human
   consent moment per repo, then it is unbounded by design. The wallet protects
   spend; nothing else caps your thumb. We do not re-introduce run-packet
-  "bounds" — wallet caps and dispatch *trust* (consent, undo, prompt/secret
-  sandboxing) are *not* bounds.
+  "bounds" — wallet caps and dispatch *trust* (consent, undo) are *not* bounds.
+  (Agent sandboxing is deferred under the local single-operator model — see
+  Operating assumption.)
 - **Disclosure is honest.** Real renders cost money and send spec-derived text to
   a third party; we say so, quote the cost first, and enforce hard spend caps. No
   surprise bills, no quiet egress.
 
+## Operating assumption (v1)
+
+DoomScrum today is a **local, single-operator tool**: you run it on your own
+machine, point it at *your* repo and *your* backlog, using *your* OpenRouter /
+GitHub / FAL credentials, against specs *you* wrote. Under that model the spec is
+not an adversary and the credentials are already yours — so agent sandboxing and
+secret-egress defense are **premature**. We do not harden against untrusted specs
+until DoomScrum runs *other people's* specs (shared / multi-tenant / SaaS). Don't
+gold-plate security before the product is proven and interesting.
+
 ## Strategy & sequence (why the backlog is ordered the way it is)
 
-The product's entire sharp edge is the agent PR — so **trust and proof of the
-dispatch loop outrank distribution of it.** Demoing or marketing a dispatch loop
-that hasn't opened a real PR live, or that leaks secrets, is selling vapor.
+The product's entire sharp edge is the agent PR — so **proof that the loop
+actually works outranks both distribution and premature hardening.** The order is
+make-it-work → make-it-good → make-it-spread → (only if it goes multi-tenant)
+make-it-safe-for-strangers.
 
-- **Gate 0 — Trustworthy dispatch (now):** the core loop must be safe to run live
-  and proven live once — first-dispatch consent, untrusted-spec + secret-egress
-  hardening, mis-swipe undo, and the keystone: **one real foreign-repo PR opened
-  live, fully sandboxed.**
+- **Gate 0 — Make it work (now):** the loop must *actually run against an
+  arbitrary repo and open a real PR* — a real OpenRouter-backed coding agent (not
+  a stub), an onboarding/config path with preflight sanity checks, and the
+  keystone: **one real PR opened live against an external repo.** Config-heavy is
+  fine. Consent + undo stay (cheap and honest); the agent *sandbox* does not
+  (deferred — see Operating assumption).
 - **Gate 1 — The hook users judge first + the on-ramp:** render-quality verdict
   gate and script evals (the videos are what users judge first), then guided
   first-run — stranger to playing video in 60 seconds, no key required.
 - **Gate 2 — Distribution & growth (only after 0–1):** installable releases, a
   marketing site, local open-weights renders, self-dogfooding persona-QA, and
   agent-PR triage that surfaces PR state back on the feed card.
+- **Gate 3 — Trust for strangers (deferred until multi-tenant):** agent
+  filesystem/network sandboxing and untrusted-spec defense-in-depth. Earns its
+  place only when DoomScrum runs specs that aren't the operator's own.
 
 ## Failure modes (how we'd know we got it wrong)
 
