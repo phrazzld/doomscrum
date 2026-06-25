@@ -244,6 +244,10 @@
     transition: opacity var(--quick) var(--ease);
   }
   .repochip:active { transform: translateY(1px); }
+  .egresschip {
+    left: auto; right: 16px; top: 64px;
+    border-color: var(--warn); color: var(--warn);
+  }
   .picker { max-width: 560px; margin: 0 auto; }
   .picker input {
     width: 100%; font-family: var(--mono); font-size: 14px; padding: 12px;
@@ -273,6 +277,19 @@
     font-family: var(--mono); font-size: 13px; line-height: 1.6;
     color: var(--ink); margin: 0 0 16px;
   }
+  .disclosure-copy {
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    color: var(--ink); margin: 0 0 14px;
+  }
+  .disclosure-copy b { color: var(--acid); font-weight: 700; }
+  .egress-list { list-style: none; margin: 0; }
+  .egress-list li {
+    border: 1px solid var(--line); padding: 11px 13px; margin-bottom: 10px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.55; color: var(--ink);
+  }
+  .egress-list li b { color: var(--pink); font-weight: 700; }
+  .egress-list li .src { color: var(--muted); word-break: break-all; }
+  .egress-list li .fields { color: var(--acid); display: block; margin-top: 4px; }
   .picker ul { list-style: none; margin-top: 20px; }
   .picker li {
     padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
@@ -362,12 +379,25 @@
   </div>
 </div>
 
+<div class="overlay" id="egressOverlay">
+  <button class="close" id="egressClose">close [esc]</button>
+  <div class="head"><h2>data egress — what leaves this machine</h2><span class="hash">spec-derived text sent to providers</span></div>
+  <div class="picker">
+    <p class="disclosure-copy">Videos are <b>AI-generated</b>. When a real provider is used, spec-derived text leaves this machine. The free <b>fake</b> fixture provider and template script mode never egress. Two payloads, not one:</p>
+    <ul class="egress-list" id="egressList"></ul>
+    <p class="disclosure-copy" id="egressSummary"></p>
+  </div>
+</div>
+
+<button class="repochip egresschip" id="egressChip" title="what spec text leaves this machine">egress</button>
+
 <div class="splash" id="splash">
   <div>
     <h1>DoomScrum</h1>
     <p>tap in — sound on</p>
     <small>right swipe dispatches a real coding agent in a fresh worktree and opens a PR.
-    left swipe dispatches an agent to sharpen the spec. this is not a drill.</small>
+    left swipe dispatches an agent to sharpen the spec. this is not a drill.<br>
+    videos are AI-generated. the egress chip shows what spec text leaves this machine.</small>
   </div>
 </div>
 
@@ -838,6 +868,37 @@
     if (e.target === consentOverlay) settleConsent(false);
   });
 
+  // --- data-egress disclosure panel (022, security lane) -------------
+  // Surfaces the runtime enumeration of exactly what spec-derived text is
+  // sent to OpenRouter (scriptwriter) and fal.ai (render prompt), fetched
+  // from /api/egress so the UI shows the code-verified list, not just prose.
+  const egressOverlay = $("egressOverlay");
+  async function openEgress() {
+    egressOverlay.classList.add("show");
+    $("egressList").textContent = "loading…";
+    $("egressSummary").textContent = "";
+    try {
+      const data = await api("/api/egress");
+      const payloads = data.payloads || [];
+      $("egressList").innerHTML = payloads.map((p) => {
+        const fields = (p.fields || []).join("; ");
+        return `<li><b>${p.id}</b> → ${p.destination}<br>` +
+               `<span class="src">source: ${p.source}</span>` +
+               `<span class="fields">fields: ${fields}</span>` +
+               `<br><span class="src">triggered: ${p.triggered_by}</span>` +
+               `<br><span class="src">${p.notes}</span></li>`;
+      }).join("");
+      $("egressSummary").textContent = data.summary || "";
+    } catch (e) {
+      $("egressList").innerHTML = `<li>failed to load egress disclosure: ${e.message}</li>`;
+    }
+  }
+  $("egressChip").onclick = openEgress;
+  $("egressClose").onclick = () => egressOverlay.classList.remove("show");
+  egressOverlay.addEventListener("pointerdown", (e) => {
+    if (e.target === egressOverlay) egressOverlay.classList.remove("show");
+  });
+
 	document.addEventListener("keydown", (e) => {
     if (repoOverlay.classList.contains("show")) {
       if (e.key === "Escape") repoOverlay.classList.remove("show");
@@ -845,6 +906,10 @@
     }
     if (consentOverlay.classList.contains("show")) {
       if (e.key === "Escape") settleConsent(false);
+      return;
+    }
+    if (egressOverlay.classList.contains("show")) {
+      if (e.key === "Escape") egressOverlay.classList.remove("show");
       return;
     }
     if (overlay.classList.contains("show")) {

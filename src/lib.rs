@@ -2,6 +2,7 @@ pub mod backlog;
 pub mod config;
 pub mod dispatch;
 pub mod distill;
+pub mod egress;
 pub mod events;
 pub mod gc;
 pub mod preflight;

@@ -65,6 +65,38 @@ render, enforces both `max_total_spend_usd` and an independent
 daily budget is exhausted. The fixture provider (`fake`) is the default and
 never leaves the machine.
 
+## Legal / safety disclosure
+
+DoomScrum is MIT-licensed (see `LICENSE`). **Videos are AI-generated** — they
+do not depict real events, and the spoken content is derived from backlog
+spec text, not verified fact.
+
+When a real provider is used (not the default `fake` fixture), **spec-derived
+text leaves this machine**. There are exactly two egress payloads, and the
+runtime names both:
+
+1. **OpenRouter (scriptwriter).** With `script.mode = "llm"`, the full raw
+   spec markdown (`prd.raw`) is sent to OpenRouter's chat-completions API to
+   generate the spoken script + visual scene. The spec is wrapped in an
+   untrusted-data fence (it cannot break out as instructions), but the raw
+   text still egresses. Source: `src/scriptwriter.rs` (`request_body`).
+2. **fal.ai (render prompt).** With `provider = "fal"`, the spec **title**
+   (attacker-controlled — the first `# ` line), **goal**, and **first
+   acceptance criterion** are distilled into the spoken script and embedded
+   in the composed provider prompt sent to fal.ai's text-to-video model. The
+   title also flows into the PR title, commit message, and branch slug (argv
+   tokens — no shell injection). Source: `src/distill.rs`
+   (`compile_with_format` → `format_prompt`), sent by `src/providers/fal.rs`.
+
+The `fake` fixture provider and `templates` script mode never egress.
+
+**Runtime disclosure** (not just this prose): `doomscrum egress` prints the
+enumeration, `GET /api/egress` returns it as JSON, and the feed UI surfaces it
+in a disclosure panel (the `egress` chip). `doomscrum doctor` checks keys and
+config before a paid run. Provider terms (fal.ai, OpenRouter, and the
+underlying video models) are reviewed in [`docs/LEGAL.md`](docs/LEGAL.md) for
+redistribution of generated clips in marketing.
+
 ## Brainrot formats
 
 Each spec is translated into one of five live brainrot formats, rotated by
@@ -184,6 +216,7 @@ offline with zero external dependencies.
 src/
   backlog.rs       spec scanning, hashing, priority cap
   distill.rs       markdown → brief → storyboard (the brainrot script)
+  egress.rs        runtime data-egress disclosure (CLI + /api/egress + UI)
   providers/       fake (embedded fixture) and fal (real) video generation
   dispatch.rs      swipe → worktree → agent → commit → push → PR
   events.rs        durable NDJSON decision ledger
