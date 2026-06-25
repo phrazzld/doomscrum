@@ -11,7 +11,7 @@ doomscrum/* PRs get an automatic first review (tests, scope vs spec, diff size) 
 - [ ] Stale agent PRs (14d) are flagged in the feed.
 
 ## Notes
-Groom 2026-06-17: **Gate 2** — this is the loop-closing "moat" in `docs/VISION.md`
+Groom 2026-06-17: **Gate 2** — this is the loop-closing "moat" in `VISION.md`
 (dispatched PRs flowing back as triaged feed state), but it presumes agent PRs
 reliably exist, so it is blocked-by the live dispatch proof
 ([[016-multi-repo-sync]] L3). Its triage-signal half overlaps

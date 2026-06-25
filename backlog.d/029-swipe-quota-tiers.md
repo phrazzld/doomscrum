@@ -26,4 +26,4 @@ before strangers can reach the free path (017 distribution / 019 onboarding
 unshipped) monetizes a funnel with no top (product-value + premise lanes). This
 is sequencing, not a bounds objection — the ticket's own "rationing, not bounds"
 framing stands. Unblock after Gate 2 proves strangers reach value. See
-`docs/VISION.md`.
+`VISION.md`.

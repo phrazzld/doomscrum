@@ -44,5 +44,5 @@ product** and the single best next pickup once Gate 0's safety lands. Promote it
 to the active near-term slice. It is gated by
 [[033-dispatch-untrusted-spec-hardening]]: do not run live foreign-repo dispatch
 while the agent inherits the operator's secrets and ingests unfenced spec text.
-Children 3 (contract doc) and 4 (MCP source) remain later. See `docs/VISION.md`
+Children 3 (contract doc) and 4 (MCP source) remain later. See `VISION.md`
 (Gate 0).

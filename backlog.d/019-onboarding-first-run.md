@@ -16,4 +16,4 @@ Groom 2026-06-17: this is **Gate 1** (the on-ramp), sequenced after Gate 0
 The operator-UX lane confirmed no first-run path exists today: a fresh `serve`
 with no renders lands on the per-spec "cook fixture" empty card, and the README
 quick start requires a manual `generate` before `serve`. Empty-backlog and
-switch-repo dead-ends (no recovery button) belong here too. See `docs/VISION.md`.
+switch-repo dead-ends (no recovery button) belong here too. See `VISION.md`.

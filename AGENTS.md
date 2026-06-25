@@ -4,6 +4,9 @@ Backlog specs → brainrot videos → swipes dispatch real coding agents.
 Single Rust crate (`doomscrum`); `assets/index.html` is the only sanctioned
 non-Rust product surface. `demo/` is dev tooling (Remotion), not product.
 
+North star is `VISION.md` (why this exists, the soul, the non-goals). When a
+direction call is ambiguous, that file decides — read it, don't guess.
+
 - Config: `doomscrum.toml` (model, durations, spend cap). State:
   `.doomscrum/` (renders, storyboards, launches — gitignored).
   `.brainrot/` is the pre-rename state dir; ignore it.

@@ -1,8 +1,14 @@
 # DoomScrum commercial model decision
 
-Status: ratified operating decision for the next public-demo/release slice.
+Status: **UNDER REVIEW (reopened 2026-06-24).** The staged path below was
+previously ratified, but the owner has reopened the commercial model as a live
+question — treat this file as the options analysis, not a settled plan. The
+canonical north star (`../VISION.md`) lists "how it's distributed and sold" as
+an explicit open bet. Local-first-free is real and shipping today; everything
+beyond it (OSS self-host · BYO-key · cloud render credits · hosted SaaS) is
+undecided. Re-ratify here before the backlog sequences against it again.
 
-## Decision
+## Decision (proposed — pending re-ratification)
 
 DoomScrum should ship first as a local-first BYO-keys tool with a free fixture
 path, then add paid cloud-render credits only after onboarding and distribution

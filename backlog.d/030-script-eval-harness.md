@@ -39,7 +39,7 @@ the eval should catch scripts that technically fit a duration but lose the
 ticket's goal/oracle after TTS, forced alignment, captions, and transcript
 normalization.
 
-Groom 2026-06-17: **Gate 1** in `docs/VISION.md` — the quality users judge
+Groom 2026-06-17: **Gate 1** in `VISION.md` — the quality users judge
 first, paired with [[031-render-verdict-gate]]. 030's 5th oracle (downstream
 render check) is the upstream sibling of 031's per-render verdict gate and its
 new checker-self-test; sequence them together.
