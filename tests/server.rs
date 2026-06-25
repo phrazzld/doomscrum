@@ -367,6 +367,57 @@ fn gallery_card_signature_tracks_render_media_url() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn egress_route_enumerates_both_payloads() {
+    let app = spawn_app().await;
+    let (status, body) = app.get("/api/egress").await;
+    assert_eq!(status, 200, "egress route failed: {body}");
+    let ids: Vec<String> = body["payloads"]
+        .as_array()
+        .expect("payloads is an array")
+        .iter()
+        .map(|p| p["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        ids.contains(&"scriptwriter-openrouter".to_string()),
+        "missing OpenRouter payload: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"render-fal".to_string()),
+        "missing fal payload: {ids:?}"
+    );
+    // The disclosure must name prd.raw (OpenRouter) and the spec
+    // title/goal/criterion (fal), not just "spec text".
+    let joined = body["payloads"].to_string();
+    assert!(joined.contains("prd.raw"), "must name prd.raw: {joined}");
+    assert!(
+        joined.contains("title"),
+        "must name the spec title: {joined}"
+    );
+    assert!(joined.contains("goal"), "must name the spec goal: {joined}");
+    assert!(
+        joined.contains("criterion"),
+        "must name the first criterion: {joined}"
+    );
+}
+
+#[test]
+fn feed_ui_surfaces_egress_disclosure_panel() {
+    let html = include_str!("../assets/index.html");
+    // The disclosure panel + chip + fetch from the runtime route.
+    assert!(
+        html.contains(r#"id="egressOverlay""#),
+        "missing egress overlay"
+    );
+    assert!(html.contains(r#"id="egressChip""#), "missing egress chip");
+    assert!(html.contains("/api/egress"), "missing /api/egress fetch");
+    // AI-generated disclosure on the splash.
+    assert!(
+        html.contains("AI-generated"),
+        "missing AI-generated disclosure"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn right_swipe_dispatches_agent_and_opens_pr() {
     let app = spawn_app().await;
     let (_, state) = app.get("/api/state").await;

@@ -80,6 +80,10 @@ enum Command {
         #[arg(long)]
         repo: Option<String>,
     },
+    /// Print the runtime data-egress disclosure: exactly what spec-derived
+    /// text is sent to OpenRouter (scriptwriter) and fal.ai (render prompt),
+    /// with the source code path for each. (backlog 022, security lane.)
+    Egress,
     /// Garbage-collect generated renders, dispatch worktrees, and event logs.
     Gc {
         /// Print actions without deleting or rotating anything.
@@ -282,6 +286,9 @@ async fn main() -> Result<()> {
                     d.pr_url.clone().unwrap_or_default()
                 );
             }
+        }
+        Command::Egress => {
+            print!("{}", doomscrum::egress::render_cli());
         }
         Command::Gc {
             dry_run,

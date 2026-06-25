@@ -229,12 +229,26 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/dispatch/{id}/log", get(api_dispatch_log))
         .route("/api/dispatch/{id}/cancel", post(api_dispatch_cancel))
         .route("/api/repo", get(api_repo_get).post(api_repo_set))
+        .route("/api/egress", get(api_egress))
         .route("/media/{sha}/{file}", get(media))
         .with_state(ctx)
 }
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+/// `GET /api/egress` — runtime data-egress disclosure. Names exactly what
+/// spec-derived text is sent to OpenRouter (scriptwriter) and fal.ai (render
+/// prompt), with the source code path for each. The feed UI surfaces this in
+/// its disclosure panel so the operator sees the enumeration, not just README
+/// prose. (backlog 022, security lane.)
+async fn api_egress() -> Response {
+    Json(json!({
+        "payloads": crate::egress::payloads(),
+        "summary": crate::egress::summary(),
+    }))
+    .into_response()
 }
 
 async fn api_repo_get(State(ctx): State<AppCtx>) -> Response {
