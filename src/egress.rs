@@ -51,7 +51,7 @@ pub fn payloads() -> Vec<EgressPayload> {
             fields: vec!["prd.raw — the full raw spec markdown, any format, any structure"],
             source: "src/scriptwriter.rs request_body — prd.raw is wrapped in an \
                      untrusted-data fence (util::wrap_untrusted_spec) and sent as the \
-                     user turn; scriptwriter.rs:102",
+                     user turn",
             triggered_by: "script.mode = \"llm\" and a render or `doomscrum script` \
                             runs (the fixture/`fake` provider and template mode do \
                             not egress to OpenRouter)",
@@ -90,17 +90,24 @@ pub fn payloads() -> Vec<EgressPayload> {
     ]
 }
 
+/// One-sentence egress summary. The single source of this prose: consumed by
+/// the CLI (`render_cli`) and the HTTP route (`api_egress`) so the disclosure
+/// copy lives in one place, not three.
+pub fn summary() -> &'static str {
+    "Spec-derived text that leaves this machine: the full raw spec goes to \
+     OpenRouter (scriptwriter), and the spec title/goal/first-criterion go to \
+     fal.ai (render prompt). The free `fake` fixture provider and template \
+     script mode never egress."
+}
+
 /// Render the disclosure as CLI-friendly text (mirrors the `doctor` report
 /// style). Used by `doomscrum egress`.
 pub fn render_cli() -> String {
     let mut out = String::new();
     out.push_str("DoomScrum data-egress disclosure\n");
     out.push_str("================================\n\n");
-    out.push_str(
-        "Spec-derived text that leaves this machine when real providers are \
-         used. The free `fake` fixture provider and template script mode never \
-         egress.\n\n",
-    );
+    out.push_str(summary());
+    out.push_str("\n\n");
     for p in payloads() {
         out.push_str(&format!("▸ {} → {}\n", p.id, p.destination));
         out.push_str(&format!("   provider:     {}\n", p.provider));

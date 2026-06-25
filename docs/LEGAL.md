@@ -1,8 +1,10 @@
 # Legal / safety baseline (backlog 022)
 
-Status: **reviewed 2026-06-25** for the public-launch legal/safety baseline.
-This file is the operator-facing review record, not legal advice. Re-review
-before any redistribution or commercial use that this file does not cover.
+Status: **DRAFT pre-launch checklist (2026-06-25).** This is NOT a completed
+legal review — it is the operator-facing list of what must be decided and
+verified before a public launch, plus the disclosures already wired into the
+product. It is not legal advice. Items marked TODO are unverified; complete them
+(and engage counsel where noted) before relying on them.
 
 ## OSS license
 
@@ -14,21 +16,17 @@ in `COMMERCIAL_MODEL.md` and removes friction for self-hosting. A copyleft
 license would deter the exact self-hosting audience the local-first path
 targets.
 
-## Trademark sanity check on the product name
+## Trademark — product name (TODO before launch)
 
-"DoomScrum" was sanity-checked 2026-06-25:
+**Not yet cleared — no trademark search has been performed.** Before any
+commercial registration or branding spend:
 
-- A web search for "DoomScrum" and "Doom Scrum" returned no live software
-  product, registered trademark, or prominent commercial use as of the check
-  date. "Doom" alone is a well-known id Software trademark for the game
-  franchise; "DoomScrum" as a compound does not collide with that mark in
-  the software/services class for a backlog-triage tool, but the compound
-  should not be marketed in a way that implies affiliation with id Software.
-- This is a sanity check, not a formal trademark clearance search. Before any
-  commercial registration or branding spend, commission a real clearance
-  search and, if defending the name matters, file for registration in the
-  relevant class(es).
-- Re-run this check before public launch and re-record the date.
+- Run a real trademark clearance search for "DoomScrum" / "Doom Scrum" in the
+  relevant software/services class(es).
+- Note: "Doom" is a well-known id Software trademark for the game franchise. Do
+  not market "DoomScrum" in any way that implies affiliation with id Software,
+  and confirm the compound does not collide in the relevant class.
+- If defending the name matters, file for registration after a clean search.
 
 ## AI-content disclosure
 
@@ -54,7 +52,7 @@ The two payloads (code-verified in `src/egress.rs`):
 
 1. **OpenRouter (scriptwriter)** — `prd.raw` (the full raw spec markdown)
    goes to OpenRouter's chat-completions API when `script.mode = "llm"`.
-   Source: `src/scriptwriter.rs` (`request_body`, ~line 102).
+   Source: `src/scriptwriter.rs` (`request_body`).
 2. **fal.ai (render prompt)** — the spec **title** (attacker-controlled, the
    first `# ` line), **goal**, and **first acceptance criterion** are
    distilled into the provider prompt sent to fal.ai's text-to-video model.
@@ -65,14 +63,12 @@ The `fake` fixture provider and `templates` script mode never egress.
 
 ## fal.ai + model ToS — redistribution of generated clips in marketing
 
-Before redistributing generated clips in marketing material, review the
-then-current terms of:
+**These terms have NOT been reviewed.** Before redistributing generated clips in
+marketing material, read the then-current terms of:
 
 - **fal.ai** (https://fal.ai/terms) — the render service ToS govern ownership,
-  licensing, and permitted use of generated outputs. fal.ai's terms as of the
-  review date grant the account owner rights to use generated outputs subject
-  to the terms; confirm the current version permits marketing redistribution
-  before any public campaign.
+  licensing, and permitted use of generated outputs. Read the current version to
+  confirm whether it permits marketing redistribution; do not assume it does.
 - **The underlying video model's terms** — each model (e.g. sora-2, veo3.1,
   seedance, ltx-2.3) on fal may carry provider-specific output-use terms.
   Marketing redistribution must satisfy the most restrictive applicable

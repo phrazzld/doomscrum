@@ -94,8 +94,9 @@ The `fake` fixture provider and `templates` script mode never egress.
 enumeration, `GET /api/egress` returns it as JSON, and the feed UI surfaces it
 in a disclosure panel (the `egress` chip). `doomscrum doctor` checks keys and
 config before a paid run. Provider terms (fal.ai, OpenRouter, and the
-underlying video models) are reviewed in [`docs/LEGAL.md`](docs/LEGAL.md) for
-redistribution of generated clips in marketing.
+underlying video models) and the trademark check are tracked as a pre-launch
+checklist in [`docs/LEGAL.md`](docs/LEGAL.md) — **not yet reviewed**; complete
+them before redistributing generated clips in marketing.
 
 ## Brainrot formats
 

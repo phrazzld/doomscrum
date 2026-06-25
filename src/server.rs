@@ -246,10 +246,7 @@ async fn index() -> Html<&'static str> {
 async fn api_egress() -> Response {
     Json(json!({
         "payloads": crate::egress::payloads(),
-        "summary": "Spec-derived text that leaves this machine: the full raw spec goes \
-                    to OpenRouter (scriptwriter), and the spec title/goal/first-criterion \
-                    go to fal.ai (render prompt). The free `fake` fixture provider and \
-                    template script mode never egress.",
+        "summary": crate::egress::summary(),
     }))
     .into_response()
 }
