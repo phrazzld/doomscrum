@@ -48,11 +48,14 @@ of scope (the local single-operator trust model makes it premature — see
   preflight); the live two-repo proof at the final child.
 
 ## Children (ordered)
-1. **Real agent by default.** Swap the dispatched-agent default from `codex` to
-   the **`opencode` CLI on OpenRouter** (default model GLM 5.2), wiring model +
-   `OPENROUTER_API_KEY` through `doomscrum.toml`. Keep the existing
-   command-template pluggability (`implement_cmd`/`shape_cmd`/`pr_cmd`) so codex,
-   claude, or any other agent still works as an override.
+1. **Real agent by default.** ✅ DELIVERED 2026-06-25 (branch
+   `deliver/043-opencode-default`). Default `implement_cmd`/`shape_cmd` are now
+   `opencode run --dir {worktree} -m {model} {prompt}`; new `agent_model` field +
+   `{model}` placeholder makes the model a one-line change (default
+   `openrouter/z-ai/glm-5.2`, verified in the live catalog). opencode auths from
+   its own credential file via HOME, so no key enters the agent env; allowlist +
+   denylist untouched. codex/claude remain overrides. Gate green (fmt/clippy/22
+   tests) + fresh-context review = SHIP. Live execution is proven in child 4.
 2. **Preflight sanity checks.** A `doctor`/preflight pass that validates
    OpenRouter key, `gh` auth, git remote writability, and FAL presence-vs-need,
    with actionable failure messages.
