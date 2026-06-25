@@ -30,6 +30,10 @@ unbounded once you've opted in.
 ```bash
 cargo build --release
 
+# 0. Scaffold a config and check your setup (agent auth, gh auth, git remote)
+cargo run --release -- init
+cargo run --release -- doctor
+
 # 1. Render videos for the top specs (offline fixture provider)
 cargo run --release -- generate
 
@@ -40,7 +44,10 @@ cargo run --release -- serve        # http://127.0.0.1:4173
 cargo run --release -- gc --dry-run
 ```
 
-Tap the splash screen (sound gate), then swipe.
+`init` writes a starter `doomscrum.toml`; `doctor` verifies that the dispatched
+agent can authenticate (`opencode auth login`), `gh` is logged in, and the synced
+repo has a push remote — so a swipe can actually open a PR. Tap the splash screen
+(sound gate), then swipe.
 
 ### Real AI video
 

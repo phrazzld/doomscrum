@@ -56,12 +56,16 @@ of scope (the local single-operator trust model makes it premature — see
    its own credential file via HOME, so no key enters the agent env; allowlist +
    denylist untouched. codex/claude remain overrides. Gate green (fmt/clippy/22
    tests) + fresh-context review = SHIP. Live execution is proven in child 4.
-2. **Preflight sanity checks.** A `doctor`/preflight pass that validates
-   OpenRouter key, `gh` auth, git remote writability, and FAL presence-vs-need,
-   with actionable failure messages.
-3. **Guided setup.** An onboarding flow (wizard or `doomscrum init`) that
-   captures the three credentials + repo/backlog selection and writes a valid
-   `doomscrum.toml`.
+2. **Preflight sanity checks.** ✅ DELIVERED 2026-06-25. `doomscrum doctor`
+   (pure `preflight::evaluate(Facts)` + thin CLI I/O shell) validates OpenRouter
+   key, opencode *stored* auth, `gh` auth, git work-tree + push remote, and FAL
+   presence-vs-need, with fix hints; exits non-zero on any FAIL. Live QA caught a
+   real gap (opencode env-only, no stored cred). 9 unit tests.
+3. **Guided setup.** ✅ DELIVERED 2026-06-25. `doomscrum init` scaffolds a
+   starter `doomscrum.toml` (dogfoods the opencode default; no-clobber) and
+   prints the setup checklist + a live `doctor` readout. (A fully interactive
+   TUI wizard remains a possible follow-up; the non-interactive scaffold is the
+   testable, headless-safe core.)
 4. **Live proof, repo #1.** Dispatch against a real external repo; open a real
    PR; capture the evidence packet. (Supersedes 016 child-3.)
 5. **Generality proof, repo #2.** Repeat against a second, differently-shaped
