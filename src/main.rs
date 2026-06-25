@@ -388,11 +388,11 @@ fn command_ok_in(dir: Option<&std::path::Path>, bin: &str, args: &[&str]) -> boo
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
+/// True if the repo has an **`origin`** remote specifically — not just any
+/// remote. Dispatch pushes to and opens PRs against `origin` (see
+/// `dispatch.rs`), so a repo with only an `upstream` remote can't open a PR;
+/// doctor must check the same thing dispatch will use, or it green-lights a
+/// dispatch that silently stays local.
 fn git_has_remote(dir: &std::path::Path) -> bool {
-    std::process::Command::new("git")
-        .args(["remote"])
-        .current_dir(dir)
-        .output()
-        .map(|o| o.status.success() && !o.stdout.is_empty())
-        .unwrap_or(false)
+    command_ok_in(Some(dir), "git", &["remote", "get-url", "origin"])
 }
