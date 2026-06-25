@@ -286,6 +286,7 @@ impl Dispatcher {
                 ("branch", receipt.branch.as_str()),
                 ("spec_path", prd.rel_path.as_str()),
                 ("title", prd.title.as_str()),
+                ("model", self.agent.agent_model.as_str()),
             ],
         );
         // `claim` already flipped the receipt to `agent_running` (and persisted

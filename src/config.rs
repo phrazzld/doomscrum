@@ -184,13 +184,19 @@ impl Default for ScriptConfig {
 }
 
 /// Agent command templates. Placeholders substituted per dispatch:
-/// `{worktree}`, `{prompt}`, `{branch}`, `{spec_path}`, `{title}`, `{body_file}`.
+/// `{worktree}`, `{prompt}`, `{branch}`, `{spec_path}`, `{title}`, `{model}`,
+/// `{body_file}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AgentConfig {
     pub implement_cmd: Vec<String>,
     pub shape_cmd: Vec<String>,
     pub pr_cmd: Vec<String>,
+    /// The model the default `opencode` agent runs, in opencode's
+    /// `provider/model` form. Substituted into `{model}` in the agent commands,
+    /// so switching models is a one-line `agent_model = "..."` change. Ignored
+    /// by agent commands that don't reference `{model}` (e.g. a codex override).
+    pub agent_model: String,
     /// Environment variables the *untrusted* agent stage is allowed to inherit.
     /// The agent runs spec content that can come from a foreign repo, so its
     /// process env is built from this allowlist alone (`env_clear` + re-add) —
@@ -214,14 +220,20 @@ pub struct AgentConfig {
 
 impl Default for AgentConfig {
     fn default() -> Self {
-        let codex = |_: &str| -> Vec<String> {
+        // The default dispatched agent is the `opencode` CLI on OpenRouter (043).
+        // `opencode run --dir <wt> -m <provider/model> <prompt>` runs the agent
+        // non-interactively in the worktree. opencode authenticates from its own
+        // credential file (`~/.local/share/opencode/auth.json`, written by
+        // `opencode auth login`), reached through HOME like codex's auth.json —
+        // so no API key needs to enter the agent env.
+        let opencode = || -> Vec<String> {
             [
-                "codex",
-                "exec",
-                "--cd",
+                "opencode",
+                "run",
+                "--dir",
                 "{worktree}",
-                "--sandbox",
-                "workspace-write",
+                "-m",
+                "{model}",
                 "{prompt}",
             ]
             .iter()
@@ -229,8 +241,9 @@ impl Default for AgentConfig {
             .collect()
         };
         Self {
-            implement_cmd: codex("implement"),
-            shape_cmd: codex("shape"),
+            implement_cmd: opencode(),
+            shape_cmd: opencode(),
+            agent_model: "openrouter/z-ai/glm-5.2".to_string(),
             pr_cmd: [
                 "gh",
                 "pr",
@@ -262,13 +275,14 @@ impl Default for AgentConfig {
                 "XDG_CONFIG_HOME",
                 "XDG_CACHE_HOME",
                 "XDG_DATA_HOME",
-                // NB: NO provider API keys (OPENAI_API_KEY/ANTHROPIC_API_KEY) by
-                // default. The default agent (`codex exec`) authenticates via
-                // ~/.codex/auth.json (reached through HOME), so it needs none in
-                // env — and any key in the agent's env can be written to a file
-                // the dispatcher then commits and pushes. Operators whose agent
+                // NB: NO provider API keys (OPENROUTER_API_KEY/OPENAI_API_KEY) by
+                // default. The default agent (`opencode`) authenticates from its
+                // credential file (~/.local/share/opencode/auth.json, written by
+                // `opencode auth login`), reached through HOME — so it needs no
+                // key in env. Any key in the agent's env can be written to a file
+                // the dispatcher then commits and pushes, so operators whose agent
                 // authenticates via an env var add it here, accepting that it is
-                // exposed to untrusted spec-driven execution.
+                // exposed to spec-driven execution.
             ]
             .iter()
             .map(|s| s.to_string())
@@ -369,13 +383,60 @@ mod tests {
         assert!(cfg.agent.open_pr);
         assert_eq!(cfg.agent.max_concurrent_dispatches, 2);
         assert_eq!(cfg.agent.undo_window_sec, 5);
-        assert_eq!(cfg.agent.implement_cmd[0], "codex");
+        assert_eq!(cfg.agent.implement_cmd[0], "opencode");
+    }
+
+    #[test]
+    fn default_agent_is_opencode_glm_on_openrouter() {
+        let agent = AgentConfig::default();
+        // The default dispatched agent is the opencode CLI on OpenRouter (043).
+        assert_eq!(
+            agent.implement_cmd,
+            vec![
+                "opencode",
+                "run",
+                "--dir",
+                "{worktree}",
+                "-m",
+                "{model}",
+                "{prompt}"
+            ]
+        );
+        assert_eq!(agent.shape_cmd, agent.implement_cmd);
+        // Model is a one-line change via the {model} placeholder; default GLM 5.2.
+        assert!(agent.implement_cmd.iter().any(|a| a == "{model}"));
+        assert_eq!(agent.agent_model, "openrouter/z-ai/glm-5.2");
+    }
+
+    #[test]
+    fn default_agent_command_substitutes_to_a_concrete_opencode_invocation() {
+        let agent = AgentConfig::default();
+        let cmd = substitute(
+            &agent.implement_cmd,
+            &[
+                ("worktree", "/tmp/wt"),
+                ("model", agent.agent_model.as_str()),
+                ("prompt", "do the thing"),
+            ],
+        );
+        assert_eq!(
+            cmd,
+            vec![
+                "opencode",
+                "run",
+                "--dir",
+                "/tmp/wt",
+                "-m",
+                "openrouter/z-ai/glm-5.2",
+                "do the thing",
+            ]
+        );
     }
 
     #[test]
     fn agent_env_allowlist_excludes_doomscrum_secrets_keeps_runtime() {
         let allow = AgentConfig::default().env_allowlist;
-        // Runtime essentials the default agent (codex) needs to start + auth.
+        // Runtime essentials the default agent (opencode) needs to start + auth.
         assert!(allow.iter().any(|k| k == "PATH"), "{allow:?}");
         assert!(allow.iter().any(|k| k == "HOME"), "{allow:?}");
         // DoomScrum's service keys + git push tokens must never reach the agent.

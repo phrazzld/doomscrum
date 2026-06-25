@@ -101,9 +101,12 @@ provider = "fal"
 
 [agent]
 # Right swipe runs implement_cmd in a fresh worktree; left swipe runs
-# shape_cmd. Placeholders: {worktree} {prompt} {branch} {spec_path} {title}.
-implement_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
-shape_cmd = ["codex", "exec", "--cd", "{worktree}", "--sandbox", "workspace-write", "{prompt}"]
+# shape_cmd. Placeholders: {worktree} {prompt} {branch} {spec_path} {title} {model}.
+# Default: the opencode CLI on OpenRouter. Run `opencode auth login` once to store
+# your OpenRouter key. Swap the model on the next line; swap the agent here.
+agent_model = "openrouter/z-ai/glm-5.2"
+implement_cmd = ["opencode", "run", "--dir", "{worktree}", "-m", "{model}", "{prompt}"]
+shape_cmd = ["opencode", "run", "--dir", "{worktree}", "-m", "{model}", "{prompt}"]
 # After the agent commits, DoomScrum pushes the branch and runs pr_cmd.
 # Placeholders: {branch} {title} {body_file} {worktree}.
 pr_cmd = ["gh", "pr", "create", "--head", "{branch}", "--title", "{title}", "--body-file", "{body_file}"]
@@ -116,8 +119,10 @@ undo_window_sec = 5
 # repo), so its process env is built from this allowlist alone — never the
 # parent env. The default is PATH/HOME/locale/XDG only: NO API keys, because the
 # agent's output is committed and pushed, so any key in its env can be leaked
-# into a PR. The default codex agent authenticates via ~/.codex/auth.json (HOME),
-# so it needs none. DoomScrum's own keys (FAL_API_KEY/OPENROUTER_API_KEY) and git
-# tokens are dropped even if listed. Add a var only if your agent authenticates
-# via an env var — and know it is then exposed to untrusted spec execution.
+# into a PR. The default opencode agent authenticates from its own credential
+# file (~/.local/share/opencode/auth.json via `opencode auth login`, reached
+# through HOME), so it needs no key in env. DoomScrum's own keys (FAL_API_KEY/
+# OPENROUTER_API_KEY) and git tokens are dropped even if listed. Add a var only if
+# your agent authenticates via an env var — and know it is then exposed to
+# untrusted spec execution.
 # env_allowlist = ["PATH", "HOME", "USER", "SHELL", "TERM", "TMPDIR", "LANG", "OPENAI_API_KEY"]

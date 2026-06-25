@@ -121,9 +121,12 @@ Right swipe (implement) / left swipe (shape):
 Every dispatch writes a staged receipt to `.doomscrum/dispatches/<id>.json`
 (status: `queued → agent_running → opening_pr → pr_opened | completed_local
 | failed`) plus a full agent log. The feed shows live status stickers and
-links to opened PRs. The agent command is yours to choose in
-`doomscrum.toml` — codex by default; point it at claude, or anything else
-that can take a prompt and edit a worktree.
+links to opened PRs. The default agent is the
+[`opencode`](https://opencode.ai) CLI on OpenRouter (model
+`openrouter/z-ai/glm-5.2`) — run `opencode auth login` once to store your
+OpenRouter key, then swipe. Change the model with a one-line `agent_model = "…"`
+in `doomscrum.toml`, or point `implement_cmd`/`shape_cmd` at codex, claude, or
+anything else that takes a prompt and edits a worktree.
 
 Agent work is throttled by `agent.max_concurrent_dispatches` (default `2`).
 Swipes beyond the limit remain as visible `queued` receipts until a slot
