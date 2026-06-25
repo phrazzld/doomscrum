@@ -1,6 +1,13 @@
 # Sandbox the dispatched agent's filesystem: close the secret-file egress vector
 
-Priority: P2 · Status: ready · Estimate: M
+Priority: P1 · Status: ready · Estimate: M
+
+<!-- Groom 2026-06-25: raised P2→P1. This is the open half of the Gate-0
+keystone ("trust and proof of the dispatch loop outrank distribution",
+VISION.md) — it gates a *safe* live foreign-repo PR ([[016-multi-repo-sync]]
+child-3). Distribution tickets (017/018) sit behind it; its priority should
+outrank theirs. -->
+
 
 ## Goal
 A malicious or foreign-repo spec cannot make the dispatched agent exfiltrate a
@@ -28,7 +35,18 @@ and pushes into the PR. Closes the gap env-scrubbing alone leaves open.
 - [ ] The shipped `implement_cmd`/`shape_cmd` defaults keep codex's `--sandbox`
       (or an equivalent OS-level confinement — `sandbox-exec`/`bwrap` — with a
       scrubbed `HOME`), and the read policy of that sandbox is verified, not
-      assumed.
+      assumed. Three traps the sandbox MUST handle (groom security lane,
+      2026-06-25), each with its own falsifier test:
+      - **Network egress, not just fs reads.** `codex --sandbox workspace-write`
+        restricts *writes*, not reads or network — the dominant exfil path is a
+        hijacked agent that `curl`s/`git push`es a secret out mid-run. The
+        confinement must DENY network, not only fence the filesystem.
+      - **Symlink escape.** An allowlisted worktree path symlinked to
+        `~/.secrets` must not read through. Test the symlink case explicitly.
+      - **HOME-vs-auth conflict.** Scrubbing `HOME` breaks codex auth
+        (`~/.codex/auth.json`); a real `HOME` re-opens `cat ~/.secrets`. Resolve
+        by passing the single auth file via a bind-mount / temp `HOME`, not by
+        exposing the operator's real `HOME`.
 - [ ] `docs`/AGENTS state plainly what dispatch trust does and does NOT cover:
       env egress (closed by 033), file egress + commit-exfil (this ticket), and
       the agent's own runtime memory (inherently trusted once you run someone's
