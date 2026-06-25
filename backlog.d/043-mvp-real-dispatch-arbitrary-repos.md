@@ -11,10 +11,10 @@ of scope (the local single-operator trust model makes it premature — see
 `VISION.md` "Operating assumption").
 
 ## Oracle (whole-arc)
-- [ ] Implement/shape swipes run a **real** coding agent, not a stub: an
-      OpenRouter-backed open-source coding agent, default model **GLM 5.2**,
+- [ ] Implement/shape swipes run a **real** coding agent, not a stub: the
+      **`opencode` CLI pointed at OpenRouter**, default model **GLM 5.2**,
       changeable in `doomscrum.toml` in one line — replacing the current `codex`
-      default (`config.rs`). *(Confirm the exact agent CLI — see Notes.)*
+      default (`config.rs`).
 - [ ] A live run against an arbitrary **external** repo with a real GitHub origin
       opens a real PR, captured as a dated evidence packet (repo, PR URL, agent
       transcript). Supersedes [[016-multi-repo-sync]] child-3.
@@ -49,9 +49,10 @@ of scope (the local single-operator trust model makes it premature — see
 
 ## Children (ordered)
 1. **Real agent by default.** Swap the dispatched-agent default from `codex` to
-   an OpenRouter-backed open-source coding agent (default model GLM 5.2),
-   wiring model + key through `doomscrum.toml`. Keep the existing command-template
-   pluggability (`implement_cmd`/`shape_cmd`/`pr_cmd`) so any agent still works.
+   the **`opencode` CLI on OpenRouter** (default model GLM 5.2), wiring model +
+   `OPENROUTER_API_KEY` through `doomscrum.toml`. Keep the existing
+   command-template pluggability (`implement_cmd`/`shape_cmd`/`pr_cmd`) so codex,
+   claude, or any other agent still works as an override.
 2. **Preflight sanity checks.** A `doctor`/preflight pass that validates
    OpenRouter key, `gh` auth, git remote writability, and FAL presence-vs-need,
    with actionable failure messages.
@@ -79,7 +80,9 @@ overlaps [[019-onboarding-first-run]] (which targets the *fixture-video* first-r
 up). Distribution (installable binary, [[017-distribution]]) is NOT required here
 — "clone and run" is an acceptable v1 install.
 
-**CONFIRM (open question):** "OpenRouter open-code agent" — leading interpretation
-is the `opencode` CLI pointed at OpenRouter with GLM 5.2. Alternatives: a thin
-custom OpenRouter coding loop, or `codex`/`claude` kept as fallbacks via the
-existing command templates. Owner to confirm the default agent CLI before child 1.
+**Default agent (resolved 2026-06-25):** the `opencode` CLI pointed at OpenRouter
+with GLM 5.2 — a real open-source coding agent driven by a command template, no
+new in-crate agent code. `codex`/`claude` remain available as overrides via the
+existing `implement_cmd`/`shape_cmd` templates. Child 1 should verify `opencode`
+takes a prompt + worktree non-interactively and respects `OPENROUTER_API_KEY` +
+a model flag.
