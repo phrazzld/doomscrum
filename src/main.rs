@@ -8,6 +8,7 @@ use doomscrum::dispatch;
 use doomscrum::gc::{self, GcOptions};
 use doomscrum::preflight::{self, Facts, Status};
 use doomscrum::providers::load_renders;
+use doomscrum::render::{pipeline, wallet};
 use doomscrum::secrets;
 use doomscrum::server::{self, AppCtx};
 
@@ -165,48 +166,33 @@ async fn main() -> Result<()> {
                 // the planned spend is the sum of per-spec unit costs.
                 let planned = server::planned_fal_spend(&ctx.cfg.video, &targets);
                 let cap = ctx.cfg.video.max_total_spend_usd;
-                anyhow::ensure!(
-                    spent + planned <= cap,
-                    "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
-                     exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
-                    targets.len()
-                );
                 let now = chrono::Utc::now();
                 let today = server::daily_spend(&existing, now);
                 let daily_cap = ctx.cfg.video.max_daily_spend_usd;
-                anyhow::ensure!(
-                    today + planned <= daily_cap,
-                    "daily render budget: ${today:.2} already spent today + ${planned:.2} planned for {} render(s) \
-                     exceeds max_daily_spend_usd ${daily_cap:.2}; resets at {}",
-                    targets.len(),
-                    server::next_daily_reset_at(now)
-                );
+                // Same gate as the server, via the one arithmetic site. No
+                // pending term: the CLI has no concurrent in-flight reservations.
+                match wallet::cap_breach(spent, today, planned, cap, daily_cap) {
+                    wallet::CapBreach::Lifetime => anyhow::bail!(
+                        "spend cap: ${spent:.2} already spent + ${planned:.2} planned for {} render(s) \
+                         exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
+                        targets.len()
+                    ),
+                    wallet::CapBreach::Daily => anyhow::bail!(
+                        "daily render budget: ${today:.2} already spent today + ${planned:.2} planned for {} render(s) \
+                         exceeds max_daily_spend_usd ${daily_cap:.2}; resets at {}",
+                        targets.len(),
+                        server::next_daily_reset_at(now)
+                    ),
+                    wallet::CapBreach::None => {}
+                }
                 println!(
                     "wallet: ${spent:.2} spent lifetime, ${today:.2} spent today, ${planned:.2} planned, ${cap:.2} lifetime cap, ${daily_cap:.2} daily cap"
                 );
             }
 
-            let script_key = doomscrum::secrets::get(&["OPENROUTER_API_KEY"]);
             let mut count = 0usize;
             for prd in targets {
-                let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
-                let provider = ctx.provider_with(&provider_name, &vcfg)?;
-                let storyboard = doomscrum::scriptwriter::storyboard(
-                    &ctx.cfg.script,
-                    script_key.as_deref(),
-                    &prd,
-                    provider.clip_duration(vcfg.max_duration_sec),
-                    &ctx.state_dir().join("scripts"),
-                    provider_name != "fake",
-                )
-                .await?;
-                let storyboards_dir = ctx.state_dir().join("storyboards");
-                std::fs::create_dir_all(&storyboards_dir)?;
-                std::fs::write(
-                    storyboards_dir.join(format!("{}.json", prd.sha256)),
-                    serde_json::to_string_pretty(&storyboard)?,
-                )?;
-                let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
+                let render = pipeline::render_spec(&ctx, &provider_name, &prd).await?;
                 println!(
                     "render {} provider={} model={} audio={} latency_ms={}",
                     prd.title,

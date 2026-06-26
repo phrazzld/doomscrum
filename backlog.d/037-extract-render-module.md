@@ -8,17 +8,20 @@ module with a small interface, instead of being reimplemented across `server.rs`
 and `main.rs`.
 
 ## Oracle
-- [ ] `render::pipeline::render_spec(ctx, provider, prd) -> VideoRender` is the
+- [x] `render::pipeline::render_spec(ctx, provider, prd) -> VideoRender` is the
       single owner of the spec→storyboard→render flow; `main.rs` generate and
-      `api_generate`/`spawn_render_job` both call it (the duplicated `render_one`
-      at main.rs:176-201 is gone — exactly one `scriptwriter::storyboard` call
-      site outside tests).
-- [ ] One budget gate (lifetime + daily + pending) consumed by `api_generate`,
-      `maybe_prefetch`, and `main.rs`; spend-cap arithmetic appears once, and the
-      existing `render_plan_degrades_*` and cap tests pass unchanged.
-- [ ] `RenderReservation` + reservation lifecycle move into the wallet; `AppCtx`
-      holds an opaque handle; `server.rs` drops below ~900 lines with no behavior
-      test edited.
+      `api_generate`/`spawn_render_job` both call it. DONE — exactly one
+      `scriptwriter::storyboard` call site outside tests (`render/pipeline.rs`).
+- [x] One budget gate consumed by `api_generate`, `maybe_prefetch`, and
+      `main.rs`; spend-cap arithmetic appears **once** — `render::wallet::cap_breach`
+      (`wallet.rs:111`). `render_plan` and the cap tests pass byte-unchanged (kept
+      compiling via a re-export). DONE.
+- [~] `RenderReservation` + lifecycle moved into `render::wallet::Wallet`; `AppCtx`
+      holds it as an opaque handle. DONE. `server.rs` dropped 1383→1254 but NOT
+      below ~900: the remainder is HTTP handlers + the `cooking`/`wallet`-coupled
+      prefetch orchestration that belongs in the server layer (moving it out leaks
+      private state). The transport-layer decomposition that would reach <900 is
+      split to [[044-decompose-server-routes]].
 
 ## Verification System
 - Claim: render orchestration + wallet are one module; `server.rs` is routing + JSON shaping.

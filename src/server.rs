@@ -7,7 +7,7 @@ use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -23,7 +23,16 @@ use crate::providers::{
     compare_render_freshness, fake::FakeProvider, fal::FalProvider, load_renders, Provider,
     VideoRender,
 };
+use crate::render::pipeline::render_spec;
+use crate::render::wallet::{
+    self, cap_breach, pending_daily_spend, pending_total_spend, render_plan, CapBreach, RenderPlan,
+    Wallet,
+};
 use crate::secrets;
+
+// Re-exported so `server::total_spend` & friends stay stable for `main.rs` and
+// the test suite; the implementations now live in `render::wallet`.
+pub use crate::render::wallet::{daily_spend, next_daily_reset_at, planned_fal_spend, total_spend};
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
 const VIBE_RATINGS: &[&str] = &["cursed", "brainrot", "solid", "corporate"];
@@ -47,16 +56,9 @@ pub struct AppCtx {
     /// Serializes a dispatch's queued→cancelled (undo) and queued→agent_running
     /// (start) transitions, shared into every `Dispatcher` so they can't race.
     dispatch_state_lock: Arc<std::sync::Mutex<()>>,
-    /// Paid render spend that has been approved and started but not yet
-    /// persisted as render provenance.
-    render_reservations: Arc<AsyncMutex<Vec<RenderReservation>>>,
-}
-
-#[derive(Clone)]
-struct RenderReservation {
-    id: String,
-    amount_usd: f64,
-    created_at: DateTime<Utc>,
+    /// In-flight paid-render reservations (reserve on approval, release on
+    /// completion). Opaque handle; the lifecycle lives in `render::wallet`.
+    wallet: Wallet,
 }
 
 impl AppCtx {
@@ -72,7 +74,7 @@ impl AppCtx {
             dispatch_slots: Arc::new(Semaphore::new(slots)),
             dispatch_create_lock: Arc::new(AsyncMutex::new(())),
             dispatch_state_lock: Arc::new(std::sync::Mutex::new(())),
-            render_reservations: Arc::new(AsyncMutex::new(Vec::new())),
+            wallet: Wallet::new(),
         }
     }
 
@@ -174,11 +176,7 @@ impl AppCtx {
     }
 
     async fn release_render_reservation(&self, id: Option<&str>) {
-        let Some(id) = id else {
-            return;
-        };
-        let mut reservations = self.render_reservations.lock().await;
-        reservations.retain(|r| r.id != id);
+        self.wallet.release(id).await;
     }
 
     pub fn scan(&self) -> anyhow::Result<Vec<PrdSource>> {
@@ -281,72 +279,6 @@ fn error_response(status: StatusCode, message: impl std::fmt::Display) -> Respon
     (status, Json(json!({ "error": message.to_string() }))).into_response()
 }
 
-/// Total estimated spend on real renders, summed from provenance on disk.
-pub fn total_spend(renders: &[VideoRender]) -> f64 {
-    let sum = renders
-        .iter()
-        .filter(|r| r.provider == "fal")
-        .map(|r| r.cost_estimate_usd)
-        .sum();
-    clean_money(sum)
-}
-
-/// Spend on real renders whose provenance timestamp falls on the UTC date of
-/// `now`. The reset boundary is UTC so it is stable across operator machines.
-pub fn daily_spend(renders: &[VideoRender], now: DateTime<Utc>) -> f64 {
-    let today = now.date_naive();
-    let sum = renders
-        .iter()
-        .filter(|r| r.provider == "fal")
-        .filter(|r| {
-            DateTime::parse_from_rfc3339(&r.created_at)
-                .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
-                .unwrap_or(false)
-        })
-        .map(|r| r.cost_estimate_usd)
-        .sum();
-    clean_money(sum)
-}
-
-fn clean_money(value: f64) -> f64 {
-    if value.abs() < f64::EPSILON {
-        0.0
-    } else {
-        value
-    }
-}
-
-fn pending_total_spend(reservations: &[RenderReservation]) -> f64 {
-    clean_money(reservations.iter().map(|r| r.amount_usd).sum())
-}
-
-fn pending_daily_spend(reservations: &[RenderReservation], now: DateTime<Utc>) -> f64 {
-    let today = now.date_naive();
-    clean_money(
-        reservations
-            .iter()
-            .filter(|r| r.created_at.date_naive() == today)
-            .map(|r| r.amount_usd)
-            .sum(),
-    )
-}
-
-pub fn next_daily_reset_at(now: DateTime<Utc>) -> String {
-    let tomorrow = now
-        .date_naive()
-        .succ_opt()
-        .unwrap_or_else(|| now.date_naive());
-    let reset = tomorrow.and_hms_opt(0, 0, 0).unwrap();
-    DateTime::<Utc>::from_naive_utc_and_offset(reset, Utc)
-        .to_rfc3339_opts(SecondsFormat::Secs, true)
-}
-
-pub fn planned_fal_spend(video: &crate::config::VideoConfig, prds: &[PrdSource]) -> f64 {
-    prds.iter()
-        .map(|p| crate::providers::fal::unit_cost(&video.with_pipeline(&p.sha256)))
-        .sum()
-}
-
 pub fn render_provider_id(provider_name: &str) -> anyhow::Result<&'static str> {
     match provider_name {
         "fake" => Ok("fake-local"),
@@ -393,42 +325,6 @@ fn prefetch_window<'a>(
         .collect()
 }
 
-/// How a windowed spec gets rendered. The wallet gate refuses over-cap real
-/// renders, but the feed must never go dark — so an over-budget spec degrades
-/// to a free fixture badged with the reason instead of failing the request.
-#[derive(Debug, PartialEq)]
-enum RenderPlan {
-    Real { cost: f64 },
-    DegradedFake,
-    Fake,
-    Skip,
-}
-
-/// Decide how to render one window spec. `fal` over the lifetime or daily cap
-/// degrades to a badged fixture (oracle: the feed survives an exhausted wallet);
-/// `fal` within budget renders for real when a key is present, else is left for
-/// an explicit generate; a free provider just renders.
-fn render_plan(
-    provider: &str,
-    fal_key_present: bool,
-    cost: f64,
-    spent_total: f64,
-    spent_today: f64,
-    cap_total: f64,
-    cap_daily: f64,
-) -> RenderPlan {
-    if provider != "fal" {
-        return RenderPlan::Fake;
-    }
-    if spent_total + cost > cap_total || spent_today + cost > cap_daily {
-        RenderPlan::DegradedFake
-    } else if fal_key_present {
-        RenderPlan::Real { cost }
-    } else {
-        RenderPlan::Skip
-    }
-}
-
 /// Run one render detached: a page refresh or a fast feed poll must never abort
 /// a job that may cost money. Updates `cooking` on completion, tags a degraded
 /// substitute so the feed can badge it, and releases the reservation. The caller
@@ -442,7 +338,7 @@ fn spawn_render_job(
 ) {
     let bg = ctx.clone();
     tokio::spawn(async move {
-        let outcome = render_one(&bg, &provider, &prd).await;
+        let outcome = render_spec(&bg, &provider, &prd).await;
         {
             let mut map = bg.cooking.lock().expect("cooking lock");
             match &outcome {
@@ -481,7 +377,7 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
     let cap_total = ctx.cfg.video.max_total_spend_usd;
     let cap_daily = ctx.cfg.video.max_daily_spend_usd;
 
-    let mut reservations = ctx.render_reservations.lock().await;
+    let mut reservations = ctx.wallet.lock().await;
     let mut spent_total = total_spend(renders) + pending_total_spend(&reservations);
     let mut spent_today = daily_spend(renders, now) + pending_daily_spend(&reservations, now);
     let mut cooking = ctx.cooking.lock().expect("cooking lock");
@@ -504,7 +400,7 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
                 spent_total += cost;
                 spent_today += cost;
                 let id = crate::providers::cache_distinct_render_id(&prd.sha256);
-                reservations.push(RenderReservation {
+                reservations.push(wallet::RenderReservation {
                     id: id.clone(),
                     amount_usd: cost,
                     created_at: now,
@@ -551,7 +447,7 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
         .collect();
     let events = events::read_all(&ctx.events_path()).unwrap_or_default();
     let now = Utc::now();
-    let reservations = ctx.render_reservations.lock().await.clone();
+    let reservations = ctx.wallet.snapshot().await;
     let pending_usd = pending_total_spend(&reservations);
     let pending_daily_usd = pending_daily_spend(&reservations, now);
 
@@ -762,7 +658,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         let planned = planned_fal_spend(&ctx.cfg.video, &targets);
         if planned > 0.0 && body.confirmed_cost != Some(true) {
             let now = Utc::now();
-            let reservations = ctx.render_reservations.lock().await.clone();
+            let reservations = ctx.wallet.snapshot().await;
             return (
                 StatusCode::CONFLICT,
                 Json(json!({
@@ -784,39 +680,50 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
                 .into_response();
         }
         let now = Utc::now();
-        let mut reservations = ctx.render_reservations.lock().await;
+        let mut reservations = ctx.wallet.lock().await;
         let pending_total = pending_total_spend(&reservations);
         let pending_daily = pending_daily_spend(&reservations, now);
         let cap = ctx.cfg.video.max_total_spend_usd;
-        if spent + pending_total + planned > cap {
-            return error_response(
-                StatusCode::PAYMENT_REQUIRED,
-                format!(
-                    "spend cap: ${spent:.2} already spent + ${pending_total:.2} pending + ${planned:.2} planned for {} render(s) \
-                     exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
-                    targets.len()
-                ),
-            );
-        }
         let today = daily_spend(&existing, now);
         let daily_cap = ctx.cfg.video.max_daily_spend_usd;
-        if today + pending_daily + planned > daily_cap {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({
-                    "error": format!(
-                        "daily render budget: ${today:.2} already spent today + ${pending_daily:.2} pending + ${planned:.2} planned for {} render(s) \
-                         exceeds max_daily_spend_usd ${daily_cap:.2}",
+        // One gate. `cap_breach` owns the arithmetic; this match owns the
+        // HTTP shaping (402 lifetime, 429 daily — same precedence as before).
+        match cap_breach(
+            spent + pending_total,
+            today + pending_daily,
+            planned,
+            cap,
+            daily_cap,
+        ) {
+            CapBreach::Lifetime => {
+                return error_response(
+                    StatusCode::PAYMENT_REQUIRED,
+                    format!(
+                        "spend cap: ${spent:.2} already spent + ${pending_total:.2} pending + ${planned:.2} planned for {} render(s) \
+                         exceeds max_total_spend_usd ${cap:.2} — raise it in doomscrum.toml [video]",
                         targets.len()
                     ),
-                    "daily_spent_usd": today,
-                    "daily_pending_usd": pending_daily,
-                    "planned_usd": planned,
-                    "daily_cap_usd": daily_cap,
-                    "reset_at": next_daily_reset_at(now),
-                })),
-            )
-                .into_response();
+                );
+            }
+            CapBreach::Daily => {
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({
+                        "error": format!(
+                            "daily render budget: ${today:.2} already spent today + ${pending_daily:.2} pending + ${planned:.2} planned for {} render(s) \
+                             exceeds max_daily_spend_usd ${daily_cap:.2}",
+                            targets.len()
+                        ),
+                        "daily_spent_usd": today,
+                        "daily_pending_usd": pending_daily,
+                        "planned_usd": planned,
+                        "daily_cap_usd": daily_cap,
+                        "reset_at": next_daily_reset_at(now),
+                    })),
+                )
+                    .into_response();
+            }
+            CapBreach::None => {}
         }
         if planned > 0.0 {
             let id = crate::util::sha256_hex(
@@ -830,7 +737,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
                 )
                 .as_bytes(),
             );
-            reservations.push(RenderReservation {
+            reservations.push(wallet::RenderReservation {
                 id: id.clone(),
                 amount_usd: planned,
                 created_at: now,
@@ -875,7 +782,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
 
     let mut rendered = Vec::new();
     for prd in targets {
-        match render_one(&ctx, &provider_name, &prd).await {
+        match render_spec(&ctx, &provider_name, &prd).await {
             Ok(render) => rendered.push(render),
             Err(err) => {
                 ctx.release_render_reservation(render_reservation_id.as_deref())
@@ -890,42 +797,6 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     ctx.release_render_reservation(render_reservation_id.as_deref())
         .await;
     Json(json!({ "renders": rendered })).into_response()
-}
-
-/// Script + storyboard + render + event for one spec.
-async fn render_one(
-    ctx: &AppCtx,
-    provider_name: &str,
-    prd: &PrdSource,
-) -> anyhow::Result<VideoRender> {
-    let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
-    let provider = ctx.provider_with(provider_name, &vcfg)?;
-    let script_key = crate::secrets::get(&["OPENROUTER_API_KEY"]);
-    let storyboard = crate::scriptwriter::storyboard(
-        &ctx.cfg.script,
-        script_key.as_deref(),
-        prd,
-        provider.clip_duration(vcfg.max_duration_sec),
-        &ctx.state_dir().join("scripts"),
-        provider_name != "fake",
-    )
-    .await
-    .map_err(|err| anyhow::anyhow!("scriptwriter failed: {err:#}"))?;
-    let storyboards_dir = ctx.state_dir().join("storyboards");
-    let _ = std::fs::create_dir_all(&storyboards_dir);
-    let _ = std::fs::write(
-        storyboards_dir.join(format!("{}.json", prd.sha256)),
-        serde_json::to_string_pretty(&storyboard).unwrap_or_default(),
-    );
-    let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
-    let _ = events::append(
-        &ctx.events_path(),
-        &prd.id,
-        &prd.sha256,
-        "rendered",
-        Some(format!("{}/{}", render.provider, render.model)),
-    );
-    Ok(render)
 }
 
 #[derive(Deserialize)]
