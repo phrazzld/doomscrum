@@ -1,6 +1,9 @@
 # DoomScrum — agent contract
 
-Backlog specs → brainrot videos → swipes dispatch real coding agents.
+Backlog specs → brainrot videos → right swipes dispatch real coding agents.
+The product direction is skip-first for left swipe, but current behavior still
+has shape-agent debt; do not assume the code and vision are aligned without
+checking tests.
 Single Rust crate (`doomscrum`); `assets/index.html` is the only sanctioned
 non-Rust product surface. `demo/` is dev tooling (Remotion), not product.
 

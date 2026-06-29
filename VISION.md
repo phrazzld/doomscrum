@@ -5,8 +5,9 @@
 DoomScrum reads the markdown specs rotting in a repo's backlog, turns each one
 into a goofy shortform video, and lets you swipe. Swipe right and a real coding
 agent spins up a fresh worktree, implements the spec, and opens a real pull
-request. Swipe left and an agent sharpens the spec instead. The doomscroll is
-the hook. The PR is the point.
+request. The intended default for swipe left is skip: keep the feed moving
+without mutating the source spec. The doomscroll is the hook. The PR is the
+point.
 
 This is the canonical north star — what we're building, why, and what kind of
 excellence is non-negotiable. The backlog sequences against this file. The agent
@@ -58,10 +59,10 @@ free path.
   Render quality is a feature, not the product.
 - **Moat — the durable asset:** the *closed loop*. Dispatched PRs flow back into
   the feed (merged / failed / needs-rework); receipts and vibe ratings teach
-  which specs are agent-ready; and the swipe-left **shape** gesture sharpens a
-  spec before it's implemented. Spec quality is the #1 driver of agent-PR
-  acceptance, and DoomScrum is the only tool that makes spec-sharpening a
-  first-class swipe.
+  which specs are agent-ready; and skipped specs can be revisited, shaped, or
+  filtered without breaking the feed. Spec quality is the #1 driver of agent-PR
+  acceptance, so shaping remains an important supporting workflow, just not the
+  default meaning of a left swipe.
 
 ## What excellent looks like
 
@@ -76,6 +77,9 @@ free path.
 - **The brainrot communicates the spec.** Every format quotes the spec's actual
   goal and first acceptance criterion. Unhinged *and* informative — never invents
   features or claims something shipped that didn't. Funny-that-lies is failure.
+- **Backlog portability is real.** A new repo and backlog should not require a
+  custom parser rewrite. Adapters may vary, but DoomScrum wins only if arbitrary
+  local repos and their shaped-work formats can become feed cards.
 - **Consequences are legible.** Live status stickers, durable receipts, links to
   the real PR, undo for a mis-swipe. You always know what your thumb just did.
 - **The spec stays sacred.** Source specs are authoritative and never mutated by
@@ -165,6 +169,10 @@ into:
 - **How far autonomy goes** — today one swipe is one dispatch. Whether DoomScrum
   grows toward continuous or queued autonomy is open; the consent-and-wallet
   model is the floor any answer must respect.
+- **Swipe-left alignment debt** — current implementation still contains
+  shape-agent behavior around left swipe. The product direction is skip-first;
+  any shaping action should become explicit enough that it is not confused with
+  "move to the next ticket."
 
 ## Companions
 
