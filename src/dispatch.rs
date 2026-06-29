@@ -14,7 +14,7 @@ use crate::util::{now_rfc3339, sha256_hex, short, slug};
 pub enum DispatchKind {
     /// Right swipe: implement the spec, open a PR.
     Implement,
-    /// Left swipe: sharpen the spec itself, open a PR with the improved spec.
+    /// Explicit shape action: sharpen the spec itself, open a PR with the improved spec.
     Shape,
 }
 

@@ -1,9 +1,9 @@
 # DoomScrum — agent contract
 
 Backlog specs → brainrot videos → right swipes dispatch real coding agents.
-The product direction is skip-first for left swipe, but current behavior still
-has shape-agent debt; do not assume the code and vision are aligned without
-checking tests.
+Left swipe is skip-first and must not mutate the source spec or dispatch a
+shape agent. Shape-agent machinery exists as an explicit backend/control action;
+do not bind it to the default left gesture without a fresh product decision.
 Single Rust crate (`doomscrum`); `assets/index.html` is the only sanctioned
 non-Rust product surface. `demo/` is dev tooling (Remotion), not product.
 

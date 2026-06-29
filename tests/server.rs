@@ -652,7 +652,7 @@ async fn dispatches_are_capped_queued_and_deduped_while_active() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn left_swipe_dispatches_shape_agent_that_edits_the_spec() {
+async fn explicit_shape_action_dispatches_shape_agent_that_edits_the_spec() {
     let app = spawn_app().await;
     let (_, state) = app.get("/api/state").await;
     let prd_id = state["items"][1]["prd"]["id"].as_str().unwrap().to_string();

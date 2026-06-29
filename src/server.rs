@@ -802,7 +802,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
 #[derive(Deserialize)]
 struct SwipeBody {
     prd_id: String,
-    /// "implement" (right) | "shape" (left) | "skip" (up)
+    /// "implement" (right) | "shape" (explicit action) | "skip" (left/up)
     action: String,
 }
 

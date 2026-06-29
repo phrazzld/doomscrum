@@ -46,8 +46,8 @@ surprise charges.
 
 Privacy copy must be blunt. Specs never leave the machine for fixture renders.
 Specs do leave the machine when using fal or any future cloud-render credit.
-Right/left swipes run real agent commands against real repos and can open real
-pull requests.
+Right swipes run real agent commands against real repos and can open real pull
+requests. Left/up skips do not mutate the source spec.
 
 Distribution work should optimize for "two minutes to local value": install a
 binary, point it at a repo, render fixture videos, tap the exact source spec,

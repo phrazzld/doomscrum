@@ -799,7 +799,7 @@ pub fn compile_with_format(
         },
         Beat {
             label: "Decision".into(),
-            spec_payload: "Swipe right to dispatch an implementation agent, left to send it back for shaping, up to skip.".into(),
+            spec_payload: "Swipe right to dispatch an implementation agent, left or up to skip without mutating the spec.".into(),
             visual_prompt: "End card with exaggerated swipe arrows, all pointing back to the source spec hash.".into(),
             caption: "Swipe like you mean it".into(),
         },

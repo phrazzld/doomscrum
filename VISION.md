@@ -32,11 +32,11 @@ The blend is the identity. Strip out any one of the three and it gets worse.
 
 ## The load-bearing magic
 
-**It actually ships code.** Right and left swipes launch real agents that modify
-real code and open real PRs against a real remote. There is no sandbox theater
-beyond what the agent CLI provides, and that realness is the entire reason the
-joke lands. The brainrot is the trojan horse that gets you to pull a trigger
-with genuine consequences.
+**It actually ships code.** Right swipes launch real agents that modify real
+code and open real PRs against a real remote. There is no sandbox theater beyond
+what the agent CLI provides, and that realness is the entire reason the joke
+lands. The brainrot is the trojan horse that gets you to pull a trigger with
+genuine consequences.
 
 If the dispatch ever became fake — a convincing animation of work that doesn't
 happen — DoomScrum would be dead, no matter how good the videos looked.
@@ -70,7 +70,7 @@ free path.
   should feel slightly dangerous and then delightful: the confirmation names
   exactly what's about to happen, you tap *Cook it*, and a PR appears.
 - **The 6–12 month picture:** *"I open DoomScrum with coffee, swipe through last
-  night's backlog — shape the vague specs left, dispatch the sharp ones right —
+  night's backlog — skip the vague specs left, dispatch the sharp ones right,
   and arrive at standup with PRs already open and pre-triaged."* A stranger
   reaches a playing video and their first consented dispatch in two minutes, with
   no account.
@@ -166,13 +166,13 @@ into:
 - **Where it ultimately runs** — a perfected single-operator local tool vs. a
   cloud, multi-repo product. The local CLI is the seed; whether it stays the
   whole thing done beautifully or grows a hosted feed is open.
-- **How far autonomy goes** — today one swipe is one dispatch. Whether DoomScrum
+- **How far autonomy goes** — today one right swipe is one dispatch. Whether DoomScrum
   grows toward continuous or queued autonomy is open; the consent-and-wallet
   model is the floor any answer must respect.
-- **Swipe-left alignment debt** — current implementation still contains
-  shape-agent behavior around left swipe. The product direction is skip-first;
-  any shaping action should become explicit enough that it is not confused with
-  "move to the next ticket."
+- **Explicit shaping surface** — shape-agent machinery remains useful, but it
+  should be invoked through an explicit action, command, or future mode. The
+  default left swipe is skip, because feed triage needs one obvious way to say
+  "not now" without mutating the source spec.
 
 ## Companions
 

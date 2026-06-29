@@ -156,7 +156,7 @@ impl TestApp {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn browser_gestures_cover_skip_overlay_and_dispatch() {
+async fn browser_gestures_cover_left_skip_overlay_and_dispatch() {
     let app = spawn_browser_app().await;
     let (status, body) = app
         .post("/api/generate", json!({ "provider": "fake" }))
@@ -174,7 +174,7 @@ async fn browser_gestures_cover_skip_overlay_and_dispatch() {
     tab.wait_for_element("#splash").unwrap().click().unwrap();
     wait_for_js(&tab, "Boolean(document.querySelector('#card video'))");
 
-    pointer_swipe(&tab, "#card", 0, -160);
+    pointer_swipe(&tab, "#card", -160, 0);
     wait_until_status(&app, 0, "skipped").await;
     wait_for_js(
         &tab,

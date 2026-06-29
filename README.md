@@ -6,22 +6,22 @@ backlog, turns each one into a goofy shortform video, and lets you swipe:
 | Gesture | Action |
 |---|---|
 | **swipe →** | dispatch a coding agent in a fresh git worktree to **implement** the spec and open a PR |
-| **swipe ←** | dispatch an agent to **shape** the spec — sharpen it, add acceptance criteria and context — and open a PR |
+| **swipe ←** | skip to the next spec without mutating the source spec |
 | **swipe ↑** | skip to the next spec (recorded, durable) |
 | **swipe ↓** | go back to the previous spec |
 | **tap** | read the exact source spec (path + sha256) |
 
 Arrow keys mirror the gestures; `space` pauses; `enter` opens the spec.
 
-Right and left swipes launch **real agents** that modify code and open
-**real pull requests**. That is the point. There is no sandbox theater
-beyond what your agent CLI provides.
+Right swipes launch **real agents** that modify code and open **real pull
+requests**. That is the point. There is no sandbox theater beyond what your
+agent CLI provides.
 
-Because that consequence is real, the **first** implement/shape swipe against
-a repo opens a one-time confirmation that names exactly what will happen
-("launches a real agent and opens a real PR against `<repo>`") with
-**Cook it / Cancel**. Once acknowledged, DoomScrum does not ask again for that
-repo; switching to a different repo asks once more. Skip (↑) and back (↓) never
+Because that consequence is real, the **first** implement dispatch against a
+repo opens a one-time confirmation that names exactly what will happen
+("launches a real agent and opens a real PR against `<repo>`") with **Cook it /
+Cancel**. Once acknowledged, DoomScrum does not ask again for that repo;
+switching to a different repo asks once more. Skip (← or ↑) and back (↓) never
 dispatch and never prompt. This is consent, not a quota — dispatch stays
 unbounded once you've opted in.
 
@@ -148,11 +148,11 @@ breaking the feed.
 
 ## What a swipe actually does
 
-Right swipe (implement) / left swipe (shape):
+Right swipe (implement):
 
-1. `git worktree add .doomscrum/worktrees/<branch> -b doomscrum/<impl|shape>-<slug>-<id>`
-2. Runs your configured agent command in the worktree with the full spec as
-   its mission (implement it, or improve the spec file in place).
+1. `git worktree add .doomscrum/worktrees/<branch> -b doomscrum/impl-<slug>-<id>`
+2. Runs your configured agent command in the worktree with the full spec as its
+   mission.
 3. Commits anything the agent left uncommitted.
 4. Pushes the branch and opens a PR with `gh` (when the repo has an
    `origin` remote and `open_pr = true`; otherwise the branch stays local
@@ -165,8 +165,10 @@ links to opened PRs. The default agent is the
 [`opencode`](https://opencode.ai) CLI on OpenRouter (model
 `openrouter/z-ai/glm-5.2`) — run `opencode auth login` once to store your
 OpenRouter key, then swipe. Change the model with a one-line `agent_model = "…"`
-in `doomscrum.toml`, or point `implement_cmd`/`shape_cmd` at codex, claude, or
-anything else that takes a prompt and edits a worktree.
+in `doomscrum.toml`, or point `implement_cmd` at codex, claude, or anything else
+that takes a prompt and edits a worktree. The shape-agent backend remains
+available as an explicit action for future/control surfaces, but the default
+left swipe is skip-first.
 
 Agent work is throttled by `agent.max_concurrent_dispatches` (default `2`).
 Swipes beyond the limit remain as visible `queued` receipts until a slot

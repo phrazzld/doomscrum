@@ -336,14 +336,14 @@
 </style>
 </head>
 <body>
-<div class="ticker"><span id="ticker">DOOMSCRUM // spec brainrot triage // swipe → dispatch implement agent // swipe ← dispatch shape agent // swipe ↑ skip // tap = read the actual spec</span></div>
+<div class="ticker"><span id="ticker">DOOMSCRUM // spec brainrot triage // swipe → dispatch implement agent // swipe ← skip // swipe ↑ skip // tap = read the actual spec</span></div>
 <div class="hint" style="top: 40px; right: 18px;" id="spend"></div>
 
 <button class="repochip" id="repoChip" title="switch repo">repo: …</button>
 
 <div class="rail" id="rail"></div>
 <div class="hint r"><b>→</b> ship it (agent + PR)</div>
-<div class="hint l"><b>←</b> needs sauce (shape it)</div>
+<div class="hint l"><b>←</b> skip</div>
 <div class="hint b"><b>↑</b> skip &nbsp;·&nbsp; <b>↓</b> back &nbsp;·&nbsp; <b>tap</b> spec &nbsp;·&nbsp; <b>space</b> pause</div>
 
 <main class="stage" id="stage"></main>
@@ -373,7 +373,7 @@
 <div class="overlay" id="consentOverlay">
   <div class="head"><h2>dispatch a real agent?</h2><span class="hash" id="consentRepo"></span></div>
   <div class="picker">
-    <p class="consent-copy">Swiping <b>right</b> launches a real coding agent in a fresh git worktree and opens a <b>real pull request</b>. Swiping <b>left</b> dispatches an agent to rewrite the spec file. This runs real commands and opens real PRs against this repo — not a preview.</p>
+    <p class="consent-copy">This action launches a real coding agent in a fresh git worktree and opens a <b>real pull request</b>. This runs real commands and opens real PRs against this repo — not a preview.</p>
     <button class="go" id="consentConfirm">Cook it — I get it</button>
     <button class="cancel" id="consentCancel">Cancel</button>
   </div>
@@ -396,7 +396,7 @@
     <h1>DoomScrum</h1>
     <p>tap in — sound on</p>
     <small>right swipe dispatches a real coding agent in a fresh worktree and opens a PR.
-    left swipe dispatches an agent to sharpen the spec. this is not a drill.<br>
+    left swipe skips the spec without mutating it. this is not a drill.<br>
     videos are AI-generated. the egress chip shows what spec text leaves this machine.</small>
   </div>
 </div>
@@ -723,7 +723,7 @@
       }
       if (Math.abs(dx) > Math.abs(dy)) {
         if (dx > TH) return fly(card, "right", async () => { await swipe("implement"); go(1); });
-        if (dx < -TH) return fly(card, "left", async () => { await swipe("shape"); go(1); });
+        if (dx < -TH) return fly(card, "left", async () => { await swipe("skip"); go(1); });
       } else {
         if (dy < -TH) return fly(card, "up", async () => { await swipe("skip"); go(1); });
         if (dy > TH) return fly(card, "down", () => go(-1));
@@ -831,8 +831,8 @@
   });
 
   // --- first-dispatch consent gate (one-time per repo) -------------
-  // A right/left swipe runs a real agent and opens a real PR. The first such
-  // swipe per repo must be acknowledged; the choice is remembered in
+  // A dispatch action runs a real agent and opens a real PR. The first such
+  // action per repo must be acknowledged; the choice is remembered in
   // localStorage keyed by the repo path, so it never nags again for that repo.
   const consentOverlay = $("consentOverlay");
   let consentResolve = null;
@@ -919,7 +919,7 @@
     if (e.target.closest("button, a, input, textarea, select")) return;
     const card = $("card");
     if (e.key === "ArrowRight" && card) fly(card, "right", async () => { await swipe("implement"); go(1); });
-    else if (e.key === "ArrowLeft" && card) fly(card, "left", async () => { await swipe("shape"); go(1); });
+    else if (e.key === "ArrowLeft" && card) fly(card, "left", async () => { await swipe("skip"); go(1); });
     else if (e.key === "ArrowUp" && card) fly(card, "up", async () => { await swipe("skip"); go(1); });
     else if (e.key === "ArrowDown" && card) fly(card, "down", () => go(-1));
     else if (e.key === " ") {
