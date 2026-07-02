@@ -65,3 +65,16 @@ and `doomscrum init` (config scaffold) already shipped in 043 children 2-3 —
 this ticket measures whether that existing onboarding is actually fast and
 cross-platform, it doesn't re-implement it. Filed 2026-07-02 during a
 product-groom investigation pass.
+
+
+## Lead groom additions (2026-07-02, supervisor — from the fact packet)
+- The free path is better than feared: `fake` provider needs zero keys and even
+  ffmpeg is optional (embedded fixture fallback, providers/fake.rs:13,35-41). The
+  demo cartridge (046) should hang off that existing fixture mechanism.
+- Child: fix README's key documentation — it names only FAL_API_KEY for real
+  renders, but script.mode="llm" (the default, config.rs:179) also requires
+  OPENROUTER_API_KEY when paid_render=true. Document the actual matrix.
+- Child: macOS CI lane. Zero cfg(target_os) is good, but CI is ubuntu-only and
+  the product's stated distribution is "download and run on your own machine" —
+  the operator's machine is macOS. At minimum build+test on macos-latest
+  (browser e2e can stay ubuntu-only).
