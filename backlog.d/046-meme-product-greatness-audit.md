@@ -59,3 +59,15 @@ ticket is the product judgment call that plumbing exists to serve, using the
 plumbing's own output (the 2026-06-11 bench) as primary evidence. Filed
 2026-07-02 during a product-groom investigation pass; see the groom's report
 for the specific bench citations.
+
+
+## Lead groom addition (2026-07-02, supervisor): the free path must carry the joke
+
+The sharpest gap (a $0/no-FAL-key stranger sees a drawtext title card, never the
+actual product) gets a concrete first child: ship a DEMO CARTRIDGE — 2-3
+pre-rendered real brainrot videos bundled with the repo (or fetched from the
+GitHub release) that play on first run with zero keys, so the joke lands before
+any payment decision. Cheap, certain, and honest (label them as samples).
+A funnier local fallback (TTS + meme-layout upgrade of the fake provider) is a
+second child, nice-to-have after the cartridge.
+Oracle: fresh clone, zero keys, one command → a real brainrot video plays.
