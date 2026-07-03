@@ -139,6 +139,13 @@ title and brainrot format over distinct format colors. Without that filter, it
 falls back to the embedded fixture so tests and demos still work with no
 runtime media dependency.
 
+A set of **pre-rendered sample videos** is bundled in the repo
+(`assets/samples/`). On first run — `init`, `generate`, or `serve` —
+DoomScrum bootstraps these into `.doomscrum/renders/` so the feed shows real
+brainrot out of the box, with zero keys. Samples are badged "sample video" in
+the feed; they're honest about being pre-rendered demos, not generated from
+your specs.
+
 ## Syncing to a repo
 
 Point `doomscrum.toml` at any repository:

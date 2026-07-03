@@ -1,5 +1,6 @@
 pub mod fake;
 pub mod fal;
+pub mod samples;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
