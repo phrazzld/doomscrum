@@ -8,6 +8,7 @@ use doomscrum::dispatch;
 use doomscrum::gc::{self, GcOptions};
 use doomscrum::preflight::{self, Facts, Status};
 use doomscrum::providers::load_renders;
+use doomscrum::providers::samples;
 use doomscrum::render::{pipeline, wallet};
 use doomscrum::secrets;
 use doomscrum::server::{self, AppCtx};
@@ -113,7 +114,14 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Serve { host, port } => {
-            let ctx = AppCtx::new(root, cfg);
+            let ctx = AppCtx::new(root.clone(), cfg);
+            let _ = samples::bootstrap(
+                &ctx.root,
+                &ctx.repo(),
+                &ctx.cfg.repo.backlog_dir,
+                ctx.cfg.feed.max_items,
+                &ctx.renders_dir(),
+            );
             let app = server::router(ctx);
             let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
             println!("doomscrum listening on http://{host}:{port}");
@@ -137,6 +145,13 @@ async fn main() -> Result<()> {
             }
             let provider_name = provider.unwrap_or_else(|| cfg.video.provider.clone());
             let ctx = AppCtx::new(root, cfg);
+            let _ = samples::bootstrap(
+                &ctx.root,
+                &ctx.repo(),
+                &ctx.cfg.repo.backlog_dir,
+                ctx.cfg.feed.max_items,
+                &ctx.renders_dir(),
+            );
             let render_provider = server::render_provider_id(&provider_name)?;
             let existing = load_renders(&ctx.renders_dir()).unwrap_or_default();
 
@@ -318,6 +333,15 @@ async fn main() -> Result<()> {
             println!("  3. (optional) OPENROUTER_API_KEY (env or ~/.secrets) for LLM scripts");
             println!("  4. (optional) FAL_API_KEY (env or ~/.secrets) for real AI video");
             let cfg = Config::load_with_profile(&root, None)?;
+            let repo_path = root.join(&cfg.repo.path);
+            let renders_dir = root.join(&cfg.repo.state_dir).join("renders");
+            let _ = samples::bootstrap(
+                &root,
+                &repo_path,
+                &cfg.repo.backlog_dir,
+                cfg.feed.max_items,
+                &renders_dir,
+            );
             println!("\ncurrent state:\n");
             print!(
                 "{}",
