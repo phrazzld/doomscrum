@@ -313,9 +313,10 @@ async fn main() -> Result<()> {
                 println!("wrote {}", toml_path.display());
             }
             println!("\nsetup checklist:");
-            println!("  1. opencode auth login   # store your OpenRouter credential");
+            println!("  1. opencode auth login   # store your OpenRouter credential for dispatch");
             println!("  2. gh auth login         # so dispatches can open PRs");
-            println!("  3. (optional) FAL_API_KEY (env or ~/.secrets) for real AI video");
+            println!("  3. (optional) OPENROUTER_API_KEY (env or ~/.secrets) for LLM scripts");
+            println!("  4. (optional) FAL_API_KEY (env or ~/.secrets) for real AI video");
             let cfg = Config::load_with_profile(&root, None)?;
             println!("\ncurrent state:\n");
             print!(

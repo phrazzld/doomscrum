@@ -49,18 +49,33 @@ agent can authenticate (`opencode auth login`), `gh` is logged in, and the synce
 repo has a push remote — so a swipe can actually open a PR. Tap the splash screen
 (sound gate), then swipe.
 
-### Real AI video
+### Keys you need
 
-Put a FAL key in your environment or `~/.secrets` (`FAL_API_KEY=...`), then:
+| What you're doing | Keys required |
+|---|---|
+| Fixture videos (`fake` provider) | None |
+| Dispatch (right-swipe an agent) | `opencode auth login` + `gh auth login` |
+| Paid script (`script.mode = "llm"`) | `OPENROUTER_API_KEY` |
+| Paid render (`--provider fal` or cook with AI) | `FAL_API_KEY` + `OPENROUTER_API_KEY` |
+
+The LLM scriptwriter (`script.mode = "llm"`, the default) sends your spec
+text to OpenRouter for every paid render, so a real FAL render needs **both**
+keys. Set them as env vars or in `~/.secrets` (`FAL_API_KEY=...`,
+`OPENROUTER_API_KEY=...`). The `templates` script mode is purely local and
+never needs OpenRouter:
 
 ```bash
+# Real render with LLM script (needs both keys):
 cargo run --release -- generate --provider fal --limit 1
+
+# Real render with local template script (only needs FAL_API_KEY):
+SCRIPT_MODE=templates cargo run --release -- generate --provider fal --limit 1
 ```
 
 or use **cook with AI** in the app. Real generation costs money per render
-and sends spec-derived prompt text to fal.ai — treat it as a disclosure
-event. DoomScrum quotes the estimated batch cost before the UI starts a real
-render, enforces both `max_total_spend_usd` and an independent
+and sends spec-derived prompt text to fal.ai and OpenRouter — treat it as a
+disclosure event. DoomScrum quotes the estimated batch cost before the UI
+starts a real render, enforces both `max_total_spend_usd` and an independent
 `max_daily_spend_usd`, and returns `429` with the next reset time when the
 daily budget is exhausted. The fixture provider (`fake`) is the default and
 never leaves the machine.

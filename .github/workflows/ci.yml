@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   ci:
-    name: fmt, clippy, test
+    name: fmt, clippy, test (ubuntu)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,3 +37,25 @@ jobs:
 
       - name: Run local gate
         run: cargo run --locked --bin doomscrum-ci
+
+  macos:
+    name: build + test (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: doomscrum-ci-macos
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test (exclude browser e2e)
+        run: cargo test -- --skip browser_e2e
