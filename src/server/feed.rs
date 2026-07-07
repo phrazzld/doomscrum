@@ -213,20 +213,25 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
         max_attempts: ctx.cfg.feed.render_max_attempts,
         backoff: std::time::Duration::from_secs(ctx.cfg.feed.render_retry_backoff_sec),
     };
+    let mut reservations = ctx.wallet.lock().await;
+    let mut cooking = ctx.cooking.lock().expect("cooking lock");
+    // Scheduling uses a fresh render snapshot while the cooking lock is held.
+    // Otherwise a render can complete after /api/state loads `renders`, remove
+    // its cooking entry, and leave prefetch_window looking at stale degraded
+    // data that schedules the just-upgraded spec again.
+    let scheduling_renders = load_renders(&ctx.renders_dir()).unwrap_or_else(|_| renders.to_vec());
     // Spend truth comes from the durable ledger (unioned with provenance),
     // never from surviving render JSONs alone.
-    let entries = ctx.spend_entries(renders);
-
-    let mut reservations = ctx.wallet.lock().await;
+    let entries = ctx.spend_entries(&scheduling_renders);
     let mut spent_total = total_spend(&entries) + pending_total_spend(&reservations);
     let mut spent_today = daily_spend(&entries, now) + pending_daily_spend(&reservations, now);
-    let mut cooking = ctx.cooking.lock().expect("cooking lock");
 
     // (spec, render provider, reservation id, degraded badge) — decided and
     // reserved synchronously, then spawned after the locks drop. The attempt
     // count rides on the CookEntry; the failure path reads it back from there.
     let mut jobs: Vec<(PrdSource, &'static str, Option<String>, Option<String>)> = Vec::new();
-    for (prd, reason) in prefetch_window(prds, renders, &cooking, cursor, depth, retry) {
+    for (prd, reason) in prefetch_window(prds, &scheduling_renders, &cooking, cursor, depth, retry)
+    {
         let cost = crate::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&prd.sha256));
         let plan = render_plan(
             &provider,
