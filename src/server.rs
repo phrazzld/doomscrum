@@ -278,6 +278,10 @@ impl AppCtx {
         )
     }
 
+    pub fn scan_all(&self) -> anyhow::Result<Vec<PrdSource>> {
+        backlog::scan(&self.repo(), &self.cfg.repo.backlog_dir, usize::MAX)
+    }
+
     fn fal_key(&self) -> Option<String> {
         secrets::get(&["FAL_API_KEY", "FAL_KEY"]).or_else(|| self.stored_key("FAL_API_KEY"))
     }
@@ -719,28 +723,49 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
 }
 
 async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Response {
-    let prds = match ctx.scan() {
+    let all_prds = match ctx.scan_all() {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     };
     let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
-    let receipts = load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
+    let dispatcher = ctx.dispatcher();
+    let receipts = match dispatcher.reconcile_pr_states() {
+        Ok(receipts) => receipts,
+        Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
+    };
     // rel_path → current sha, so a prior implement receipt for a now-re-shaped
     // spec (same path, different sha) can be badged superseded.
-    let current_shas: std::collections::HashMap<String, String> = prds
+    let current_shas: std::collections::HashMap<String, String> = all_prds
         .iter()
         .map(|p| (p.rel_path.clone(), p.sha256.clone()))
         .collect();
     let events = events::read_all(&ctx.events_path()).unwrap_or_default();
+    let mut scored: Vec<(PrdSource, crate::readiness::Readiness)> = all_prds
+        .into_iter()
+        .map(|prd| {
+            let readiness = crate::readiness::evaluate(&prd, &events, &receipts);
+            (prd, readiness)
+        })
+        .collect();
+    scored.sort_by(|(a_prd, a_readiness), (b_prd, b_readiness)| {
+        b_readiness
+            .score
+            .partial_cmp(&a_readiness.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a_prd.priority.cmp(&b_prd.priority))
+            .then_with(|| a_prd.rel_path.cmp(&b_prd.rel_path))
+    });
+    scored.truncate(ctx.cfg.feed.max_items);
+    let prds: Vec<PrdSource> = scored.iter().map(|(prd, _)| prd.clone()).collect();
     let now = Utc::now();
     let reservations = ctx.wallet.snapshot().await;
     let pending_usd = pending_total_spend(&reservations);
     let pending_daily_usd = pending_daily_spend(&reservations, now);
     let spend_entries = ctx.spend_entries(&renders);
 
-    let items: Vec<Value> = prds
+    let items: Vec<Value> = scored
         .iter()
-        .map(|prd| {
+        .map(|(prd, readiness)| {
             let render = latest_render(&prd.id, &renders);
             let vibe_rating = render
                 .as_ref()
@@ -794,11 +819,14 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
                     "status": d.status,
                     "branch": d.branch,
                     "pr_url": d.pr_url,
+                    "pr_state": d.pr_state,
+                    "pr_state_at": d.pr_state_at,
                     "note": d.note,
                     "diff_lines": d.diff_lines,
                     "plan": d.plan,
                     "review": d.diff_lines.map(crate::dispatch::review_size),
                 })),
+                "readiness": readiness,
                 "superseded": superseded,
                 "status": status,
             })
@@ -878,7 +906,7 @@ async fn api_vibe(State(ctx): State<AppCtx>, Json(body): Json<VibeBody>) -> Resp
         )
             .into_response();
     }
-    let prds = match ctx.scan() {
+    let prds = match ctx.scan_all() {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     };
@@ -921,7 +949,11 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::BAD_REQUEST, err),
     };
-    let prds = match ctx.scan() {
+    let prds = match if body.prd_id.is_some() {
+        ctx.scan_all()
+    } else {
+        ctx.scan()
+    } {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     };
@@ -1122,7 +1154,7 @@ struct SwipeBody {
 }
 
 async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Response {
-    let prds = match ctx.scan() {
+    let prds = match ctx.scan_all() {
         Ok(p) => p,
         Err(err) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
     };
@@ -1213,7 +1245,7 @@ fn active_dispatch_status(status: &str) -> bool {
 }
 
 async fn api_spec(State(ctx): State<AppCtx>, UrlPath(prd_id): UrlPath<String>) -> Response {
-    match ctx.scan() {
+    match ctx.scan_all() {
         Ok(prds) => match prds.into_iter().find(|p| p.id == prd_id) {
             Some(prd) => Json(json!({
                 "id": prd.id,

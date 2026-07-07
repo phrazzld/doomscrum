@@ -1,6 +1,10 @@
 # Close the loop: turn captured outcomes into spec-readiness signal
 
-Priority: P1 · Status: pending · Estimate: XL (epic — dispatch via ordered children)
+Priority: P1 · Status: absorbed by Powder card doomscrum-944 · Estimate: XL
+
+Absorbed 2026-07-07 by Powder card `doomscrum-944`: readiness scoring,
+score-ordered `/api/state`, live PR-state surfacing, and generated-state-only
+learning were implemented as one product slice.
 
 ## Goal
 The three signals DoomScrum already captures — vibe ratings, PR merge/close

@@ -63,6 +63,13 @@ pub struct DispatchReceipt {
     pub plan: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
+    /// Live remote PR state, reconciled from `gh pr view` on feed polls:
+    /// `open` | `merged` | `closed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_state: Option<String>,
+    /// When [`Self::pr_state`] was last reconciled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_state_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub agent_log: String,
@@ -155,6 +162,8 @@ impl Dispatcher {
             diff_lines: None,
             plan: None,
             pr_url: None,
+            pr_state: None,
+            pr_state_at: None,
             note: None,
             agent_log: self
                 .dispatches_dir
@@ -234,6 +243,37 @@ impl Dispatcher {
             }
         }
         Ok(reconciled)
+    }
+
+    /// Best-effort PR outcome reconcile for feed reads. A stale or missing
+    /// `gh` must not break `/api/state`; it just leaves the last known receipt
+    /// state in place until a later poll succeeds.
+    pub fn reconcile_pr_states(&self) -> Result<Vec<DispatchReceipt>> {
+        let gh = std::env::var_os("DOOMSCRUM_GH_BIN").unwrap_or_else(|| "gh".into());
+        self.reconcile_pr_states_with(&gh)
+    }
+
+    pub fn reconcile_pr_states_with(
+        &self,
+        gh: impl AsRef<std::ffi::OsStr>,
+    ) -> Result<Vec<DispatchReceipt>> {
+        for mut receipt in load_receipts(&self.dispatches_dir)? {
+            if !should_reconcile_pr_state(&receipt) {
+                continue;
+            }
+            let Some(url) = receipt.pr_url.as_deref() else {
+                continue;
+            };
+            if let Ok(Some(state)) = query_pr_state(gh.as_ref(), &self.repo, url) {
+                if receipt.pr_state.as_deref() != Some(state.as_str()) {
+                    receipt.pr_state = Some(state);
+                    receipt.pr_state_at = Some(now_rfc3339());
+                    receipt.updated_at = now_rfc3339();
+                    self.persist(&receipt)?;
+                }
+            }
+        }
+        load_receipts(&self.dispatches_dir)
     }
 
     /// Atomically transition a queued dispatch to `agent_running`, or report it
@@ -669,6 +709,51 @@ pub fn review_size(diff_lines: u32) -> &'static str {
         "fast-merge"
     } else {
         "needs-review"
+    }
+}
+
+fn should_reconcile_pr_state(receipt: &DispatchReceipt) -> bool {
+    let Some(url) = receipt.pr_url.as_deref() else {
+        return false;
+    };
+    if !is_github_pr_url(url) {
+        return false;
+    }
+    !matches!(receipt.pr_state.as_deref(), Some("merged" | "closed"))
+}
+
+fn is_github_pr_url(url: &str) -> bool {
+    url.starts_with("https://github.com/") && url.contains("/pull/")
+}
+
+#[derive(Deserialize)]
+struct GhPrView {
+    state: Option<String>,
+    #[serde(rename = "mergedAt")]
+    merged_at: Option<String>,
+    #[serde(rename = "closedAt")]
+    closed_at: Option<String>,
+}
+
+fn query_pr_state(gh: &std::ffi::OsStr, repo: &Path, pr_url: &str) -> Result<Option<String>> {
+    let output = std::process::Command::new(gh)
+        .args(["pr", "view", pr_url, "--json", "state,mergedAt,closedAt"])
+        .current_dir(repo)
+        .output()
+        .with_context(|| "spawning gh pr view")?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let view: GhPrView = serde_json::from_slice(&output.stdout)?;
+    let state = view.state.unwrap_or_default().to_ascii_uppercase();
+    if view.merged_at.is_some() || state == "MERGED" {
+        Ok(Some("merged".into()))
+    } else if state == "CLOSED" || view.closed_at.is_some() {
+        Ok(Some("closed".into()))
+    } else if state == "OPEN" {
+        Ok(Some("open".into()))
+    } else {
+        Ok(None)
     }
 }
 

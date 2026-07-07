@@ -266,6 +266,8 @@ mod tests {
             diff_lines: None,
             plan: None,
             pr_url: None,
+            pr_state: None,
+            pr_state_at: None,
             note: note.map(String::from),
             agent_log: "/tmp/log".into(),
             created_at: "2026-07-06T00:00:00Z".into(),
