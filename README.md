@@ -25,6 +25,12 @@ switching to a different repo asks once more. Skip (← or ↑) and back (↓) n
 dispatch and never prompt. This is consent, not a quota — dispatch stays
 unbounded once you've opted in.
 
+Each spec is translated into one of five live brainrot formats (AI fruit
+telenovela, unhinged Gen-Z explainer, cryptid vlog, Italian brainrot, 2080
+street interview), rotated by feed position so consecutive videos never look
+alike, always speaking the spec's actual goal and first acceptance
+criterion — the video communicates the spec, it doesn't just vibe.
+
 ## Quick start
 
 No Rust toolchain needed — install the binary and play a sample video in
@@ -73,228 +79,24 @@ cargo run --release -- gc --dry-run
 | Paid script (`script.mode = "llm"`) | `OPENROUTER_API_KEY` |
 | Paid render (`--provider fal` or cook with AI) | `FAL_API_KEY` + `OPENROUTER_API_KEY` |
 
-The LLM scriptwriter (`script.mode = "llm"`, the default) sends your spec
-text to OpenRouter for every paid render, so a real FAL render needs **both**
-keys. Set them as env vars or in `~/.secrets` (`FAL_API_KEY=...`,
-`OPENROUTER_API_KEY=...`). The `templates` script mode is purely local and
-never needs OpenRouter:
-
-```bash
-# Real render with LLM script (needs both keys):
-cargo run --release -- generate --provider fal --limit 1
-
-# Real render with local template script (only needs FAL_API_KEY):
-SCRIPT_MODE=templates cargo run --release -- generate --provider fal --limit 1
-```
-
-or use **cook with AI** in the app. Real generation costs money per render
-and sends spec-derived prompt text to fal.ai and OpenRouter — treat it as a
-disclosure event. DoomScrum quotes the estimated batch cost before the UI
-starts a real render, enforces both `max_total_spend_usd` and an independent
-`max_daily_spend_usd`, and returns `429` with the next reset time when the
-daily budget is exhausted. The fixture provider (`fake`) is the default and
-never leaves the machine.
-
-## Render profiles (`dev` vs `content`)
-
-`doomscrum.toml`'s top-level `profile` key (default `"dev"`) selects a
-partial `[video]` override from `[profiles.*]`:
-
-| Profile | `[video]` override | Cost |
-|---|---|---|
-| `dev` (default) | `provider = "fake"`, `mix = []` | free — offline fixtures, the everyday default for working on DoomScrum itself |
-| `content` | `provider = "fal"` | real money — the weighted render portfolio (`[[video.mix]]`), ~$0.77/clip average |
-
-Unset fields in a profile keep the base `[video]` values, so `content` still
-inherits `script.mode`, spend caps, etc. from the top-level config. Switch
-profiles either by editing the `profile` key in `doomscrum.toml`, or per-run
-with the global `--profile` flag (any subcommand):
-
-```bash
-cargo run --release -- --profile content generate --limit 1
-```
-
-`dev` is the safety default: a fresh checkout with no config edits never
-spends money. Only `content` (or an explicit `--provider fal` regardless of
-profile) reaches a real provider — see "Keys you need" above and
-`doomscrum egress` for exactly what leaves the machine.
-
-## Phone on the couch (LAN + PWA)
-
-The server binds `127.0.0.1` by default. To triage from a phone on the same
-network, bind a LAN-reachable host:
-
-```bash
-cargo run --release -- serve --host 0.0.0.0          # or your machine's LAN IP
-# then on the phone: http://<your-machine's-LAN-IP>:4173
-```
-
-The feed is an installable PWA (`/manifest.webmanifest` + icons): open it on
-the phone and use **Add to Home Screen** (iOS Safari share sheet, or Chrome's
-install prompt) to get a standalone, full-screen app icon.
-
-Only bind a non-loopback host on a network you trust: the feed can dispatch
-real agents and spend the render budget, and it ships no authentication.
+Set keys as env vars or in `~/.secrets` (`FAL_API_KEY=...`,
+`OPENROUTER_API_KEY=...`). Real generation costs money per render and sends
+spec-derived prompt text to fal.ai and OpenRouter — treat it as a disclosure
+event; DoomScrum quotes the estimated batch cost first and enforces spend
+caps. The fixture provider (`fake`) is the default and never leaves the
+machine. Full cost model, render profiles, and the exact data-egress
+enumeration: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Legal / safety disclosure
 
-DoomScrum is MIT-licensed (see `LICENSE`). **Videos are AI-generated** — they
-do not depict real events, and the spoken content is derived from backlog
-spec text, not verified fact.
-
-When a real provider is used (not the default `fake` fixture), **spec-derived
-text leaves this machine**. There are exactly two egress payloads, and the
-runtime names both:
-
-1. **OpenRouter (scriptwriter).** With `script.mode = "llm"`, the full raw
-   spec markdown (`prd.raw`) is sent to OpenRouter's chat-completions API to
-   generate the spoken script + visual scene. The spec is wrapped in an
-   untrusted-data fence (it cannot break out as instructions), but the raw
-   text still egresses. Source: `src/scriptwriter.rs` (`request_body`).
-2. **fal.ai (render prompt).** With `provider = "fal"`, the spec **title**
-   (attacker-controlled — the first `# ` line), **goal**, and **first
-   acceptance criterion** are distilled into the spoken script and embedded
-   in the composed provider prompt sent to fal.ai's text-to-video model. The
-   title also flows into the PR title, commit message, and branch slug (argv
-   tokens — no shell injection). Source: `src/distill.rs`
-   (`compile_with_format` → `format_prompt`), sent by `src/providers/fal.rs`.
-
-The `fake` fixture provider and `templates` script mode never egress.
-
-**Runtime disclosure** (not just this prose): `doomscrum egress` prints the
-enumeration, `GET /api/egress` returns it as JSON, and the feed UI surfaces it
-in a disclosure panel (the `egress` chip). `doomscrum doctor` checks keys and
-config before a paid run. Provider terms (fal.ai, OpenRouter, and the
-underlying video models) and the trademark check are tracked as a pre-launch
-checklist in [`docs/LEGAL.md`](docs/LEGAL.md) — **not yet reviewed**; complete
-them before redistributing generated clips in marketing.
-
-## Brainrot formats
-
-Each spec is translated into one of five live brainrot formats, rotated by
-feed position so consecutive videos never look alike:
-
-1. **AI fruit drama** — anthropomorphic fruits in a telenovela kitchen
-   confrontation; the betrayal *is* the spec goal.
-2. **Gen-Z explainer** — unhinged ring-light talking head, punch-in zooms,
-   word-by-word captions, "no cap."
-3. **Cryptid vlog** — Bigfoot GoPro selfie vlog hyping the spec like a
-   day-in-the-life.
-4. **Italian brainrot** — surreal hybrid creature reveal with a bombastic
-   pseudo-Italian opera narrator.
-5. **2080 street interview** — fake future documentary asking an elderly
-   gen-z developer if they remember the spec.
-
-The spoken dialogue in every format quotes the spec's actual goal and first
-acceptance criterion — the video must communicate the spec, not just vibe.
-Prompts forbid inventing features or claiming anything shipped.
-
-The offline fixture provider stays free and local. When `ffmpeg` is available
-with the `drawtext` filter, it renders a short spec-specific MP4 with the spec
-title and brainrot format over distinct format colors. Without that filter, it
-falls back to the embedded fixture so tests and demos still work with no
-runtime media dependency.
-
-A set of **pre-rendered sample videos** is bundled in the repo
-(`assets/samples/`). On first run — `init`, `generate`, or `serve` —
-DoomScrum bootstraps these into `.doomscrum/renders/` so the feed shows real
-brainrot out of the box, with zero keys. Samples are badged "sample video" in
-the feed; they're honest about being pre-rendered demos, not generated from
-your specs.
-
-## Syncing to a repo
-
-Point `doomscrum.toml` at any repository:
-
-```toml
-[repo]
-path = "../some-other-repo"
-backlog_dir = "backlog.d"
-```
-
-Each `*.md` file in the backlog directory is one spec. Priority is filename
-sort order; only the top `feed.max_items` (default 10) enter the feed.
-Files starting with `_` are ignored (use `_done/`-style prefixes for
-archives).
-
-Real renders happen just-in-time: serving the feed renders at most
-`feed.prefetch_depth` (default 3) specs ahead of your viewport, so a long
-backlog costs a handful of clips, not one per spec. Specs deeper in the feed
-stay free until you scroll toward them, and if the wallet cap is exhausted a
-spec degrades to a free fixture (badged "render budget exhausted") instead of
-breaking the feed.
-
-## What a swipe actually does
-
-Right swipe (implement):
-
-1. `git worktree add .doomscrum/worktrees/<branch> -b doomscrum/impl-<slug>-<id>`
-2. Runs your configured agent command in the worktree with the full spec as its
-   mission.
-3. Commits anything the agent left uncommitted.
-4. Pushes the branch and opens a PR with `gh` (when the repo has an
-   `origin` remote and `open_pr = true`; otherwise the branch stays local
-   and the receipt says so).
-
-Every dispatch writes a staged receipt to `.doomscrum/dispatches/<id>.json`
-(status: `queued → agent_running → opening_pr → pr_opened | completed_local
-| failed`) plus a full agent log. The feed shows live status stickers and
-links to opened PRs. The default agent is the
-[`opencode`](https://opencode.ai) CLI on OpenRouter (model
-`openrouter/z-ai/glm-5.2`) — run `opencode auth login` once to store your
-OpenRouter key, then swipe. Change the model with a one-line `agent_model = "…"`
-in `doomscrum.toml`, or point `implement_cmd` at codex, claude, or anything else
-that takes a prompt and edits a worktree. The shape-agent backend remains
-available as an explicit action for future/control surfaces, but the default
-left swipe is skip-first.
-
-Agent work is throttled by `agent.max_concurrent_dispatches` (default `2`).
-Swipes beyond the limit remain as visible `queued` receipts until a slot
-opens, and swiping the same spec/action while a receipt is still active
-returns that receipt instead of launching a duplicate agent.
-
-### Recovering a stuck dispatch
-
-**Detect it:** run `doomscrum report`. The `== dispatches ==` section prints
-counts per status (`queued=… running=… opening_pr=…`) and lists the 10 most
-recent receipts with their status and `updated_at`. A receipt sitting in
-`agent_running` (or `queued`/`opening_pr`) with an `updated_at` far in the
-past — the agent process died, panicked, or the machine slept mid-run — is
-stuck; it will never self-resolve while the server keeps running, and GC
-will keep protecting its worktree from cleanup as long as the status reads
-in-flight.
-
-**Recover it:** restart the `doomscrum serve` process. On startup, before it
-accepts traffic, the server reconciles every receipt still in an in-flight
-status (`queued` / `agent_running` / `opening_pr`) to `failed` — logging
-`reconciled stranded dispatch <id> (<title>) -> failed` for each one — on the
-premise that the tokio task that owned it died with the previous process.
-There is no live (non-restart) command to force this today; a restart is the
-supported manual recovery step. Once a receipt reads `failed`, its worktree
-is no longer protected and `doomscrum gc` (or `--dry-run` to preview first)
-reclaims it.
-
-## Provenance
-
-The source spec stays authoritative. Every render records provider, model,
-spec sha256, storyboard hash, latency, and job id in
-`.doomscrum/renders/<spec-sha>/<render-id>.json`. Render IDs and media URLs
-are cache-distinct for each successful generation, and the feed selects the
-newest ready provenance for a spec while leaving older JSON readable for
-audit. MP4s are served with HTTP byte ranges and streamed from disk, so
-browser seek and loop requests do not buffer the full render in memory. Every
-decision (skip, dispatch) and human vibe rating is appended to
-`.doomscrum/events.ndjson`; ratings point at the render id they judge instead
-of mutating render JSON or source specs. Deleting `.doomscrum/` destroys only
-generated state — never specs.
-
-`doomscrum gc` keeps generated state bounded. It preserves every render JSON
-for audit, deletes only superseded MP4 assets (the latest ready render per
-spec/provider survives), runs `git worktree prune`, removes terminal dispatch
-worktrees past the age policy, and rotates `events.ndjson` by archiving the
-full ledger before keeping recent complete event lines. Use `--dry-run` to
-print the actions without touching source specs, open dispatches, renders, or
-logs.
+DoomScrum is MIT-licensed (see [LICENSE](LICENSE)). **Videos are
+AI-generated** and derived from backlog spec text, not verified fact. When a
+real provider is used, spec-derived text leaves the machine — `doomscrum
+egress` prints the live, code-verified enumeration of exactly what and where.
+Full disclosure prose and the pre-launch legal checklist:
+[docs/OPERATIONS.md#data-egress](docs/OPERATIONS.md#data-egress) and
+[docs/LEGAL.md](docs/LEGAL.md) (**not yet reviewed** — complete before
+redistributing generated clips in marketing).
 
 ## Development
 
@@ -333,3 +135,10 @@ docs/archive/      the original (superseded) MVP spec
 The UI is one static HTML file embedded in the binary — browsers execute
 JS, so the gesture/video shim is the single deliberate non-Rust exception.
 All state, logic, and dispatch live in Rust.
+
+## Docs
+
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — complete `doomscrum.toml` field reference, verified against `src/config.rs`.
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — render profiles, data egress, provenance, garbage collection, dispatch receipts, stuck-dispatch recovery, LAN/PWA.
+- [docs/LEGAL.md](docs/LEGAL.md) — pre-launch legal checklist (provider terms, trademark).
+- [CHANGELOG.md](CHANGELOG.md) — release history.
