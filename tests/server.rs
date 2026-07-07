@@ -1296,6 +1296,26 @@ async fn bad_requests_are_rejected() {
     assert_eq!(status, 400);
 }
 
+// Debug-only in the router (`#[cfg(debug_assertions)]`) — tests always build
+// in debug, so the route is present here, and it is compiled out of the
+// release/Fly image. This is the live-panic parity proof: a request to the
+// deliberately-panicking route must come back 500 (CatchPanicLayer caught it)
+// and the server must keep serving afterward (the worker task survived, not
+// died with the panic). The panic-hook side (`doomscrum.panic` at the hub) is
+// covered by the unit test in `canary.rs`; here we prove the wired route.
+#[tokio::test]
+async fn debug_panic_route_returns_500_and_keeps_serving() {
+    let app = spawn_app().await;
+
+    let res = reqwest::get(app.url("/debug/panic")).await.unwrap();
+    assert_eq!(res.status().as_u16(), 500);
+
+    // The process is still up and answering — a panicking handler did not
+    // take the server down with it.
+    let (status, _) = app.get("/api/state").await;
+    assert_eq!(status, 200);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn serving_the_feed_prefetches_only_the_viewport_window() {
     let app = spawn_app_with(|cfg| {

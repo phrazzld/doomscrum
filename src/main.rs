@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod canary;
+
 use doomscrum::config::Config;
 use doomscrum::dispatch;
 use doomscrum::gc::{self, GcOptions};
@@ -104,8 +106,49 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
+    // Comprehensive coverage, before anything else can panic or log: the
+    // panic hook reports `doomscrum.panic` on any panic anywhere in the
+    // process, and the tracing subscriber makes `tracing::error!(...)` —
+    // wherever it fires, including inside the `doomscrum` lib crate's
+    // server/dispatch code — auto-forwarded error capture with zero
+    // per-site wiring. Both no-op without CANARY_ENDPOINT/CANARY_API_KEY.
+    canary::install_panic_hook();
+    use tracing_subscriber::filter::LevelFilter;
+    use tracing_subscriber::layer::{Layer as _, SubscriberExt};
+    use tracing_subscriber::util::SubscriberInitExt;
+    // RUST_LOG controls the console (fmt) layer only; CanaryLayer keeps its own
+    // ERROR filter so error reporting can never be silenced by a log-level env.
+    let fmt_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let _ = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(fmt_filter))
+        .with(canary::CanaryLayer.with_filter(LevelFilter::ERROR))
+        .try_init();
+
+    let result = run().await;
+    if let Err(err) = &result {
+        // Top-level failure path: report to Canary, flush before exit so a
+        // one-shot CLI invocation's proof event beats process teardown, and
+        // still surface + exit non-zero exactly as before.
+        canary::report_error("doomscrum.run.failed", &format!("{err:#}"));
+    }
+    canary::flush();
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("Error: {err:?}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<()> {
     let cli = Cli::parse();
+    // Fire as early as possible so any invocation (including one that later
+    // errors) proves the process ran. One-shot per invocation — no
+    // background loop; doomscrum is a CLI/local-run tool, not a service.
+    canary::check_in();
     let root = match cli.root {
         Some(root) => root.canonicalize()?,
         None => std::env::current_dir()?,
@@ -114,6 +157,12 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Serve { host, port } => {
+            // `serve` runs until killed — a standing service, not a
+            // one-shot CLI invocation. The `check_in()` above only proves
+            // the process started; without a continuous loop it reads as
+            // falsely overdue past the 120s TTL while still perfectly
+            // healthy. Call at the top of every long-running bootstrap.
+            canary::start_health_loop();
             let ctx = AppCtx::new(root.clone(), cfg);
             let _ = samples::bootstrap(
                 &ctx.repo(),
@@ -133,7 +182,10 @@ async fn main() -> Result<()> {
                         );
                     }
                 }
-                Err(err) => println!("boot reconcile failed: {err:#}"),
+                // Was println-swallowed — now an `error!` so the CanaryLayer
+                // forwards it instead of the boot-reconcile failure only
+                // ever reaching whoever happens to be tailing stdout.
+                Err(err) => tracing::error!("boot reconcile failed: {err:#}"),
             }
             let app = server::router(ctx);
             let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;

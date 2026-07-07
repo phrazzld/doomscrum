@@ -98,6 +98,11 @@ pub(super) async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeB
                     .await
                     .is_err()
                 {
+                    // Detached-task error arm: nothing propagates out of this
+                    // `tokio::spawn`, so this `error!` is the only signal
+                    // that a dispatch died mid-run instead of completing or
+                    // failing cleanly through `run()`'s own error path.
+                    tracing::error!(dispatch_id = %receipt_id, "dispatch task panicked — reconciled");
                     let _ =
                         dispatcher.mark_failed(&receipt_id, "dispatch task panicked — reconciled");
                 }

@@ -9,6 +9,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::backlog::{self, PrdSource};
 use crate::config::Config;
@@ -320,7 +321,7 @@ impl AppCtx {
 }
 
 pub fn router(ctx: AppCtx) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(index))
         .route("/manifest.webmanifest", get(manifest))
         .route("/icon-192.png", get(icon_192))
@@ -336,8 +337,34 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/repo", get(api_repo_get).post(api_repo_set))
         .route("/api/keys", post(api_keys_set))
         .route("/api/egress", get(api_egress))
-        .route("/media/{sha}/{file}", get(media))
+        .route("/media/{sha}/{file}", get(media));
+
+    // Live panic-parity proof route (debug builds only — compiled out of
+    // release/Fly images). A single `curl /debug/panic` exercises the whole
+    // chain: the handler panics, `install_panic_hook` reports
+    // `doomscrum.panic`, and the `CatchPanicLayer` below turns it into a 500
+    // so the worker task survives. No temporary source edit needed to prove
+    // panic capture against a live process.
+    #[cfg(debug_assertions)]
+    let router = router.route("/debug/panic", get(debug_panic));
+
+    router
+        // A panicking handler must return 500 and keep serving the next
+        // request, not silently kill the worker task. The panic itself is
+        // still reported — the global panic hook (installed in main.rs)
+        // fires before this layer's catch_unwind ever gets control, same as
+        // any other panic in the process.
+        .layer(CatchPanicLayer::new())
         .with_state(ctx)
+}
+
+/// Debug-only: panic on purpose so an operator can prove the live panic
+/// path (`install_panic_hook` → `doomscrum.panic`, `CatchPanicLayer` → 500)
+/// with one request. `#[cfg(debug_assertions)]` keeps it out of release and
+/// Fly builds — there is no way to reach it in production.
+#[cfg(debug_assertions)]
+async fn debug_panic() -> Response {
+    panic!("doomscrum debug panic");
 }
 
 async fn index() -> Html<&'static str> {
@@ -448,7 +475,16 @@ async fn api_repo_set(State(ctx): State<AppCtx>, Json(body): Json<RepoBody>) -> 
 }
 
 fn error_response(status: StatusCode, message: impl std::fmt::Display) -> Response {
-    (status, Json(json!({ "error": message.to_string() }))).into_response()
+    let message = message.to_string();
+    // 5xx only: the 4xx arms here are expected business-logic outcomes
+    // (bad input, wallet caps, not-found), not incidents. A 5xx is the
+    // service failing its own contract — report it. `tracing::error!` is
+    // enough; the CanaryLayer registered in main.rs (over the whole
+    // process, this lib crate included) is what actually forwards it.
+    if status.is_server_error() {
+        tracing::error!(status = %status.as_u16(), "{message}");
+    }
+    (status, Json(json!({ "error": message }))).into_response()
 }
 
 pub fn render_provider_id(provider_name: &str) -> anyhow::Result<&'static str> {
@@ -484,5 +520,37 @@ mod tests {
         const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
         assert!(ICON_192.starts_with(PNG_MAGIC));
         assert!(ICON_512.starts_with(PNG_MAGIC));
+    }
+
+    #[tokio::test]
+    async fn catch_panic_layer_turns_a_panicking_handler_into_500_not_task_death() {
+        // Proves the exact middleware wired into `router()`: a panicking
+        // handler must answer 500 (Comprehensive-coverage checklist item 4),
+        // not kill the worker task or drop the connection. The panic itself
+        // is reported separately, by the process-global panic hook
+        // (`canary::install_panic_hook`, installed in `main.rs`) — that hook
+        // fires before this layer's `catch_unwind` ever gets control, so it
+        // is intentionally not re-tested here.
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use axum::Router;
+        use tower::ServiceExt;
+        use tower_http::catch_panic::CatchPanicLayer;
+
+        async fn boom() -> &'static str {
+            panic!("handler exploded");
+        }
+
+        let app = Router::new()
+            .route("/boom", get(boom))
+            .layer(CatchPanicLayer::new());
+
+        let response = app
+            .oneshot(Request::builder().uri("/boom").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }
