@@ -173,6 +173,10 @@ fn spawn_render_job(
             }
         }
         if let Err(err) = &outcome {
+            // Detached-task error arm: this is a `tokio::spawn`ed supervisor,
+            // nothing propagates out of it, so this `error!` is the only way
+            // the failure is ever observed off-box.
+            tracing::error!(prd_id = %prd.id, provider = %provider, "render task failed: {err:#}");
             // Durable failure record: the in-memory map dies with the process,
             // the events ledger does not.
             let _ = events::append(
