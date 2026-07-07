@@ -80,6 +80,30 @@ starts a real render, enforces both `max_total_spend_usd` and an independent
 daily budget is exhausted. The fixture provider (`fake`) is the default and
 never leaves the machine.
 
+## Render profiles (`dev` vs `content`)
+
+`doomscrum.toml`'s top-level `profile` key (default `"dev"`) selects a
+partial `[video]` override from `[profiles.*]`:
+
+| Profile | `[video]` override | Cost |
+|---|---|---|
+| `dev` (default) | `provider = "fake"`, `mix = []` | free — offline fixtures, the everyday default for working on DoomScrum itself |
+| `content` | `provider = "fal"` | real money — the weighted render portfolio (`[[video.mix]]`), ~$0.77/clip average |
+
+Unset fields in a profile keep the base `[video]` values, so `content` still
+inherits `script.mode`, spend caps, etc. from the top-level config. Switch
+profiles either by editing the `profile` key in `doomscrum.toml`, or per-run
+with the global `--profile` flag (any subcommand):
+
+```bash
+cargo run --release -- --profile content generate --limit 1
+```
+
+`dev` is the safety default: a fresh checkout with no config edits never
+spends money. Only `content` (or an explicit `--provider fal` regardless of
+profile) reaches a real provider — see "Keys you need" above and
+`doomscrum egress` for exactly what leaves the machine.
+
 ## Phone on the couch (LAN + PWA)
 
 The server binds `127.0.0.1` by default. To triage from a phone on the same
@@ -213,6 +237,27 @@ Agent work is throttled by `agent.max_concurrent_dispatches` (default `2`).
 Swipes beyond the limit remain as visible `queued` receipts until a slot
 opens, and swiping the same spec/action while a receipt is still active
 returns that receipt instead of launching a duplicate agent.
+
+### Recovering a stuck dispatch
+
+**Detect it:** run `doomscrum report`. The `== dispatches ==` section prints
+counts per status (`queued=… running=… opening_pr=…`) and lists the 10 most
+recent receipts with their status and `updated_at`. A receipt sitting in
+`agent_running` (or `queued`/`opening_pr`) with an `updated_at` far in the
+past — the agent process died, panicked, or the machine slept mid-run — is
+stuck; it will never self-resolve while the server keeps running, and GC
+will keep protecting its worktree from cleanup as long as the status reads
+in-flight.
+
+**Recover it:** restart the `doomscrum serve` process. On startup, before it
+accepts traffic, the server reconciles every receipt still in an in-flight
+status (`queued` / `agent_running` / `opening_pr`) to `failed` — logging
+`reconciled stranded dispatch <id> (<title>) -> failed` for each one — on the
+premise that the tokio task that owned it died with the previous process.
+There is no live (non-restart) command to force this today; a restart is the
+supported manual recovery step. Once a receipt reads `failed`, its worktree
+is no longer protected and `doomscrum gc` (or `--dry-run` to preview first)
+reclaims it.
 
 ## Provenance
 
