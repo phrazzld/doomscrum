@@ -180,5 +180,7 @@ into:
   staged path is no longer ratified — see Open bets)*.
 - `docs/EFFICIENCY.md` — the cost north-star: drive $/clip from ~$1.20 flat
   toward ~$0.05 (stills) and ~$0 (local GPU) via a stacking strategy ladder.
+- `docs/FIVE_FACES.md` — application-floor surface ledger, the repo-local skill
+  face, and the v1 MCP waiver.
 - `docs/VIDEO_QUALITY_PIPELINE.md` — how renders become bespoke-per-spec and
   caption-correct.
