@@ -114,11 +114,16 @@ async fn main() -> std::process::ExitCode {
     // server/dispatch code — auto-forwarded error capture with zero
     // per-site wiring. Both no-op without CANARY_ENDPOINT/CANARY_API_KEY.
     canary::install_panic_hook();
-    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::filter::LevelFilter;
+    use tracing_subscriber::layer::{Layer as _, SubscriberExt};
     use tracing_subscriber::util::SubscriberInitExt;
+    // RUST_LOG controls the console (fmt) layer only; CanaryLayer keeps its own
+    // ERROR filter so error reporting can never be silenced by a log-level env.
+    let fmt_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let _ = tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(canary::CanaryLayer)
+        .with(tracing_subscriber::fmt::layer().with_filter(fmt_filter))
+        .with(canary::CanaryLayer.with_filter(LevelFilter::ERROR))
         .try_init();
 
     let result = run().await;
