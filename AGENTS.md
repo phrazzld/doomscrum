@@ -5,7 +5,8 @@ Left swipe is skip-first and must not mutate the source spec or dispatch a
 shape agent. Shape-agent machinery exists as an explicit backend/control action;
 do not bind it to the default left gesture without a fresh product decision.
 Single Rust crate (`doomscrum`); `assets/index.html` is the only sanctioned
-non-Rust product surface. `demo/` is dev tooling (Remotion), not product.
+non-Rust product surface. `demo/` is Remotion dev tooling, outside the product
+security/egress boundary.
 
 North star is `VISION.md` (why this exists, the soul, the non-goals). When a
 direction call is ambiguous, that file decides — read it, don't guess.
