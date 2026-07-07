@@ -1,6 +1,9 @@
 # MVP: prove the dispatch loop on arbitrary repos with a real agent (config-heavy is fine)
 
-Priority: P0 · Status: ready · Estimate: XL (epic — the singular Gate-0 focus)
+Priority: P0 · Status: **absorbed** by Powder card `doomscrum-940` (board is the
+ledger of record; closed 2026-07-07 with the live two-repo proof — evidence:
+`docs/adoption/2026-07-07-gate0-external-dispatch/`) · Estimate: XL (epic — the
+singular Gate-0 focus)
 
 ## Goal
 A user clones DoomScrum, runs a guided setup (OpenRouter key, GitHub auth, FAL

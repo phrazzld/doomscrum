@@ -1,0 +1,16 @@
+{
+  "id": "f1f2b5947dd8215af37937717651dc3a7e901969ccd93eea0520670f80cad399",
+  "prd_id": "d5f39c20efba6d4f006e64bb2d7e8c0e396a63651b6d61bce85c9c8b297a11b2",
+  "prd_sha256": "d5f39c20efba6d4f006e64bb2d7e8c0e396a63651b6d61bce85c9c8b297a11b2",
+  "prd_title": "Rebuild archive data path",
+  "prd_rel_path": ".backlog.d/003-rebuild-archive-data-path.md",
+  "kind": "implement",
+  "branch": "doomscrum/impl-rebuild-archive-data-path-f1f2b5947d",
+  "worktree": "/private/tmp/claude-501/-Users-phaedrus-Documents-daybook/186911a7-68b2-4cc4-a0e4-eeac5ea84a81/scratchpad/gate0/chrondle-root/.doomscrum/worktrees/doomscrum-impl-rebuild-archive-data-path-f1f2b5947d",
+  "status": "cancelled",
+  "stages": [],
+  "note": "cancelled during the undo window",
+  "agent_log": "/private/tmp/claude-501/-Users-phaedrus-Documents-daybook/186911a7-68b2-4cc4-a0e4-eeac5ea84a81/scratchpad/gate0/chrondle-root/.doomscrum/dispatches/f1f2b5947dd8215af37937717651dc3a7e901969ccd93eea0520670f80cad399.agent.log",
+  "created_at": "2026-07-07T13:07:50.351Z",
+  "updated_at": "2026-07-07T13:07:50.453Z"
+}

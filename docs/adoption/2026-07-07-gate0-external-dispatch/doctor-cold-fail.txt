@@ -1,0 +1,11 @@
+[FAIL] openrouter (scriptwriter): script.mode is "llm" but OPENROUTER_API_KEY is not set (env or ~/.secrets)
+       ↳ fix: export OPENROUTER_API_KEY=… (or add it to ~/.secrets), or set script.mode = "templates"
+[FAIL] opencode agent auth: the dispatched opencode agent runs with a scrubbed environment, so it needs a STORED credential — an env-only OPENROUTER_API_KEY will not reach it
+       ↳ fix: run `opencode auth login` and choose OpenRouter
+[FAIL] github (gh) auth: gh CLI is not authenticated; dispatches cannot open PRs
+       ↳ fix: run `gh auth login`
+[FAIL] synced repo: [repo].path is not a git repository; dispatch needs one to create worktrees
+       ↳ fix: point [repo].path at a git repo (or run `doomscrum init`)
+[ok  ] render provider: using the free offline fixture provider (no FAL key needed)
+
+not ready — resolve the FAIL items above.
