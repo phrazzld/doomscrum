@@ -1176,7 +1176,20 @@ mod tests {
             dispatcher.claim(&running.id).unwrap(),
             Claim::Started
         ));
-        let mut done = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        // A distinct spec: receipt ids hash (prd_sha256, kind, created_at) at
+        // millisecond precision, so a same-spec same-kind receipt created in
+        // the same instant would collide with `queued` and overwrite it.
+        let other_raw = "# Other Spec\n\n## Goal\nShip the other thing.\n";
+        let other = PrdSource {
+            id: sha256_hex(other_raw.as_bytes()),
+            sha256: sha256_hex(other_raw.as_bytes()),
+            rel_path: "backlog.d/other.md".into(),
+            abs_path: PathBuf::from("backlog.d/other.md"),
+            title: "Other Spec".into(),
+            priority: 0,
+            raw: other_raw.into(),
+        };
+        let mut done = dispatcher.create(&other, DispatchKind::Implement).unwrap();
         done.status = "pr_opened".into();
         dispatcher.persist(&done).unwrap();
 
