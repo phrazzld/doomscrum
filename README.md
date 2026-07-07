@@ -27,27 +27,42 @@ unbounded once you've opted in.
 
 ## Quick start
 
+No Rust toolchain needed — install the binary and play a sample video in
+under two minutes:
+
+```bash
+# macOS (Homebrew)
+brew install phrazzld/doomscrum/doomscrum
+
+# or download directly (macOS arm64 / Linux x86_64) — checksummed
+# releases: https://github.com/phrazzld/doomscrum/releases/latest
+
+doomscrum init      # scaffold doomscrum.toml
+doomscrum doctor    # check your setup (agent auth, gh auth, git remote)
+doomscrum serve     # http://127.0.0.1:4173 — bundled sample videos play immediately
+```
+
+`init` writes a starter `doomscrum.toml`; `doctor` verifies that the dispatched
+agent can authenticate (`opencode auth login`), `gh` is logged in, and the synced
+repo has a push remote — so a swipe can actually open a PR. `serve` bootstraps
+the bundled sample brainrot videos into `.doomscrum/renders/` on first run, so
+the feed has real (pre-rendered) video with zero keys and zero config edits —
+tap the splash screen (sound gate), then swipe. Run `doomscrum generate`
+afterward to render your own repo's specs (offline fixture provider by
+default; see "Keys you need" below for real generation).
+
+### Building from source (contributors)
+
 ```bash
 cargo build --release
-
-# 0. Scaffold a config and check your setup (agent auth, gh auth, git remote)
 cargo run --release -- init
 cargo run --release -- doctor
-
-# 1. Render videos for the top specs (offline fixture provider)
 cargo run --release -- generate
-
-# 2. Serve the feed
 cargo run --release -- serve        # http://127.0.0.1:4173
 
 # Inspect generated-state cleanup without deleting anything
 cargo run --release -- gc --dry-run
 ```
-
-`init` writes a starter `doomscrum.toml`; `doctor` verifies that the dispatched
-agent can authenticate (`opencode auth login`), `gh` is logged in, and the synced
-repo has a push remote — so a swipe can actually open a PR. Tap the splash screen
-(sound gate), then swipe.
 
 ### Keys you need
 
