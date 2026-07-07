@@ -5,9 +5,9 @@
 //! cannot accidentally inherit a real operator agent from the test process.
 
 use std::ffi::OsStr;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use doomscrum::config::Config;
@@ -19,6 +19,22 @@ struct TestApp {
     addr: SocketAddr,
     root: PathBuf,
     _tmp: tempfile::TempDir,
+}
+
+struct CliApp {
+    addr: SocketAddr,
+    _tmp: tempfile::TempDir,
+    child: Child,
+}
+
+const COLD_SAMPLE_BUDGET: Duration = Duration::from_secs(60);
+const CONSENTED_DISPATCH_BUDGET: Duration = Duration::from_secs(120);
+
+impl Drop for CliApp {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 fn sh(cwd: &Path, cmd: &[&str]) {
@@ -33,6 +49,129 @@ fn sh(cwd: &Path, cmd: &[&str]) {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+fn write_backlog(root: &Path) {
+    std::fs::create_dir_all(root.join("backlog.d")).unwrap();
+    std::fs::write(
+        root.join("backlog.d/001-first.md"),
+        "# First Spec\n\n## Goal\nShip the first thing.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("backlog.d/002-second.md"),
+        "# Second Spec\n\n## Goal\nShip the second thing.\n",
+    )
+    .unwrap();
+}
+
+fn init_git_repo(root: &Path, bare: &Path) {
+    sh(root, &["git", "init", "-q", "-b", "main"]);
+    sh(
+        root,
+        &["git", "config", "user.email", "test@doomscrum.local"],
+    );
+    sh(root, &["git", "config", "user.name", "DoomScrum Test"]);
+    sh(root, &["git", "config", "commit.gpgsign", "false"]);
+    std::fs::write(root.join(".gitignore"), ".doomscrum/\n").unwrap();
+    sh(root, &["git", "add", "-A"]);
+    sh(root, &["git", "commit", "-qm", "init"]);
+    sh(
+        bare.parent().unwrap(),
+        &["git", "init", "-q", "--bare", "origin.git"],
+    );
+    sh(
+        root,
+        &["git", "remote", "add", "origin", bare.to_str().unwrap()],
+    );
+}
+
+fn write_stub_dispatch_config(root: &Path) {
+    std::fs::write(
+        root.join("doomscrum.toml"),
+        r#"
+[repo]
+path = "."
+backlog_dir = "backlog.d"
+state_dir = ".doomscrum"
+
+[video]
+provider = "fake"
+
+[script]
+mode = "templates"
+
+[agent]
+implement_cmd = ["sh", "-c", "echo implemented > impl-marker.txt"]
+shape_cmd = ["sh", "-c", "printf '\n## Notes\nsharpened by agent\n' >> {spec_path}"]
+pr_cmd = ["sh", "-c", "echo https://example.test/pr/onramp-timing"]
+open_pr = true
+max_concurrent_dispatches = 1
+"#,
+    )
+    .unwrap();
+}
+
+fn free_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().port()
+}
+
+fn doomscrum_bin() -> PathBuf {
+    option_env!("CARGO_BIN_EXE_doomscrum")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_doomscrum").map(PathBuf::from))
+        .expect("Cargo should expose the doomscrum binary path to integration tests")
+}
+
+fn spawn_cli_app(tmp: tempfile::TempDir, root: PathBuf) -> CliApp {
+    let port = free_port();
+    let mut child = Command::new(doomscrum_bin());
+    child
+        .env_clear()
+        .env(
+            "PATH",
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into()),
+        )
+        .env("HOME", tmp.path())
+        .env("TMPDIR", tmp.path())
+        .env("USER", "doomscrum-test")
+        .env("LOGNAME", "doomscrum-test")
+        .env("LANG", "C.UTF-8")
+        .current_dir(&root)
+        .arg("--root")
+        .arg(&root)
+        .arg("serve")
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let child = child.spawn().expect("spawn doomscrum serve under env -i");
+    CliApp {
+        addr: SocketAddr::from(([127, 0, 0, 1], port)),
+        _tmp: tmp,
+        child,
+    }
+}
+
+fn spawn_cold_sample_cli_app() -> CliApp {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("project");
+    write_backlog(&root);
+    spawn_cli_app(tmp, root)
+}
+
+fn spawn_dispatch_cli_app() -> CliApp {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("project");
+    let bare = tmp.path().join("origin.git");
+    write_backlog(&root);
+    write_stub_dispatch_config(&root);
+    init_git_repo(&root, &bare);
+    spawn_cli_app(tmp, root)
 }
 
 async fn spawn_browser_app() -> TestApp {
@@ -158,6 +297,132 @@ impl TestApp {
         }
         panic!("implement dispatch did not reach a terminal status");
     }
+}
+
+impl CliApp {
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{}", self.addr, path)
+    }
+
+    async fn get(&self, path: &str) -> (u16, Value) {
+        let res = reqwest::get(self.url(path)).await.unwrap();
+        let status = res.status().as_u16();
+        (status, res.json().await.unwrap_or(Value::Null))
+    }
+
+    async fn get_bytes(&self, path: &str) -> (u16, reqwest::header::HeaderMap, Vec<u8>) {
+        let res = reqwest::get(self.url(path)).await.unwrap();
+        let status = res.status().as_u16();
+        let headers = res.headers().clone();
+        let bytes = res.bytes().await.unwrap().to_vec();
+        (status, headers, bytes)
+    }
+
+    async fn wait_for_sample_video(&self, timeout: Duration) -> String {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let Ok(res) = reqwest::get(self.url("/api/state")).await else {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            };
+            if !res.status().is_success() {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+            let state: Value = res.json().await.unwrap_or(Value::Null);
+            if let Some(asset_url) = state["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find_map(|item| item["render"]["asset_url"].as_str())
+            {
+                return asset_url.to_string();
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("sample video did not become reachable within {timeout:?}");
+    }
+
+    async fn await_implemented(&self, timeout: Duration) -> Value {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let (_, body) = self.get("/api/dispatches").await;
+            if let Some(receipt) = body["dispatches"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|d| d["kind"] == "implement")
+            {
+                let status = receipt["status"].as_str().unwrap_or_default();
+                if ["pr_opened", "completed_local", "failed"].contains(&status) {
+                    return receipt.clone();
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("implement dispatch did not reach a terminal status within {timeout:?}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cold_keyless_start_reaches_sample_video_under_sixty_seconds() {
+    let start = Instant::now();
+    let app = spawn_cold_sample_cli_app();
+    let asset_url = app.wait_for_sample_video(COLD_SAMPLE_BUDGET).await;
+    let (status, headers, bytes) = app.get_bytes(&asset_url).await;
+    let elapsed = start.elapsed();
+
+    assert_eq!(status, 200, "sample media should be served at {asset_url}");
+    assert_eq!(headers["content-type"], "video/mp4");
+    assert_eq!(&bytes[4..8], b"ftyp", "sample asset should be a real MP4");
+    assert!(
+        elapsed < COLD_SAMPLE_BUDGET,
+        "cold env -i keyless start to reachable sample video took {elapsed:?}, budget is {COLD_SAMPLE_BUDGET:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stranger_reaches_consented_dispatch_under_two_minutes() {
+    let app = spawn_dispatch_cli_app();
+    let _ = app.wait_for_sample_video(COLD_SAMPLE_BUDGET).await;
+
+    let browser = launch_browser();
+    let tab = browser.new_tab().unwrap();
+    tab.set_default_timeout(Duration::from_secs(10));
+
+    let start = Instant::now();
+    tab.navigate_to(&app.url("/"))
+        .unwrap()
+        .wait_until_navigated()
+        .unwrap();
+    tab.wait_for_element("#splash").unwrap().click().unwrap();
+    wait_for_js(&tab, "Boolean(document.querySelector('#card video'))");
+    wait_for_js(
+        &tab,
+        "!document.querySelector('#cookFake') && !document.querySelector('#addKey')",
+    );
+
+    pointer_swipe(&tab, "#card", 160, 0);
+    wait_for_js(
+        &tab,
+        "Boolean(document.querySelector('#consentOverlay.show #consentConfirm'))",
+    );
+    tab.wait_for_element("#consentConfirm")
+        .unwrap()
+        .click()
+        .unwrap();
+
+    let receipt = app.await_implemented(CONSENTED_DISPATCH_BUDGET).await;
+    let elapsed = start.elapsed();
+    assert_eq!(receipt["status"], "pr_opened", "receipt: {receipt}");
+    assert_eq!(
+        receipt["pr_url"], "https://example.test/pr/onramp-timing",
+        "receipt: {receipt}"
+    );
+    assert!(
+        elapsed < CONSENTED_DISPATCH_BUDGET,
+        "stranger to consented dispatch took {elapsed:?}, budget is {CONSENTED_DISPATCH_BUDGET:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
