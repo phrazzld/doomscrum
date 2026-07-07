@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DoomScrum — feed-card anatomy lab (doomscrum-941)</title>
+<style>
+  /* Lab chrome (viewer only — mocks below use the PRODUCT tokens) */
+  :root {
+    --bg: #0b0b0e; --panel: #131318; --ink: #e8e8ec; --muted: #8b8b96;
+    --lab-acid: #c8ff00; --lab-cyan: #29d3e0; --lab-err: #ff5470;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, "Segoe UI", sans-serif; padding: 32px 20px 80px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: -.02em; }
+  h1 small { display: block; color: var(--muted); font-size: 13px; font-weight: 400; margin-top: 4px; max-width: 90ch; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; position: sticky; top: 0; background: var(--bg); padding: 12px 0; z-index: 5; }
+  .tabs button { background: var(--panel); border: 1px solid #2a2a33; color: var(--muted); padding: 7px 12px; font: 12px var(--mono); cursor: pointer; text-transform: uppercase; letter-spacing: .06em; }
+  .tabs button.on { border-color: var(--lab-acid); color: var(--lab-acid); }
+  section.opt { display: none; }
+  section.opt.on { display: block; animation: in .2s ease both; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+  .opt h2 { font-size: 20px; margin-bottom: 4px; }
+  .opt .thesis { color: var(--muted); max-width: 80ch; margin-bottom: 20px; }
+  .row { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  .notes { flex: 1; min-width: 300px; max-width: 520px; font-size: 14px; }
+  .notes h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 6px; }
+  .notes ul { padding-left: 18px; }
+  .notes li { margin-bottom: 5px; }
+  .good { color: var(--lab-acid); }
+  .bad { color: var(--lab-err); }
+  .verdict-box { border: 1px solid var(--lab-acid); padding: 18px 20px; margin-top: 18px; max-width: 86ch; }
+  .verdict-box h3 { color: var(--lab-acid); font: 700 13px var(--mono); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px; }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 14px; }
+  th, td { border: 1px solid #2a2a33; padding: 6px 9px; text-align: left; }
+  th { color: var(--muted); font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+  td b { color: var(--lab-acid); }
+
+  /* ── The phone mock: a real 430x900 frame scaled down.
+     Everything inside uses PRODUCT tokens so the options are honest. ── */
+  .phone { width: 236px; height: 495px; flex: none; position: relative; }
+  .phone .cap { position: absolute; top: -20px; left: 0; right: 0; font: 10px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; text-align: center; }
+  .vp {
+    width: 430px; height: 900px; transform: scale(0.549); transform-origin: top left;
+    position: absolute; top: 0; left: 0; overflow: hidden;
+    /* product tokens */
+    --pbg: #121212; --pwash: #1b1b1b; --pink-t: #ededed; --pmuted: #8f8f8f;
+    --pdead: #5c5c5c; --pline: #262626; --acid: #b6ff2e; --ppink: #ff2ea6;
+    --pcyan: #2ee6ff; --pwarn: #c49d72; --perr: #e58379; --pok: #6fd2a8;
+    background: var(--pbg); color: var(--pink-t);
+    font-family: var(--mono); border: 1px solid #2a2a33;
+  }
+  .vp * { position: absolute; }
+  .vid-fill { background: repeating-linear-gradient(37deg, #101820, #101820 26px, #0c121a 26px, #0c121a 52px); }
+  .vid-fill::after { content: "▶ brainrot.mp4"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--pcyan); font: 15px var(--mono); opacity: .55; }
+  .t-ticker { top: 0; left: 0; right: 0; height: 33px; border-bottom: 1px solid var(--pline); background: var(--pbg); color: var(--pmuted); font: 13px var(--mono); letter-spacing: .12em; text-transform: uppercase; line-height: 33px; padding: 0 16px; white-space: nowrap; overflow: hidden; }
+  .t-ticker b { color: var(--acid); font-weight: 550; }
+  .t-ticker .pos { position: absolute; right: 16px; color: var(--pink-t); }
+  .chip { border: 1px solid var(--pline); background: var(--pbg); color: var(--pink-t); font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 5px 10px; }
+  .chip.cy { border-color: var(--pcyan); color: var(--pcyan); }
+  .chip.wa { border-color: var(--pwarn); color: var(--pwarn); }
+  .chip.pk { border-color: var(--ppink); color: var(--ppink); }
+  .chip.ac { border-color: var(--acid); color: var(--acid); }
+  .chip.ok { border-color: var(--pok); color: var(--pok); }
+  .chip.er { border-color: var(--perr); color: var(--perr); }
+  .chip.dd { border-color: var(--pdead); color: var(--pmuted); }
+  .meme { font-family: -apple-system, "Helvetica Neue", sans-serif; font-weight: 800; text-transform: uppercase; color: #fff; line-height: 1.04; letter-spacing: .005em; }
+  .grad { background: linear-gradient(transparent, rgba(0,0,0,.9)); }
+  .mini-note { font: 10.5px var(--mono); color: var(--pdead); text-transform: uppercase; letter-spacing: .08em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feed-card anatomy lab — doomscrum-941
+  <small>Problem (verified live at 430×900): the meme caption — the ONE element that carries the spec — is occluded by
+  the vibe row (bottom:92), the cook sticker (bottom:120) and the logbox (bottom:86); the rail dots overlap the frame;
+  the top-right stacks spend + egress + status sticker; the ticker truncates mid-sentence; the cost confirm is a naked
+  window.confirm; provider/model·sha dev-speak sits in the hero zone. Eight structurally distinct anatomies below, all
+  inside the existing aesthetic tokens (dark surface, acid/pink/cyan steer, radius 0, hairline chips, motion-as-feedback).
+  Not a re-skin — a z-layout and information-hierarchy decision.</small>
+</h1>
+
+<div class="tabs" id="tabs">
+  <button data-t="a" class="on">A · status ledge</button>
+  <button data-t="b">B · vibe on demand</button>
+  <button data-t="c">C · letterbox plate</button>
+  <button data-t="d">D · edge action rail</button>
+  <button data-t="e">E · state-exclusive zone</button>
+  <button data-t="f">F · bottom sheet</button>
+  <button data-t="g">G · top HUD merge</button>
+  <button data-t="h">H · flip card</button>
+  <button data-t="v">★ verdict</button>
+</div>
+
+<!-- ════════════════ A — STATUS LEDGE ════════════════ -->
+<section class="opt on" id="opt-a">
+  <h2>A — Status ledge: chrome exiled below the frame</h2>
+  <p class="thesis">The 9:16 frame carries only what belongs ON the video: the meme caption (sacred, bottom, flow-only),
+  status chips tucked INSIDE the top corners, and a top-anchored agent HUD for log/undo/retry. Every interactive
+  affordance — vibe rating, cook/retry, PR link — moves to a ledge strip BELOW the card, outside the frame entirely.
+  Rail stays vertical but the frame narrows (86vw) to clear it; the ticker becomes brand + position counter and never
+  truncates.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh (fixture, fal configured)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <span class="chip cy" style="top:44px; left:16px;">repo: doomscrum</span>
+      <span style="top:48px; right:16px; font:11px var(--mono); color:var(--pmuted); letter-spacing:.1em;">$0.32 / $20 CAP</span>
+      <span class="chip wa" style="top:70px; right:16px;">egress</span>
+      <div style="left:14px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px;">
+        <i style="position:static;width:8px;height:8px;border:1px solid var(--pdead)"></i>
+        <i style="position:static;width:8px;height:8px;border:1px solid var(--acid);background:var(--acid)"></i>
+        <i style="position:static;width:8px;height:8px;border:1px solid var(--pdead)"></i>
+      </div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <span class="chip pk" style="top:10px; left:10px;">#3</span>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+      <div style="left:30px; right:30px; top:785px; display:flex; gap:6px; position:absolute;">
+        <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+        <span class="chip ac" style="position:static; flex:1; text-align:center;">solid</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+      </div>
+      <div style="left:30px; right:30px; top:825px; display:flex; gap:6px; position:absolute;">
+        <span class="chip pk" style="position:static;">fixture → cook with AI ($)</span>
+      </div>
+      <div class="mini-note" style="bottom:8px; left:0; right:0; text-align:center;">↑ skip · ↓ back · tap spec · space pause</div>
+    </div></div>
+    <div class="phone"><span class="cap">agent failed (log HUD top)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <span class="chip cy" style="top:44px; left:16px;">repo: doomscrum</span>
+      <span class="chip wa" style="top:70px; right:16px;">egress</span>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip er" style="top:10px; right:10px;">agent flopped</span>
+        <span class="chip pk" style="top:10px; left:10px;">#3</span>
+        <div style="top:48px; left:10px; right:10px; border:1px solid var(--perr); background:var(--pwash); color:var(--perr); font:11px/1.55 var(--mono); padding:9px 11px;">
+          <b style="color:var(--pink-t); font-family:-apple-system,sans-serif; text-transform:uppercase;">agent flopped @ clippy</b><br>
+          error[E0308]: mismatched types<br>--&gt; src/feed.rs:41:9<br>
+          <span class="chip ac" style="position:static; display:inline-block; margin-top:8px; background:var(--acid); color:#000;">run it back</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+      <div style="left:30px; right:30px; top:785px; display:flex; gap:6px; position:absolute;">
+        <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">solid</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">pr opened + degraded</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ok" style="top:10px; right:10px;">pr opened</span>
+        <div style="top:10px; left:10px; display:flex; flex-direction:column; gap:6px;">
+          <span class="chip pk" style="position:static;">#3</span>
+          <span class="chip ok" style="position:static;">fast-merge 12L</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:240px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:52px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        <span class="chip wa" style="bottom:16px; left:14px;">fal quota — fixture used</span>
+      </div>
+      <div style="left:30px; right:30px; top:785px; display:flex; gap:6px; position:absolute;">
+        <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">solid</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+      </div>
+      <div style="left:30px; right:30px; top:825px; display:flex; gap:6px; position:absolute;">
+        <span class="chip cy" style="position:static;">PR ↗</span>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>How every element is housed</h3>
+      <ul>
+        <li><b>caption</b> — bottom of frame, flow layout (meme → plan line → degraded chip), pointer-events none. Nothing else may enter the zone in ANY state.</li>
+        <li><b>vibe</b> — ledge row 1, below the frame. Always visible, never on video.</li>
+        <li><b>cook / retry / PR</b> — ledge row 2 (chips appear per state).</li>
+        <li><b>status</b> — chip inside top-right (no −12px overhang → clears the egress chip).</li>
+        <li><b>prio / review / superseded</b> — chip column inside top-left.</li>
+        <li><b>agent log / queued-undo / failed+retry</b> — HUD panel anchored to frame TOP, under the chips. Caption untouched while cooking.</li>
+        <li><b>meta (provider/model·sha)</b> — demoted to the tap-spec overlay.</li>
+        <li><b>rail</b> — stays vertical left; frame narrows to 86vw so dots clear it.</li>
+        <li><b>ticker</b> — brand + N/M counter; subtitle dropped at phone width; zero truncation.</li>
+      </ul>
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Occlusion-free caption guaranteed structurally — the interactive layer is not inside the frame at all.</li>
+        <li class="good">All affordances stay one glance + one tap away; nothing hidden behind gesture discovery.</li>
+        <li class="good">Smallest diff: same DOM ids, same gesture surface, e2e selectors survive.</li>
+        <li class="bad">Video frame is ~6vw narrower than today (86vw vs 92vw) to clear the rail.</li>
+        <li class="bad">Ledge costs ~80px of stage height below the frame (available at all three target viewports).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ B — VIBE ON DEMAND ════════════════ -->
+<section class="opt" id="opt-b">
+  <h2>B — Vibe on demand: minimal face, rate on long-press</h2>
+  <p class="thesis">The card face carries only video + caption + one status chip. A single "rate" glyph sits in the
+  frame's top-right under the status chip; tapping it slides the 4-button vibe row over the video MID-zone (never the
+  caption), auto-hiding after choice. Cook/retry live in the same on-demand tray. Maximum video purity, minimum
+  standing chrome.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh — tray closed</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <span class="chip" style="top:44px; right:10px;">☆ rate</span>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+      <div class="mini-note" style="bottom:8px; left:0; right:0; text-align:center;">tap ☆ to rate · tap card = spec</div>
+    </div></div>
+    <div class="phone"><span class="cap">tray open (mid-zone)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <span class="chip ac" style="top:44px; right:10px;">☆ rate</span>
+        <div style="top:260px; left:12px; right:12px; display:flex; flex-direction:column; gap:6px;">
+          <div style="position:static; display:flex; gap:6px;">
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">cursed</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">brainrot</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">solid</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">corporate</span>
+          </div>
+          <span class="chip pk" style="position:static; text-align:center; background:rgba(18,18,18,.85);">fixture → cook with AI ($)</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Cleanest possible face — the brainrot IS the interface.</li>
+        <li class="good">Caption zone structurally protected (tray opens mid-frame only).</li>
+        <li class="bad"><b>Vibe rating becomes two taps + discovery.</b> The vision wants taste-feedback cheap; hiding it drops rating volume.</li>
+        <li class="bad">The tray over the video mid-zone hides the render exactly while judging it.</li>
+        <li class="bad">On-demand tray needs open/close state machinery + an extra dismiss gesture that competes with tap-= spec.</li>
+        <li class="bad">Cook affordance invisible until discovered — the money path should be one glance.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ C — LETTERBOX PLATE ════════════════ -->
+<section class="opt" id="opt-c">
+  <h2>C — Letterbox plate: caption on an opaque matte inside the frame</h2>
+  <p class="thesis">Split the 9:16 card internally: video letterboxed to the top ~76%, caption typeset on an opaque
+  matte plate in the bottom ~24%. Chrome may overlay the VIDEO region only; the plate is inviolate by construction.
+  The caption stops being a scrim-over-video and becomes a title card.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t); background:var(--pbg);">
+        <div class="vid-fill" style="left:0; right:0; top:0; height:500px;">
+          <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+          <span class="chip pk" style="top:10px; left:10px;">#3</span>
+          <div style="bottom:10px; left:10px; right:10px; display:flex; gap:6px;">
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">cursed</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">brainrot</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">solid</span>
+            <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">corporate</span>
+          </div>
+        </div>
+        <div style="top:500px; left:0; right:0; bottom:0; border-top:1px solid var(--pline); padding:14px;">
+          <div class="meme" style="position:static; font-size:26px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">cooking (log over video only)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t); background:var(--pbg);">
+        <div class="vid-fill" style="left:0; right:0; top:0; height:500px;">
+          <span class="chip wa" style="top:10px; right:10px;">agent cooking</span>
+          <div style="bottom:10px; left:10px; right:10px; border:1px solid var(--acid); background:var(--pwash); color:var(--acid); font:11px/1.55 var(--mono); padding:9px 11px;">
+            <b style="color:var(--pink-t); text-transform:uppercase;">agent cooking…</b><br>cargo test --workspace<br>Compiling doomscrum v0.1.0
+          </div>
+        </div>
+        <div style="top:500px; left:0; right:0; bottom:0; border-top:1px solid var(--pline); padding:14px;">
+          <div class="meme" style="position:static; font-size:26px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Perfect caption legibility — opaque plate, no scrim gamble against bright frames.</li>
+        <li class="good">Simple invariant: plate = caption only, forever.</li>
+        <li class="bad"><b>The video loses ~24% of its height inside an already-small frame</b> — the brainrot is the hook and this shrinks the hook. 9:16 renders get letterboxed or cropped a second time.</li>
+        <li class="bad">Vibe/cook still overlay the video → the mid-frame collision moves, not solves.</li>
+        <li class="bad">Breaks the TikTok full-bleed idiom the whole product leans on; reads as a media library tile.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ D — EDGE ACTION RAIL ════════════════ -->
+<section class="opt" id="opt-d">
+  <h2>D — Edge action rail: TikTok's own answer</h2>
+  <p class="thesis">Adopt the native shortform anatomy wholesale: a vertical glyph stack hugging the frame's right edge
+  (rate ☆, cook $, spec ¶, PR ↗), caption bottom-LEFT with a reserved right gutter. Status chips top-left. The vibe
+  choice expands inline from the ☆ glyph. It's the grammar every TikTok user already knows.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; left:10px;">fresh</span>
+        <div style="right:10px; bottom:120px; display:flex; flex-direction:column; gap:10px;">
+          <span class="chip" style="position:static; text-align:center; background:rgba(18,18,18,.85);">☆<br>rate</span>
+          <span class="chip pk" style="position:static; text-align:center; background:rgba(18,18,18,.85);">$<br>cook</span>
+          <span class="chip" style="position:static; text-align:center; background:rgba(18,18,18,.85);">¶<br>spec</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:84px; bottom:18px; font-size:27px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">pr opened</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ok" style="top:10px; left:10px;">pr opened</span>
+        <div style="right:10px; bottom:120px; display:flex; flex-direction:column; gap:10px;">
+          <span class="chip" style="position:static; text-align:center; background:rgba(18,18,18,.85);">☆<br>rate</span>
+          <span class="chip cy" style="position:static; text-align:center; background:rgba(18,18,18,.85);">↗<br>PR</span>
+          <span class="chip" style="position:static; text-align:center; background:rgba(18,18,18,.85);">¶<br>spec</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:84px; bottom:18px; font-size:27px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Zero learning curve — this is the anatomy the product parodies.</li>
+        <li class="good">Caption keeps the bottom; interactive stack never enters its zone (gutter reserved).</li>
+        <li class="bad"><b>The caption loses ~70px of width at 430w</b> — long spec titles (the norm: they're sentences) wrap to 5-6 lines and climb INTO the action stack's band anyway. The collision becomes vertical.</li>
+        <li class="bad">Vibe = 4 choices doesn't fold into one glyph without a second-level tray (option B's problem again).</li>
+        <li class="bad">Glyph stack over video hides render content on the right third — where sample renders put subject faces.</li>
+        <li class="bad">The position rail + edge stack + swipe hints = three vertical systems competing at the edges.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ E — STATE-EXCLUSIVE ZONE ════════════════ -->
+<section class="opt" id="opt-e">
+  <h2>E — State-exclusive bottom zone: one tenant at a time</h2>
+  <p class="thesis">Keep today's geometry but make the bottom zone single-tenant by law: caption by default; during
+  agent states (queued/cooking/failed) the logbox REPLACES the caption and the meme title migrates to a compact plate
+  at the frame top. Nothing ever stacks — the zone is swapped, not shared.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh (caption owns bottom)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <div style="bottom:150px; left:10px; right:10px; display:flex; gap:6px;">
+          <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">cursed</span>
+          <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">brainrot</span>
+          <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">solid</span>
+          <span class="chip" style="position:static; flex:1; text-align:center; background:rgba(18,18,18,.85);">corporate</span>
+        </div>
+        <div class="grad" style="left:0; right:0; bottom:0; height:200px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">cooking (log evicts caption; title → top plate)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <div style="top:0; left:0; right:0; background:rgba(18,18,18,.92); border-bottom:1px solid var(--pline); padding:10px 12px;">
+          <div class="meme" style="position:static; font-size:17px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        </div>
+        <span class="chip wa" style="top:56px; right:10px;">agent cooking</span>
+        <div style="bottom:14px; left:10px; right:10px; border:1px solid var(--acid); background:var(--pwash); color:var(--acid); font:11px/1.55 var(--mono); padding:9px 11px;">
+          <b style="color:var(--pink-t); text-transform:uppercase;">agent cooking…</b><br>cargo test --workspace<br>Compiling doomscrum v0.1.0
+        </div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Minimal geometric change from today; zone-swap is a pure render() rule.</li>
+        <li class="good">Log gets the full bottom width it wants for stack traces.</li>
+        <li class="bad"><b>The spec title teleports between top and bottom as states change</b> — the one fixed thing in the scan rhythm becomes the moving part. Polling flips states mid-glance.</li>
+        <li class="bad">Two typographic homes for the meme = two font scales; the hero register (clamp 20-34px) can't survive in a top plate without covering the video's face zone.</li>
+        <li class="bad">Vibe row still sits over the video above the caption; only the log collision is solved.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ F — BOTTOM SHEET ════════════════ -->
+<section class="opt" id="opt-f">
+  <h2>F — Bottom sheet: drag-revealed action tray</h2>
+  <p class="thesis">A grabber handle rides the frame's bottom edge below the caption. Dragging it up slides a sheet
+  over the lower half: vibe, cook, log tail, meta, PR — everything in one drawer. The card face is pure video +
+  caption + status chip. Actions are a gesture away, chrome is zero.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">sheet closed</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:34px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        <div style="bottom:8px; left:50%; transform:translateX(-50%); width:44px; height:4px; background:var(--pdead);"></div>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">sheet open</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <div style="bottom:0; left:0; right:0; height:330px; background:rgba(18,18,18,.96); border-top:1px solid var(--acid); padding:18px 14px;">
+          <div style="position:static; display:flex; gap:6px; margin-bottom:10px;">
+            <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+            <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+            <span class="chip" style="position:static; flex:1; text-align:center;">solid</span>
+            <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+          </div>
+          <span class="chip pk" style="position:static; display:inline-block; margin-bottom:10px;">fixture → cook with AI ($)</span><br>
+          <span class="mini-note" style="position:static;">fake-local/sample-ltx · 55fb039e9b</span>
+        </div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Absolute caption purity when closed; one drawer collects every secondary element including meta.</li>
+        <li class="bad"><b>Vertical drag is already the feed grammar</b> — ↑ skip / ↓ back. A drag-up sheet on the same surface is a gesture collision with the product's core verb set.</li>
+        <li class="bad">Vibe/cook drop to two interactions + discovery (option B's cost, plus gesture risk).</li>
+        <li class="bad">Sheet state × dispatch state × cook state = the largest state machine of any option.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ G — TOP HUD MERGE ════════════════ -->
+<section class="opt" id="opt-g">
+  <h2>G — Top HUD merge: one bar owns all page chrome</h2>
+  <p class="thesis">Consolidate ticker, repo chip, spend readout, egress chip and feed position into a single two-line
+  HUD at the top; delete the rail entirely (the counter replaces it). The card below keeps caption + status chip;
+  vibe/cook sit in a slim strip directly under the HUD, above the frame.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">fresh</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12 · $0.32</span></div>
+      <div style="top:33px; left:0; right:0; height:34px; border-bottom:1px solid var(--pline); background:var(--pbg); display:flex; align-items:center; gap:8px; padding:0 12px;">
+        <span class="chip cy" style="position:static;">repo: doomscrum</span>
+        <span class="chip wa" style="position:static;">egress</span>
+        <span class="chip pk" style="position:static;">cook ($)</span>
+      </div>
+      <div style="top:78px; left:0; right:0; height:36px; display:flex; gap:6px; padding:0 30px;">
+        <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">solid</span>
+        <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+      </div>
+      <div class="vid-fill" style="left:30px; right:30px; top:130px; height:640px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:14px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Kills three fixed-position collisions at once (rail, spend/egress stack, ticker overflow).</li>
+        <li class="good">Caption zone free; frame can stay 92vw wide since the rail is gone.</li>
+        <li class="bad"><b>Vibe divorced from the card it rates</b> — a strip above the frame reads as page chrome, not a judgment ON this render. Rating volume and attribution both suffer.</li>
+        <li class="bad">Two chrome bars + action strip ≈ 115px of top dead zone before video starts; the feed stops feeling full-bleed.</li>
+        <li class="bad">Scope creep: this restyles the page shell, which the card explicitly walls off ("not a re-skin"). Its counter idea, though, is worth stealing.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ H — FLIP CARD ════════════════ -->
+<section class="opt" id="opt-h">
+  <h2>H — Flip card: video face / dossier back</h2>
+  <p class="thesis">The card has two faces. Front: video + caption + status chip, nothing else. A corner "ⓘ" (or
+  double-tap) flips to the back: a dossier with vibe, cook, log, meta, PR, review verdict on a matte surface. Judgment
+  on the front, administration on the back.</p>
+  <div class="row">
+    <div class="phone"><span class="cap">front</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div class="vid-fill" style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t);">
+        <span class="chip ac" style="top:10px; right:10px;">fresh</span>
+        <span class="chip" style="bottom:14px; right:10px;">ⓘ</span>
+        <div class="grad" style="left:0; right:0; bottom:0; height:220px;"></div>
+        <div class="meme" style="left:14px; right:60px; bottom:18px; font-size:30px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+      </div>
+    </div></div>
+    <div class="phone"><span class="cap">back (dossier)</span><div class="vp">
+      <div class="t-ticker">DOOMSCRUM<span class="pos">3/12</span></div>
+      <div style="left:30px; right:30px; top:118px; height:657px; border:1px solid var(--pink-t); background:var(--pwash); padding:16px;">
+        <div class="meme" style="position:static; font-size:20px; margin-bottom:14px;">STAND UP CI: EVERY PR GETS CLIPPY, TESTS</div>
+        <div style="position:static; display:flex; gap:6px; margin-bottom:12px;">
+          <span class="chip" style="position:static; flex:1; text-align:center;">cursed</span>
+          <span class="chip" style="position:static; flex:1; text-align:center;">brainrot</span>
+          <span class="chip ac" style="position:static; flex:1; text-align:center;">solid</span>
+          <span class="chip" style="position:static; flex:1; text-align:center;">corporate</span>
+        </div>
+        <span class="chip pk" style="position:static; display:inline-block; margin-bottom:12px;">fixture → cook with AI ($)</span>
+        <div class="mini-note" style="position:static; display:block; margin-bottom:8px;">fake-local/sample-ltx · 55fb039e9b</div>
+        <span class="chip ok" style="position:static;">fast-merge 12L</span>
+        <span class="chip cy" style="position:static; margin-left:6px;">PR ↗</span>
+      </div>
+    </div></div>
+    <div class="notes">
+      <h3>Trade</h3>
+      <ul>
+        <li class="good">Cleanest separation of judgment vs administration; the back has infinite room (log, meta, review, PR all breathe).</li>
+        <li class="bad"><b>Agent progress becomes invisible</b> — the states that most need ambient legibility (cooking, queued-undo, failed) hide on the back. The undo window expiring while flipped is a real trust failure.</li>
+        <li class="bad">Flip fights tap-=spec; double-tap fights video pause; corner ⓘ near caption re-crowds it.</li>
+        <li class="bad">Flip animation is exactly the "nothing moves unprompted" budget the aesthetic pass spent down.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ VERDICT ════════════════ -->
+<section class="opt" id="opt-v">
+  <h2>★ Verdict</h2>
+  <table>
+    <tr><th>Option</th><th>Caption sacred in ALL states</th><th>Vibe/cook one glance away</th><th>Agent states legible</th><th>Video full-bleed kept</th><th>Diff risk</th></tr>
+    <tr><td><b>A — status ledge</b></td><td class="good">yes, structurally</td><td class="good">yes</td><td class="good">yes (top HUD)</td><td>≈ (86vw)</td><td class="good">low</td></tr>
+    <tr><td>B — on demand</td><td class="good">yes</td><td class="bad">no (2 taps + discovery)</td><td>partial</td><td class="good">yes</td><td>med</td></tr>
+    <tr><td>C — letterbox</td><td class="good">yes</td><td>overlay mid-video</td><td>partial</td><td class="bad">no (−24% video)</td><td>med</td></tr>
+    <tr><td>D — edge rail</td><td class="bad">no (long titles climb)</td><td>partial (vibe nested)</td><td>partial</td><td>≈ (right third busy)</td><td>med</td></tr>
+    <tr><td>E — zone swap</td><td class="bad">title teleports</td><td class="good">yes</td><td class="good">yes</td><td class="good">yes</td><td>med</td></tr>
+    <tr><td>F — bottom sheet</td><td class="good">yes</td><td class="bad">no (gesture collision)</td><td>partial</td><td class="good">yes</td><td class="bad">high</td></tr>
+    <tr><td>G — top HUD</td><td class="good">yes</td><td class="bad">divorced from card</td><td class="good">yes</td><td class="bad">115px dead top</td><td class="bad">out of scope</td></tr>
+    <tr><td>H — flip card</td><td class="good">yes (front)</td><td class="bad">behind flip</td><td class="bad">hidden on back</td><td class="good">yes</td><td class="bad">high</td></tr>
+  </table>
+  <div class="verdict-box">
+    <h3>Winner: A — status ledge (borrowing G's position counter)</h3>
+    <p>A is the only anatomy that makes caption occlusion <em>structurally impossible</em> in every dispatch state —
+    the interactive layer is not inside the frame at all — without paying B/F/H's tax (affordances hidden behind
+    discovery or gestures, agent states going dark) or C/G's tax (shrinking the brainrot). The vision's two
+    non-negotiables decide it: "the brainrot communicates the spec" (caption zone is flow-only and pointer-inert,
+    log/undo/retry live in a top HUD, meta demoted to the tap-spec overlay) and "consequences are legible" (vibe,
+    cook-$, PR stay standing chrome, one glance and one tap away, and the cost confirmation graduates from
+    window.confirm to a styled overlay consistent with consent/egress).</p>
+    <p style="margin-top:8px">From G we steal exactly one idea: the ticker becomes brand + N/M position counter (no
+    marquee corpse, no mid-sentence ellipsis) — but the rail keeps its vertical dots, cleared by narrowing the frame
+    to 86vw. E's zone-swap and D's TikTok stack were the closest losers: E moves the one fixed thing in the scan
+    rhythm, D starves sentence-length spec titles of width.</p>
+    <p style="margin-top:8px"><b>Implementation contract:</b> same DOM ids (#card, .meme, consent ids) so gestures,
+    keyboard parity, reduced-motion, and the browser e2e suite survive untouched; ledge is a sibling of the card
+    inside a flex deck; status chips move inside the frame corners; logbox re-anchors top; cost overlay reuses the
+    picker/overlay pattern quoting planned USD + daily budget.</p>
+  </div>
+</section>
+
+</div>
+<script>
+  const tabs = document.getElementById("tabs");
+  tabs.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of tabs.querySelectorAll("button")) x.classList.toggle("on", x === b);
+    for (const s of document.querySelectorAll("section.opt")) s.classList.toggle("on", s.id === "opt-" + b.dataset.t);
+  });
+</script>
+</body>
+</html>
