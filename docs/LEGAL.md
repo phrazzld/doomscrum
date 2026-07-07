@@ -94,3 +94,56 @@ Practical policy for marketing redistribution:
 
 This review does not constitute legal advice. For commercial marketing use,
 confirm with counsel.
+
+## 2026-07-07 review — marketing site launch (doomscrum-902)
+
+Read the then-current ToS at both providers before wiring `site/` (fetched
+2026-07-07, not a paraphrase from memory):
+
+- **fal.ai** (`fal.ai/terms`): does not affirmatively grant ownership of
+  Output Content — "Company does not represent, warrant, or covenant that
+  any Output Content will be original, will not infringe rights of any third
+  party ... or otherwise entitle Company to any intellectual property rights
+  in any Output Content." Use is "at their own risk." This is a
+  **no-IP-warranty** posture, not an explicit redistribution prohibition —
+  materially different from a clause that bars marketing use outright.
+- **OpenRouter** (`openrouter.ai/terms` §6.1): "Your ownership rights in the
+  Output are set forth in the Model Terms for each Model you use" — defers
+  to the underlying model provider. Applies to the scriptwriter's text
+  output only; the video itself is a fal.ai render, not an OpenRouter output.
+
+Neither provider's terms were found to explicitly prohibit displaying
+generated video on a project's own marketing site. Both decline to warrant
+IP-cleanliness of outputs, which is a real, standing risk (see "fal.ai +
+model ToS" above) but not a blocker for a solo-operator, MIT-licensed,
+AI-generation-disclosed dev tool's own site — as opposed to a paid ad
+campaign or third-party redistribution.
+
+**Waiver (recorded, dated, scoped — not silent):**
+
+- **Provider-terms TODO — waived for the `site/` launch only.** The
+  Remotion demo cartridge (`demo/out/doomscrum-demo.mp4`, embedded at
+  `site/assets/demo.mp4`) splices in three real fal.ai-rendered brainrot
+  clips (`infomercial.mp4`, `cryptid_vlog.mp4`, `italian_brainrot.mp4`) to
+  show the actual product output — showing the brainrot format honestly is
+  core to the pitch (VISION.md: "the brainrot is load-bearing, not
+  decoration"). Given the no-explicit-prohibition finding above, AI
+  generation is disclosed on the site itself (not just README/LEGAL.md),
+  and there is no separate paid marketing campaign, this specific use is
+  waived. **Re-open before any paid ad spend, sponsored post, or
+  third-party redistribution** — that scenario needs the full per-model
+  (sora-2 / veo3.1 / seedance / ltx-2.3) terms check this file has always
+  called for. The site's autoplay hero loop
+  (`site/assets/hero-loop.mp4`) was deliberately re-cut to the `prHook`
+  beat only (0–3.2s, a Remotion UI composition of a real PR card) — it
+  contains zero third-party model output, so it carries none of this risk.
+- **Trademark TODO — waived for the `site/` launch, unaffected.** The
+  clearance requirement above is scoped to "commercial registration or
+  branding spend" (filing, paid campaigns). A GitHub Pages site for an
+  MIT-licensed solo project is neither; using the product's own name on its
+  own site does not trigger that gate. The trademark search itself stays
+  open and must close before any registration or paid branding spend.
+
+This still is not legal advice; both waivers are scoped to the specific
+`site/` launch described in Powder `doomscrum-902` and do not extend to
+future commercial use.

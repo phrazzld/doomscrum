@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DoomScrum — Backlog triage as a TikTok feed that actually ships code</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="DoomScrum turns the markdown specs rotting in your backlog into a swipeable video feed. Swipe right and a real coding agent opens a real pull request. Swipe left to skip — nothing mutates until you say so.">
+<meta name="theme-color" content="#121212">
+<link rel="icon" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon-512.png">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="DoomScrum — Backlog triage as a TikTok feed that actually ships code">
+<meta property="og:description" content="Swipe right on a spec and a real coding agent opens a real pull request. Two real PRs opened live on external repos — see the receipts.">
+<meta property="og:image" content="https://phrazzld.github.io/doomscrum/assets/og-card.jpg">
+<meta property="og:url" content="https://phrazzld.github.io/doomscrum/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DoomScrum — Backlog triage as a TikTok feed that actually ships code">
+<meta name="twitter:description" content="Swipe right on a spec and a real coding agent opens a real pull request. Two real PRs opened live on external repos — see the receipts.">
+<meta name="twitter:image" content="https://phrazzld.github.io/doomscrum/assets/og-card.jpg">
+
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#121212; --wash:#1b1b1b; --panel:#181818; --ink:#ededed; --muted:#a3a3a3; --dead:#939393; --line:#262626;
+    --acid:#b6ff2e; --pink:#ff2ea6; --cyan:#2ee6ff;
+    --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--font);-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .icon{width:1em;height:1em;display:inline-block;vertical-align:-0.15em;stroke:currentColor}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  header.top{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;max-width:760px;margin:0 auto}
+  .brand{font-weight:800;letter-spacing:-.01em;font-size:15px;display:flex;align-items:center;gap:8px}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--acid);box-shadow:0 0 10px var(--acid)}
+  .gh-link{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:99px;padding:6px 12px}
+  .gh-link:hover{color:var(--ink);border-color:var(--dead)}
+
+  /* Hero */
+  .hero{padding:44px 24px 8px;text-align:center}
+  .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin:0 0 18px}
+  h1{font-size:clamp(30px,5vw,44px);line-height:1.1;font-weight:800;letter-spacing:-.02em;margin:0 0 18px}
+  h1 .accent{color:var(--acid)}
+  .sub{color:var(--muted);font-size:17px;max-width:52ch;margin:0 auto 28px}
+  .cta-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-bottom:8px}
+  .code-pill{font:13px/1 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 16px;color:var(--acid);display:inline-flex;align-items:center;gap:8px}
+  .btn{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;text-decoration:none;padding:11px 18px;border-radius:8px}
+  .btn.primary{background:var(--pink);color:#0a0a0a}
+  .btn.ghost{border:1px solid var(--line);color:var(--ink)}
+  .btn.ghost:hover{border-color:var(--dead)}
+  .disclaimer-line{color:var(--dead);font-size:12px;margin-top:14px}
+
+  /* Proof strip */
+  section{padding:48px 24px;border-top:1px solid var(--line)}
+  .label{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dead);text-align:center;margin:0 0 22px;display:flex;align-items:center;justify-content:center;gap:8px}
+  .label .icon{color:var(--pink)}
+  .proof-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px;margin:0 auto}
+  .proof-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;text-decoration:none;transition:border-color .15s}
+  .proof-card:hover{border-color:var(--acid)}
+  .proof-time{font-size:26px;font-weight:800;color:var(--acid);font-family:var(--mono)}
+  .proof-repo{font-size:13px;color:var(--ink);margin:6px 0 4px;font-weight:600}
+  .proof-diff{font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .proof-note{text-align:center;color:var(--dead);font-size:12.5px;max-width:56ch;margin:18px auto 0}
+  .proof-note a{color:var(--muted);text-decoration:underline}
+
+  /* Hero loop */
+  .loop-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .phone{width:220px;border-radius:22px;overflow:hidden;border:1px solid var(--line);background:#000;box-shadow:0 20px 60px -20px rgba(182,255,46,.15)}
+  .phone video{width:100%;display:block}
+  .loop-caption{color:var(--muted);font-size:13.5px;text-align:center;max-width:40ch}
+
+  /* Demo video */
+  .demo-frame{max-width:520px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000}
+  .demo-frame video{width:100%;display:block;aspect-ratio:9/16}
+  .demo-caption{text-align:center;color:var(--muted);font-size:13.5px;margin-top:14px}
+
+  /* Gestures */
+  .gestures{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;max-width:640px;margin:0 auto}
+  .gesture{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 14px;text-align:center}
+  .gesture .icon{width:22px;height:22px;margin-bottom:8px}
+  .gesture.right .icon{color:var(--acid)}
+  .gesture.left .icon,.gesture.up .icon,.gesture.down .icon{color:var(--cyan)}
+  .gesture.tap .icon{color:var(--pink)}
+  .gesture b{display:block;font-size:13px;margin-bottom:4px}
+  .gesture span{font-size:11.5px;color:var(--muted);line-height:1.4}
+  .gesture-note{text-align:center;color:var(--dead);font-size:12.5px;margin-top:16px}
+
+  /* Quickstart */
+  .term{max-width:560px;margin:0 auto;background:#0a0a0a;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .term-bar{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .term-bar span{width:9px;height:9px;border-radius:50%;background:var(--line)}
+  .term pre{margin:0;padding:16px 18px;font:13px/1.7 var(--mono);color:var(--acid);overflow-x:auto}
+  .term pre .c{color:var(--dead)}
+  .term pre .fn{color:var(--cyan)}
+  .qs-note{text-align:center;color:var(--muted);font-size:13px;max-width:52ch;margin:16px auto 0}
+
+  /* Disclosure */
+  .disclosure{max-width:600px;margin:0 auto}
+  .disclosure ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  .disclosure li{display:flex;gap:10px;font-size:13.5px;color:var(--muted);line-height:1.6}
+  .disclosure li::before{content:"";flex:0 0 4px;width:4px;height:4px;border-radius:50%;background:var(--warn,#c49d72);margin-top:9px}
+  .disclosure a{color:var(--ink);text-decoration:underline}
+
+  footer{padding:32px 24px 48px;text-align:center;color:var(--dead);font-size:12.5px;border-top:1px solid var(--line)}
+  footer a{color:var(--muted);text-decoration:none}
+  footer a:hover{text-decoration:underline}
+  footer .foot-links{display:flex;gap:16px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+
+  @media (max-width:480px){
+    .proof-grid{grid-template-columns:1fr}
+    section{padding:36px 20px}
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<defs>
+<symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+<symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+<symbol id="i-arrow-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+<symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></symbol>
+<symbol id="i-shield-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="i-external-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+<symbol id="i-git-pull-request" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+</defs>
+</svg>
+
+<header class="top">
+  <span class="brand"><span class="dot"></span>doomscrum</span>
+  <a class="gh-link" href="https://github.com/phrazzld/doomscrum" target="_blank" rel="noopener">
+    <svg class="icon" viewBox="0 0 24 24"><use href="#i-git-pull-request"/></svg> GitHub
+  </a>
+</header>
+
+<main>
+  <section class="hero" style="border-top:none;padding-top:20px">
+    <p class="eyebrow">backlog-to-PR pipeline</p>
+    <h1>Backlog triage as a <span class="accent">TikTok feed</span> that actually ships code.</h1>
+    <p class="sub">DoomScrum reads the markdown specs rotting in your backlog and turns each one into a goofy shortform video. Swipe right and a real coding agent opens a fresh worktree, implements the spec, and opens a real pull request. Swipe left to skip — nothing mutates until you say so.</p>
+    <div class="cta-row">
+      <span class="code-pill"><svg class="icon" viewBox="0 0 24 24"><use href="#i-download"/></svg>brew install phrazzld/doomscrum/doomscrum</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/phrazzld/doomscrum" target="_blank" rel="noopener">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-external-link"/></svg> View on GitHub
+      </a>
+      <a class="btn ghost" href="#demo">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-down"/></svg> Watch it work
+      </a>
+    </div>
+    <p class="disclaimer-line">No account. No sandbox theater. Videos are AI-generated — disclosed below, not hidden.</p>
+  </section>
+
+  <section aria-labelledby="proof-label">
+    <p class="label" id="proof-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-git-pull-request"/></svg>real PRs opened by real swipes</p>
+    <div class="proof-grid">
+      <a class="proof-card" href="https://github.com/phrazzld/vanity/pull/123" target="_blank" rel="noopener">
+        <div class="proof-time">15m29s</div>
+        <div class="proof-repo">phrazzld/vanity#123</div>
+        <div class="proof-diff">+401 / −76 · swipe → open PR</div>
+      </a>
+      <a class="proof-card" href="https://github.com/misty-step/chrondle/pull/268" target="_blank" rel="noopener">
+        <div class="proof-time">9m57s</div>
+        <div class="proof-repo">misty-step/chrondle#268</div>
+        <div class="proof-diff">+124 / −6 · swipe → open PR</div>
+      </a>
+    </div>
+    <p class="proof-note">Both opened live against arbitrary external repos, unreviewed, left open for human review. The full evidence packet — including one honest failed run — is public: <a href="https://github.com/phrazzld/doomscrum/tree/master/docs/adoption/2026-07-07-gate0-external-dispatch" target="_blank" rel="noopener">docs/adoption/2026-07-07-gate0-external-dispatch</a>.</p>
+  </section>
+
+  <section aria-labelledby="loop-label">
+    <p class="label" id="loop-label">the moment a swipe becomes a PR</p>
+    <div class="loop-wrap">
+      <div class="phone">
+        <video autoplay muted loop playsinline preload="auto" width="220" height="391" aria-label="Looping clip of a real pull request card, opened by a swipe">
+          <source src="assets/hero-loop.mp4" type="video/mp4">
+        </video>
+      </div>
+      <p class="loop-caption">Real footage from the feed. This card exists because someone swiped right.</p>
+    </div>
+  </section>
+
+  <section id="demo" aria-labelledby="demo-label">
+    <p class="label" id="demo-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-right"/></svg>watch the whole loop</p>
+    <div class="demo-frame">
+      <video controls preload="none" poster="assets/demo-poster.jpg" playsinline aria-label="60-second demo: the pitch, the swipe, the pull request">
+        <source src="assets/demo.mp4" type="video/mp4">
+      </video>
+    </div>
+    <p class="demo-caption">60 seconds. The pitch, the swipe formats, the receipts.</p>
+  </section>
+
+  <section aria-labelledby="gestures-label">
+    <p class="label" id="gestures-label">the gestures</p>
+    <div class="gestures">
+      <div class="gesture right">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-right"/></svg>
+        <b>swipe right</b>
+        <span>dispatch a real agent, open a real PR</span>
+      </div>
+      <div class="gesture left">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-left"/></svg>
+        <b>swipe left</b>
+        <span>skip — spec stays untouched</span>
+      </div>
+      <div class="gesture up">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-up"/></svg>
+        <b>swipe up</b>
+        <span>skip, recorded durably</span>
+      </div>
+      <div class="gesture down">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-down"/></svg>
+        <b>swipe down</b>
+        <span>back to the previous spec</span>
+      </div>
+      <div class="gesture tap">
+        <svg class="icon" viewBox="0 0 24 24"><use href="#i-book-open"/></svg>
+        <b>tap</b>
+        <span>read the source spec — path + sha256</span>
+      </div>
+    </div>
+    <p class="gesture-note">Arrow keys mirror every gesture. Space pauses. Enter opens the spec. The first implement-swipe against a repo always confirms first — <b>Cook it / Cancel</b>.</p>
+  </section>
+
+  <section aria-labelledby="qs-label">
+    <p class="label" id="qs-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-terminal"/></svg>quickstart — under two minutes, no account</p>
+    <div class="term">
+      <div class="term-bar"><span></span><span></span><span></span></div>
+      <pre><span class="c"># macOS (Homebrew)</span>
+brew install phrazzld/doomscrum/doomscrum
+
+<span class="fn">doomscrum init</span>      <span class="c"># scaffold doomscrum.toml</span>
+<span class="fn">doomscrum doctor</span>    <span class="c"># check your setup</span>
+<span class="fn">doomscrum serve</span>     <span class="c"># 127.0.0.1:4173 — sample videos play immediately</span></pre>
+    </div>
+    <p class="qs-note">Bundled sample videos play with zero keys and zero config edits. Run <code>doomscrum generate</code> afterward to render your own repo's specs against real providers.</p>
+  </section>
+
+  <section aria-labelledby="legal-label">
+    <p class="label" id="legal-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-shield-alert"/></svg>legal &amp; safety, plainly stated</p>
+    <div class="disclosure">
+      <ul>
+        <li><span>Videos are <b>AI-generated</b>, derived from backlog spec text. Not verified fact, not real people, not real events.</span></li>
+        <li><span>Real rendering costs money and sends spec-derived text to OpenRouter and fal.ai. DoomScrum quotes the cost first and enforces hard spend caps. The fixture provider is free and never leaves your machine.</span></li>
+        <li><span>Right swipes launch real agents that modify real code and open real pull requests — there is no sandbox theater beyond what your agent CLI provides.</span></li>
+        <li><span>MIT licensed. Full disclosure, data-egress enumeration, and the pre-launch legal checklist: <a href="https://github.com/phrazzld/doomscrum/blob/master/docs/LEGAL.md" target="_blank" rel="noopener">docs/LEGAL.md</a>.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot-links">
+    <a href="https://github.com/phrazzld/doomscrum" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/phrazzld/doomscrum/blob/master/README.md" target="_blank" rel="noopener">README</a>
+    <a href="https://github.com/phrazzld/doomscrum/blob/master/docs/LEGAL.md" target="_blank" rel="noopener">Legal</a>
+    <a href="https://github.com/phrazzld/doomscrum/releases/latest" target="_blank" rel="noopener">Releases</a>
+  </div>
+  <p>MIT licensed. Built as a real backlog-to-PR pipeline, not a demo.</p>
+</footer>
+
+</body>
+</html>
