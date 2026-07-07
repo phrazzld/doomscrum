@@ -5,34 +5,40 @@ use anyhow::Result;
 use crate::backlog;
 use crate::providers::{cache_distinct_render_id, save_render, VideoRender};
 
-/// Bootstrap sample renders from `assets/samples/` into the renders directory
-/// when it is empty. Copies MP4s and creates provenance for the first N
+/// Sample brainrot clips embedded directly in the binary (not read from
+/// disk) so the demo cartridge works from a standalone release binary with
+/// no `assets/` directory alongside it — download-and-run, zero setup.
+/// Keep this list sorted the same way the old on-disk `sample_*.mp4` files
+/// were (alphabetical) so bootstrap order is stable across releases.
+const EMBEDDED_SAMPLES: &[(&str, &[u8])] = &[
+    (
+        "sample_ltx",
+        include_bytes!("../../assets/samples/sample_ltx.mp4"),
+    ),
+    (
+        "sample_seedance",
+        include_bytes!("../../assets/samples/sample_seedance.mp4"),
+    ),
+    (
+        "sample_veo3",
+        include_bytes!("../../assets/samples/sample_veo3.mp4"),
+    ),
+];
+
+/// Bootstrap embedded sample renders into the renders directory when it is
+/// empty. Writes the embedded MP4s and creates provenance for the first N
 /// backlog specs (up to the number of sample videos available).
 ///
-/// Returns the number of specs bootstrapped (0 if samples don't exist or
-/// renders already exist).
+/// Returns the number of specs bootstrapped (0 if renders already exist).
 pub fn bootstrap(
-    root: &Path,
     repo_path: &Path,
     backlog_dir: &str,
     max_items: usize,
     renders_dir: &Path,
 ) -> Result<usize> {
-    let samples_dir = root.join("assets").join("samples");
-    if !samples_dir.is_dir() {
+    if EMBEDDED_SAMPLES.is_empty() {
         return Ok(0);
     }
-
-    let mut sample_files: Vec<_> = std::fs::read_dir(&samples_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "mp4"))
-        .collect();
-
-    if sample_files.is_empty() {
-        return Ok(0);
-    }
-
-    sample_files.sort_by_key(|e| e.file_name());
 
     if is_renders_dir_populated(renders_dir)? {
         return Ok(0);
@@ -43,11 +49,10 @@ pub fn bootstrap(
         return Ok(0);
     }
 
-    let sample_count = sample_files.len().min(prds.len());
+    let sample_count = EMBEDDED_SAMPLES.len().min(prds.len());
     for i in 0..sample_count {
         let prd = &prds[i];
-        let sample = &sample_files[i % sample_files.len()];
-        let sample_path = sample.path();
+        let (sample_name, sample_bytes) = &EMBEDDED_SAMPLES[i % EMBEDDED_SAMPLES.len()];
 
         let id = cache_distinct_render_id(&format!("sample-{i}"));
         let dir = renders_dir.join(&prd.sha256);
@@ -55,13 +60,10 @@ pub fn bootstrap(
 
         let asset_file = format!("{id}.mp4");
         let asset_path = dir.join(&asset_file);
-        std::fs::copy(&sample_path, &asset_path)?;
+        std::fs::write(&asset_path, sample_bytes)?;
 
-        let model_tag = sample
-            .file_name()
-            .to_string_lossy()
+        let model_tag = sample_name
             .strip_prefix("sample_")
-            .and_then(|s| s.strip_suffix(".mp4"))
             .unwrap_or("sample")
             .to_string();
 
@@ -106,15 +108,30 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn no_samples_dir_returns_zero() {
+    fn embedded_samples_are_present() {
+        // The whole point of embedding (vs. reading assets/samples/ from
+        // disk) is that the demo cartridge works from a standalone release
+        // binary with no assets/ directory alongside it.
+        assert!(
+            !EMBEDDED_SAMPLES.is_empty(),
+            "release binary must carry its own sample clips"
+        );
+        for (name, bytes) in EMBEDDED_SAMPLES {
+            assert!(
+                !bytes.is_empty(),
+                "embedded sample {name} must not be empty"
+            );
+        }
+    }
+
+    #[test]
+    fn no_specs_returns_zero() {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
         std::fs::create_dir_all(repo.join("backlog.d")).unwrap();
-        let mut f = std::fs::File::create(repo.join("backlog.d").join("spec.md")).unwrap();
-        writeln!(f, "# Test\n\n## Goal\nDo it.\n").unwrap();
         let renders = root.path().join("renders");
 
-        let n = bootstrap(root.path(), &repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
         assert_eq!(n, 0);
     }
 
@@ -126,14 +143,10 @@ mod tests {
         let mut f = std::fs::File::create(repo.join("backlog.d").join("spec.md")).unwrap();
         writeln!(f, "# Test\n\n## Goal\nDo it.\n").unwrap();
 
-        let samples = root.path().join("assets").join("samples");
-        std::fs::create_dir_all(&samples).unwrap();
-        std::fs::write(samples.join("sample_test.mp4"), b"fake mp4").unwrap();
-
         let renders = root.path().join("renders");
         std::fs::create_dir_all(renders.join("some-sha")).unwrap();
 
-        let n = bootstrap(root.path(), &repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
         assert_eq!(n, 0);
     }
 
@@ -147,13 +160,9 @@ mod tests {
         let mut f = std::fs::File::create(repo.join("backlog.d").join("spec_b.md")).unwrap();
         writeln!(f, "# Spec B\n\n## Goal\nSecond goal.\n").unwrap();
 
-        let samples = root.path().join("assets").join("samples");
-        std::fs::create_dir_all(&samples).unwrap();
-        std::fs::write(samples.join("sample_one.mp4"), b"fake mp4 one").unwrap();
-
         let renders = root.path().join("renders");
 
-        let n = bootstrap(root.path(), &repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
         assert!(n >= 1, "should bootstrap at least one spec");
 
         let all = crate::providers::load_renders(&renders).unwrap();
@@ -163,7 +172,17 @@ mod tests {
             assert!(render.model.starts_with("sample-"));
             assert_eq!(render.degraded_reason.as_deref(), Some("sample video"));
             assert_eq!(render.status, "ready");
+
+            let asset_path = renders_dir_asset_path(&renders, render);
+            let bytes = std::fs::read(&asset_path).unwrap();
+            assert!(!bytes.is_empty(), "bootstrapped mp4 should have real bytes");
         }
+    }
+
+    fn renders_dir_asset_path(renders_dir: &Path, render: &VideoRender) -> std::path::PathBuf {
+        renders_dir
+            .join(&render.prd_sha256)
+            .join(&render.asset_file)
     }
 
     #[test]
@@ -174,14 +193,10 @@ mod tests {
         let mut f = std::fs::File::create(repo.join("backlog.d").join("spec.md")).unwrap();
         writeln!(f, "# Test\n\n## Goal\nDo it.\n").unwrap();
 
-        let samples = root.path().join("assets").join("samples");
-        std::fs::create_dir_all(&samples).unwrap();
-        std::fs::write(samples.join("sample_x.mp4"), b"mp4 content").unwrap();
-
         let renders = root.path().join("renders");
 
-        let first = bootstrap(root.path(), &repo, "backlog.d", 10, &renders).unwrap();
-        let second = bootstrap(root.path(), &repo, "backlog.d", 10, &renders).unwrap();
+        let first = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
+        let second = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
 
         assert!(first > 0);
         assert_eq!(second, 0, "second bootstrap should be a no-op");
