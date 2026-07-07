@@ -273,6 +273,19 @@
     transition: border-color var(--quick) var(--ease), color var(--quick) var(--ease);
   }
   .picker .cancel:hover { border-color: var(--ink); color: var(--ink); }
+  .picker-err {
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    color: var(--err); border: 1px solid var(--err);
+    padding: 8px 10px; margin: 10px 0 0;
+  }
+  .coach {
+    position: fixed; inset: 0; z-index: 60; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(0,0,0,.62);
+    font-family: var(--mono); font-size: 14px; color: var(--ink);
+  }
+  .coach b { color: var(--acid); font-size: 18px; }
+  .coach small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
   .consent-copy {
     font-family: var(--mono); font-size: 13px; line-height: 1.6;
     color: var(--ink); margin: 0 0 16px;
@@ -364,6 +377,7 @@
   <div class="head"><h2>sync a repo</h2><span class="hash">any repo with a backlog directory of markdown specs</span></div>
   <div class="picker">
     <input id="repoInput" placeholder="/path/to/repo (or ~/Development/...)" spellcheck="false" autocomplete="off">
+    <p class="picker-err" id="repoErr" style="display:none"></p>
     <button class="go" id="repoGo">sync it</button>
     <div class="lbl" id="recentsLbl" style="display:none">recent repos</div>
     <ul id="repoRecents"></ul>
@@ -373,9 +387,26 @@
 <div class="overlay" id="consentOverlay">
   <div class="head"><h2>dispatch a real agent?</h2><span class="hash" id="consentRepo"></span></div>
   <div class="picker">
-    <p class="consent-copy">This action launches a real coding agent in a fresh git worktree and opens a <b>real pull request</b>. This runs real commands and opens real PRs against this repo — not a preview.</p>
+    <p class="consent-copy" id="consentSpec" style="display:none"></p>
+    <p class="consent-copy">What happens next:<br>
+      1. a fresh git worktree is created off this repo<br>
+      2. a real coding agent implements this spec<br>
+      3. a <b>real pull request</b> opens against this repo — not a preview</p>
+    <p class="consent-copy" style="color:var(--muted)">Change your mind? The dispatch sits in a short queue window first — tap <b>cancel dispatch</b> on the card before the agent starts.</p>
     <button class="go" id="consentConfirm">Cook it — I get it</button>
     <button class="cancel" id="consentCancel">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="keyOverlay">
+  <button class="close" id="keyClose">close [esc]</button>
+  <div class="head"><h2>enable real AI video</h2><span class="hash">optional — the fixture feed stays free forever</span></div>
+  <div class="picker">
+    <p class="consent-copy" id="keyPricing">Real renders use fal.ai. Paste a FAL API key (fal.ai dashboard → keys) to enable them.</p>
+    <input id="keyInput" placeholder="FAL API key (id:secret)" spellcheck="false" autocomplete="off">
+    <p class="picker-err" id="keyErr" style="display:none"></p>
+    <button class="go" id="keySave">save key</button>
+    <button class="cancel" id="keyCancel">keep it free</button>
   </div>
 </div>
 
@@ -441,6 +472,22 @@
 
   function dollars(n) {
     return "$" + Number(n || 0).toFixed(2);
+  }
+
+  // Wallet exhaustion is not a dead-end: the fixture path is always free.
+  // 429 = daily cap (names the reset time); 402 = lifetime cap (names the
+  // exact config knob). Anything else passes through untouched.
+  function budgetRecoveryMessage(err) {
+    if (err.status === 429) {
+      const reset = err.body && err.body.reset_at
+        ? new Date(err.body.reset_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "midnight UTC";
+      return `daily AI budget spent — resets at ${reset}. fixture feed stays free: cook fixture instead`;
+    }
+    if (err.status === 402) {
+      return "lifetime AI budget spent — raise max_total_spend_usd in doomscrum.toml [video], or keep cooking free fixtures";
+    }
+    return err.message;
   }
 
   function confirmRealRenderCost(renderCount, plannedUsd) {
@@ -533,21 +580,34 @@
     lastSig = sig;
     lastCardSig = cardSig;
     if (!item) {
+      const r = window.__repo || {};
+      const backlogPath = (r.current || "<repo>") + "/" + (r.backlog_dir || "backlog.d");
       stage.innerHTML = `<div class="empty"><div>
         <h3>backlog is empty</h3>
-        <p>drop markdown specs into the backlog directory and reload</p>
+        <p>no markdown specs in <b>${esc(backlogPath)}/</b></p>
+        <button id="emptyPickRepo">sync a repo</button>
+        <button id="emptyReload">reload feed</button>
+        <p>or author specs: add markdown files to<br><b>${esc(backlogPath)}/*.md</b> — then reload</p>
       </div></div>`;
+      $("emptyPickRepo").onclick = () => openRepoPicker();
+      $("emptyReload").onclick = async () => {
+        showToast("reloading feed…");
+        try { await load(false); showToast(items.length ? "feed is back" : "still empty — sync a repo or add specs"); }
+        catch (e) { showToast(e.message, true); }
+      };
       return;
     }
     const { prd, render: vid, status } = item;
     if (!vid) {
+      const perRender = Number((window.__spend || {}).price_per_render_usd || 0);
       stage.innerHTML = `<div class="empty"><div>
         <h3>${esc(prd.title)}</h3>
-        <button id="cookFake">cook fixture feed</button>
-        ${window.__falConfigured ? '<button id="cookReal" class="ai">cook with AI ($)</button>' : ""}
+        <p>no video for this spec yet</p>
+        <button id="cookFake">cook fixture feed (free)</button>
+        ${window.__falConfigured ? '<button id="cookReal" class="ai">cook with AI ($)</button>' : '<button id="addKey" class="ai">add FAL key → real AI video</button>'}
         <p>${window.__falConfigured
-            ? "AI cook sends spec-derived prompts to fal.ai — content leaves this machine"
-            : "set FAL_API_KEY to enable real AI video"}</p>
+            ? `fixture = free local placeholder, instant. AI ≈ ${dollars(perRender)}/render and sends spec-derived prompts to fal.ai — content leaves this machine`
+            : "fixture = free local placeholder, instant. real AI video is optional — add a fal.ai key in-app, no terminal needed"}</p>
       </div></div>`;
       const cook = async (provider) => {
         const real = provider === "fal";
@@ -564,11 +624,13 @@
           if (result === null) { showToast("AI cook cancelled"); return; }
           await load();
           showToast("feed is cooked");
-        } catch (e) { showToast(e.message, true); }
+        } catch (e) { showToast(budgetRecoveryMessage(e), e.status !== 429 && e.status !== 402); }
       };
       $("cookFake").onclick = () => cook("fake");
       const real = $("cookReal");
       if (real) real.onclick = () => cook("fal");
+      const addKey = $("addKey");
+      if (addKey) addKey.onclick = () => openKeySheet();
       return;
     }
 
@@ -632,7 +694,7 @@
           if (result === null) { showToast("AI cook cancelled"); return; }
           showToast("AI render kicked off — watch the sticker");
           await load();
-        } catch (err) { showToast(err.message, true); }
+        } catch (err) { showToast(budgetRecoveryMessage(err), err.status !== 429 && err.status !== 402); }
       };
     }
     bindGestures($("card"), video);
@@ -812,14 +874,23 @@
       showToast(`synced → ${r.name}`);
       await refreshRepoChip();
       await load(false);
-    } catch (e) { showToast(e.message, true); }
+    } catch (e) {
+      // Stay in the picker with the failure named in place — pick a recent
+      // repo, fix the path, or close. Never a bare error toast dead-end.
+      const err = $("repoErr");
+      const dir = (window.__repo && window.__repo.backlog_dir) || "backlog.d";
+      err.textContent = `${e.message} — a syncable repo is any directory with a ${dir}/ of markdown specs. fix the path or pick a recent repo below.`;
+      err.style.display = "block";
+    }
   }
 
-  $("repoChip").onclick = () => {
+  function openRepoPicker() {
     $("repoInput").value = "";
+    $("repoErr").style.display = "none";
     repoOverlay.classList.add("show");
     $("repoInput").focus();
-  };
+  }
+  $("repoChip").onclick = openRepoPicker;
   $("repoClose").onclick = () => repoOverlay.classList.remove("show");
   $("repoGo").onclick = () => switchRepo($("repoInput").value.trim());
   $("repoInput").addEventListener("keydown", (e) => {
@@ -859,6 +930,14 @@
     if (key) { try { consented = localStorage.getItem(key) === "1"; } catch {} }
     if (consented) return true;
     $("consentRepo").textContent = "repo: " + ((window.__repo && window.__repo.name) || "this repo");
+    const spec = items[idx];
+    const specLine = $("consentSpec");
+    if (spec) {
+      specLine.innerHTML = "spec: <b>" + esc(spec.prd.title) + "</b>";
+      specLine.style.display = "block";
+    } else {
+      specLine.style.display = "none";
+    }
     consentOverlay.classList.add("show");
     return new Promise((resolve) => { consentResolve = resolve; });
   }
@@ -866,6 +945,51 @@
   $("consentCancel").onclick = () => settleConsent(false);
   consentOverlay.addEventListener("pointerdown", (e) => {
     if (e.target === consentOverlay) settleConsent(false);
+  });
+
+  // --- in-app FAL key sheet (never required for the free path) -------
+  const keyOverlay = $("keyOverlay");
+  function openKeySheet() {
+    const s = window.__spend || {};
+    const per = Number(s.price_per_render_usd || 0);
+    $("keyPricing").innerHTML =
+      `Real renders use fal.ai at about <b>${dollars(per)} per render</b>. ` +
+      `Your starter budget is already set and enforced: <b>${dollars(s.daily_cap_usd)}/day</b>, ` +
+      `<b>${dollars(s.cap_usd)} lifetime</b> (change in doomscrum.toml [video]). ` +
+      `Spec-derived prompts leave this machine only when you cook with AI. ` +
+      `Paste a FAL API key (fal.ai dashboard → keys):`;
+    $("keyErr").style.display = "none";
+    $("keyInput").value = "";
+    keyOverlay.classList.add("show");
+    $("keyInput").focus();
+  }
+  async function saveKey() {
+    const key = $("keyInput").value.trim();
+    const err = $("keyErr");
+    err.style.display = "none";
+    try {
+      await api("/api/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "fal", key }),
+      });
+      keyOverlay.classList.remove("show");
+      showToast("FAL key saved — AI cook unlocked ($)");
+      await load(false);
+    } catch (e) {
+      err.textContent = e.message;
+      err.style.display = "block";
+    }
+  }
+  $("keySave").onclick = saveKey;
+  $("keyCancel").onclick = () => keyOverlay.classList.remove("show");
+  $("keyClose").onclick = () => keyOverlay.classList.remove("show");
+  $("keyInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveKey();
+    e.stopPropagation();
+  });
+  keyOverlay.addEventListener("pointerdown", (e) => {
+    if (e.target === keyOverlay) keyOverlay.classList.remove("show");
   });
 
   // --- data-egress disclosure panel (022, security lane) -------------
@@ -912,6 +1036,10 @@
       if (e.key === "Escape") egressOverlay.classList.remove("show");
       return;
     }
+    if (keyOverlay.classList.contains("show")) {
+      if (e.key === "Escape") keyOverlay.classList.remove("show");
+      return;
+    }
     if (overlay.classList.contains("show")) {
       if (e.key === "Escape") overlay.classList.remove("show");
       return;
@@ -934,11 +1062,40 @@
     if (e.target === overlay) overlay.classList.remove("show");
   });
 
+  // One-time gesture coach: a pointer-transparent layer over the first card
+  // naming the grammar. The video keeps playing beneath it; the user's first
+  // real gesture goes straight through AND dismisses the coach for good.
+  const COACH_KEY = "doomscrum.coach_seen";
+  function maybeShowCoach() {
+    try { if (localStorage.getItem(COACH_KEY) === "1") return; } catch {}
+    if (!items.length) return; // nothing to gesture at — the empty states teach
+    const coach = document.createElement("div");
+    coach.className = "coach";
+    coach.id = "coach";
+    coach.innerHTML =
+      "<div><b>→</b> ship it — real agent, real PR</div>" +
+      "<div><b>←</b> skip — spec untouched</div>" +
+      "<div><b>tap</b> read the spec</div>" +
+      "<div><b>↓</b> previous card</div>" +
+      "<small>swipe anywhere to start</small>";
+    document.body.appendChild(coach);
+    const dismiss = () => {
+      coach.remove();
+      try { localStorage.setItem(COACH_KEY, "1"); } catch {}
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", dismiss, true);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", dismiss, true);
+  }
+
   splash.addEventListener("pointerdown", () => {
     started = true;
     splash.remove();
     const v = $("vid");
     if (v) { v.muted = false; v.play().catch(() => {}); }
+    // Next tick, so the same tap's events can't instantly dismiss the coach.
+    setTimeout(maybeShowCoach, 0);
   });
 
   setInterval(() => { if (started) load().catch(() => {}); }, 4000);

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DoomScrum — first-run on-ramp lab (doomscrum-942)</title>
+<style>
+  :root {
+    --bg: #0b0b0e; --panel: #131318; --ink: #e8e8ec; --muted: #8b8b96;
+    --acid: #c8ff00; --cyan: #29d3e0; --err: #ff5470; --warn: #ffb020;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, "Segoe UI", sans-serif; padding: 32px 20px 80px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: -.02em; }
+  h1 small { display: block; color: var(--muted); font-size: 13px; font-weight: 400; margin-top: 4px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; position: sticky; top: 0; background: var(--bg); padding: 12px 0; z-index: 5; }
+  .tabs button { background: var(--panel); border: 1px solid #2a2a33; color: var(--muted); padding: 7px 12px; font: 12px var(--mono); cursor: pointer; text-transform: uppercase; letter-spacing: .06em; }
+  .tabs button.on { border-color: var(--acid); color: var(--acid); }
+  section.opt { display: none; }
+  section.opt.on { display: block; animation: in .2s ease both; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+  .opt h2 { font-size: 20px; margin-bottom: 4px; }
+  .opt .thesis { color: var(--muted); max-width: 72ch; margin-bottom: 20px; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .phone { width: 260px; height: 470px; background: #000; border: 2px solid #2a2a33; border-radius: 22px; padding: 14px 12px; position: relative; overflow: hidden; flex: none; font-size: 12px; }
+  .phone .label { position: absolute; top: -2px; left: 0; right: 0; text-align: center; font: 10px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; background: #131318; padding: 3px; }
+  .card { position: absolute; inset: 34px 12px 14px; border: 1px solid #26262e; border-radius: 12px; background: linear-gradient(160deg, #17171d, #0d0d11); padding: 14px; display: flex; flex-direction: column; }
+  .vid { background: repeating-linear-gradient(45deg, #17202a, #17202a 8px, #131a22 8px, #131a22 16px); border-radius: 8px; height: 42%; display: flex; align-items: center; justify-content: center; color: var(--cyan); font: 11px var(--mono); }
+  .btn { display: inline-block; background: var(--acid); color: #000; font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-radius: 4px; margin: 4px 4px 0 0; }
+  .btn.ghost { background: transparent; color: var(--acid); border: 1px solid var(--acid); }
+  .btn.cy { background: var(--cyan); }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .mock-h { font-weight: 700; font-size: 14px; margin: 8px 0 2px; }
+  .notes { flex: 1; min-width: 280px; max-width: 480px; }
+  .notes h3 { font: 12px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px; }
+  .notes ul { padding-left: 18px; }
+  .notes li { margin: 4px 0; }
+  .good { color: var(--acid); } .bad { color: var(--err); }
+  .coach { position: absolute; inset: 34px 12px 14px; border-radius: 12px; background: rgba(0,0,0,.72); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font: 12px var(--mono); }
+  .coach b { color: var(--acid); }
+  .chk { font: 11px var(--mono); border: 1px solid #2a2a33; border-radius: 6px; padding: 8px; margin-top: 8px; }
+  .chk .done { color: var(--acid); } .chk .todo { color: var(--muted); }
+  .verdict { margin-top: 44px; border: 1px solid var(--acid); padding: 20px 22px; border-radius: 8px; background: #10140a; }
+  .verdict h2 { color: var(--acid); }
+  code { font-family: var(--mono); font-size: .9em; color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>First-run on-ramp lab <small>doomscrum-942 · every empty state becomes an on-ramp · 8 structurally distinct options · self-contained mocks</small></h1>
+<p class="thesis" style="color:var(--muted);max-width:80ch">Design question: how does a stranger get from <code>doomscrum serve</code> to a playing sample video (&lt;60s) and a first consented dispatch (&lt;2min) without ever leaving the app — and what does every dead-end (empty backlog, unrendered spec, no key, bad repo path, exhausted wallet) offer as its one obvious next action?</p>
+
+<div class="tabs" id="tabs"></div>
+
+<!-- A -->
+<section class="opt" data-name="A · Feed-native on-ramp cards">
+  <h2>A — Feed-native on-ramp cards</h2>
+  <p class="thesis">No wizard, no new chrome. Every empty/error state renders <em>as a feed card</em> with the same visual grammar as a video card: a headline, one primary action, one secondary, and exact-path copy when file edits are genuinely required.</p>
+  <div class="row">
+    <div class="phone"><span class="label">empty backlog</span>
+      <div class="card">
+        <div class="vid">no specs found</div>
+        <div class="mock-h">backlog is empty</div>
+        <div class="hint">this repo has no specs in <code>backlog.d/</code></div>
+        <div><span class="btn">sync a repo</span><span class="btn ghost">reload feed</span></div>
+        <div class="hint">or drop markdown specs into<br><code>~/code/myrepo/backlog.d/*.md</code> and reload</div>
+      </div>
+    </div>
+    <div class="phone"><span class="label">unrendered spec, no key</span>
+      <div class="card">
+        <div class="vid">no video yet</div>
+        <div class="mock-h">Fix the login flow</div>
+        <div class="hint">this spec has no video yet. fixture = free local placeholder, instant.</div>
+        <div><span class="btn">cook fixture (free)</span><span class="btn cy">add FAL key → AI video</span></div>
+        <div class="hint">AI renders cost ~$0.35 each and send spec text to fal.ai — never required</div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Preserves the feed-first identity — recovery lives where the failure happened.</li>
+        <li class="good">Smallest diff: extends the existing <code>render()</code> empty branches.</li>
+        <li class="good">Exact-command copy only where file edits are truly required (authoring specs).</li>
+        <li class="bad">No global "where am I in setup" view.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- B -->
+<section class="opt" data-name="B · Quest checklist chip">
+  <h2>B — Persistent quest checklist</h2>
+  <p class="thesis">A "setup" chip beside the repo chip tracks four steps (repo → feed → key → first dispatch). Tapping it opens a checklist; each unfinished row is a button that performs or opens the fix.</p>
+  <div class="row">
+    <div class="phone"><span class="label">checklist open</span>
+      <div class="card">
+        <div class="mock-h">get cooking</div>
+        <div class="chk"><div class="done">✓ repo synced — doomscrum</div><div class="done">✓ feed playing (3 samples)</div><div class="todo">○ FAL key — enable AI renders (~$0.35 ea) →</div><div class="todo">○ first dispatch — swipe right on a spec →</div></div>
+        <div class="hint">chip disappears once all four are done</div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Gives strangers a persistent map; measurable funnel.</li>
+        <li class="good">Familiar pattern (game quests, Linear onboarding).</li>
+        <li class="bad">New standing chrome for a one-time need; the key step nags the free path (019's oracle says the key is never required).</li>
+        <li class="bad">Doesn't fix dead-ends in place — you still need per-state recovery.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- C -->
+<section class="opt" data-name="C · Story splash wizard">
+  <h2>C — Story-mode splash (3 slides)</h2>
+  <p class="thesis">Expand the tap-in splash into three swipeable slides: (1) what this is, (2) the gesture grammar, (3) what right-swipe really does + costs. Feed starts after slide 3 or "skip".</p>
+  <div class="row">
+    <div class="phone"><span class="label">slide 2 of 3</span>
+      <div class="card" style="justify-content:center;text-align:center">
+        <div class="mock-h" style="font-size:18px">the grammar</div>
+        <div class="hint" style="font-size:13px;line-height:2">→ dispatch a real agent → PR<br>← skip, spec untouched<br>tap — read the spec<br>↓ previous card</div>
+        <div style="margin-top:12px"><span class="btn">next</span><span class="btn ghost">skip intro</span></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Everything taught before the first card; consent framing pre-loaded.</li>
+        <li class="bad">Delays time-to-playing-video — works against the &lt;60s oracle.</li>
+        <li class="bad">Wizard energy is off-brand for a brainrot feed; skippers learn nothing.</li>
+        <li class="bad">Doesn't address empty/error states at all — a second system still needed.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- D -->
+<section class="opt" data-name="D · One-time gesture coach">
+  <h2>D — Coach layer on the first card</h2>
+  <p class="thesis">After the splash, the first card renders with a translucent one-time coach overlay naming the four gestures in place. Any interaction dismisses it forever (localStorage). Zero delay to the playing video underneath.</p>
+  <div class="row">
+    <div class="phone"><span class="label">first card + coach</span>
+      <div class="card"><div class="vid">▶ sample playing</div><div class="mock-h">Ship dark mode</div><div class="hint">sample-veo3 · a1b2c3</div></div>
+      <div class="coach"><div><b>→</b> ship it (real agent, real PR)</div><div><b>←</b> skip (spec untouched)</div><div><b>tap</b> read the spec</div><div><b>↓</b> previous card</div><div class="hint">swipe anywhere to start</div></div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Teaches the grammar at the moment of first use; video keeps playing under it.</li>
+        <li class="good">One-time, self-dismissing, ~30 lines.</li>
+        <li class="bad">Alone it fixes none of the dead-ends — pairs with A or E.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- E -->
+<section class="opt" data-name="E · Universal fix-it sheet">
+  <h2>E — Universal "fix it" recovery sheet</h2>
+  <p class="thesis">One shared bottom sheet for all failures: any dead-end (bad repo path, empty backlog, 429, no key) opens the same sheet listing the ranked next actions with the failure detail at top.</p>
+  <div class="row">
+    <div class="phone"><span class="label">after a bad repo path</span>
+      <div class="card">
+        <div class="hint" style="color:var(--err)">✗ /Users/x/nope has no backlog.d/</div>
+        <div class="mock-h">get unstuck</div>
+        <div><span class="btn">pick a recent repo</span></div>
+        <div><span class="btn ghost">retry path</span></div>
+        <div><span class="btn ghost">reload feed</span></div>
+        <div class="hint">a syncable repo is any directory with a backlog.d/ of markdown specs</div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">One consistent recovery affordance; easy to guarantee "no dead-end" invariant.</li>
+        <li class="bad">Generic sheet = worse copy than in-place recovery; failure context gets flattened.</li>
+        <li class="bad">Extra hop: failure → sheet → fix, vs fixing where you stand.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- F -->
+<section class="opt" data-name="F · In-app doctor panel">
+  <h2>F — In-app doctor panel</h2>
+  <p class="thesis">Mirror the CLI's excellent <code>doctor</code> (6 named checks) as an in-app panel behind a chip; each failing check carries a fix button or the exact command.</p>
+  <div class="row">
+    <div class="phone"><span class="label">doctor chip open</span>
+      <div class="card">
+        <div class="mock-h">doctor</div>
+        <div class="chk"><div class="done">✓ repo · ✓ backlog (12 specs) · ✓ ffmpeg</div><div class="done">✓ renders dir writable</div><div class="todo">✗ FAL key — <u>add key</u></div><div class="todo">✗ gh auth — run: gh auth login</div></div>
+        <div class="hint">green = swipe away</div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Reuses a proven mental model; complete diagnosis surface.</li>
+        <li class="good">Names exact commands where terminal work is genuinely required (gh auth).</li>
+        <li class="bad">Diagnostic, not narrative — doesn't teach the first swipe or frame consequence.</li>
+        <li class="bad">Larger build (new API surface exposing preflight) for a stranger who mostly needs 2 buttons.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- G -->
+<section class="opt" data-name="G · Mission-briefing consent">
+  <h2>G — Consequence-framed consent (mission briefing)</h2>
+  <p class="thesis">The existing one-time consent overlay grows a consequence frame: THIS spec's title, THIS repo, and the three things that happen next, plus the undo window. The held-breath moment gets its copy.</p>
+  <div class="row">
+    <div class="phone"><span class="label">first right swipe</span>
+      <div class="card">
+        <div class="mock-h">dispatch a real agent?</div>
+        <div class="hint" style="color:var(--ink)">spec: <b>Fix the login flow</b><br>repo: <b>doomscrum</b></div>
+        <div class="hint">1. a fresh git worktree is created<br>2. a coding agent implements this spec<br>3. a real pull request opens on this repo</div>
+        <div class="hint">undo: cancel on the card during the queue window (~5s)</div>
+        <div><span class="btn">Cook it — I get it</span><span class="btn ghost">cancel</span></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Exactly what the vision calls for: names what's about to happen, then delights.</li>
+        <li class="good">Extends an existing shipped overlay — consent gate + undo preserved by construction.</li>
+        <li class="bad">Only covers the dispatch moment; pairs with A/D for the rest.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- H -->
+<section class="opt" data-name="H · Ghost-hand demo">
+  <h2>H — Ghost-hand auto-demo</h2>
+  <p class="thesis">On first run the top sample card animates itself: a ghost cursor drags it right to the threshold, the consent overlay peeks, then snaps back. Show, don't tell.</p>
+  <div class="row">
+    <div class="phone"><span class="label">auto-demo mid-drag</span>
+      <div class="card" style="transform:rotate(6deg) translateX(30px)"><div class="vid">▶ sample playing</div><div class="mock-h">Ship dark mode</div><div class="hint" style="color:var(--acid)">→ ship it</div></div>
+    </div>
+    <div class="notes">
+      <h3>tradeoffs</h3>
+      <ul>
+        <li class="good">Most delightful teach; zero reading.</li>
+        <li class="bad">Risky near a real dispatch trigger; motion+state machinery is the biggest build here.</li>
+        <li class="bad">Fires once, helps nobody who blinked; still needs per-state recovery design.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="verdict">
+  <h2>Winner: A + D + G composite (in-place on-ramps · one-time coach · briefing consent)</h2>
+  <p style="margin-top:8px">B (checklist) and F (doctor panel) add standing chrome for a one-time need and nag the free path; C (wizard) works against the &lt;60s oracle; E (universal sheet) flattens failure context; H (ghost demo) is the largest build for the least durable teaching. A, D, and G are complementary, not competing: A fixes every dead-end <em>in place</em> with one obvious action, D teaches the grammar at zero cost to time-to-video, and G gives the held-breath moment its consequence frame while preserving the shipped consent gate and undo window. The key sheet (from A's "add FAL key" action) is a single shared overlay quoting per-render price and the starter budget, never required for the free path. Smallest surface, feed-first identity intact.</p>
+</div>
+
+</div>
+<script>
+  const opts = [...document.querySelectorAll("section.opt")];
+  const tabs = document.getElementById("tabs");
+  opts.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.textContent = s.dataset.name;
+    b.onclick = () => { opts.forEach((o) => o.classList.remove("on")); [...tabs.children].forEach((t) => t.classList.remove("on")); s.classList.add("on"); b.classList.add("on"); };
+    tabs.appendChild(b);
+    if (i === 0) { s.classList.add("on"); b.classList.add("on"); }
+  });
+</script>
+</body>
+</html>
