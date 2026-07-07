@@ -175,16 +175,6 @@ fn words(text: &str) -> usize {
         .count()
 }
 
-/// Keep the first `max_words` words, dropping any trailing period.
-pub fn clip_words(text: &str, max_words: usize) -> String {
-    text.trim()
-        .trim_end_matches('.')
-        .split_whitespace()
-        .take(max_words.max(1))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// How many spoken words fit in a clip. Measured against real veo3.1
 /// renders: characters pace nearer 2 words/sec than the 2.4 we first
 /// assumed, and they idle for a beat before the first line — so we budget
@@ -1008,13 +998,6 @@ mod tests {
         let a = compile_with_format(&p, &brief, 8, BrainrotFormat::FruitDrama).provider_prompt;
         let b = compile_with_format(&p, &brief, 8, BrainrotFormat::CryptidVlog).provider_prompt;
         assert_ne!(a, b);
-    }
-
-    #[test]
-    fn clip_words_keeps_whole_words() {
-        assert_eq!(clip_words("Ship the thing.", 10), "Ship the thing");
-        assert_eq!(clip_words("one two three four", 2), "one two");
-        assert_eq!(clip_words("solo", 0), "solo"); // never empty
     }
 
     #[test]
