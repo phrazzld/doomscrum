@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            asset_name: doomscrum-macos-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset_name: doomscrum-linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: doomscrum-release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          bin=target/${{ matrix.target }}/release/doomscrum
+          staging=${{ matrix.asset_name }}
+          mkdir -p "$staging"
+          cp "$bin" "$staging/doomscrum"
+          cp README.md LICENSE "$staging/"
+          tar czf "${staging}.tar.gz" "$staging"
+          shasum -a 256 "${staging}.tar.gz" > "${staging}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Combined checksums
+        run: |
+          cd dist
+          cat *.sha256 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/SHA256SUMS
+          generate_release_notes: true
+
+      - name: Update Homebrew tap formula
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          arm64_sha=$(awk '{print $1}' dist/doomscrum-macos-arm64.tar.gz.sha256)
+          linux_sha=$(awk '{print $1}' dist/doomscrum-linux-x86_64.tar.gz.sha256)
+          repo_url="https://github.com/${GITHUB_REPOSITORY}"
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/phrazzld/homebrew-doomscrum.git" tap
+          mkdir -p tap/Formula
+          cat > tap/Formula/doomscrum.rb <<EOF
+          class Doomscrum < Formula
+            desc "PRD brainrot triage: backlog specs as swipeable shortform video"
+            homepage "${repo_url}"
+            version "${version}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${repo_url}/releases/download/${GITHUB_REF_NAME}/doomscrum-macos-arm64.tar.gz"
+                sha256 "${arm64_sha}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${repo_url}/releases/download/${GITHUB_REF_NAME}/doomscrum-linux-x86_64.tar.gz"
+                sha256 "${linux_sha}"
+              end
+            end
+
+            def install
+              bin.install "doomscrum"
+            end
+
+            test do
+              system "#{bin}/doomscrum", "--help"
+            end
+          end
+          EOF
+
+          cd tap
+          git config user.name "doomscrum-release-bot"
+          git config user.email "doomscrum-release-bot@users.noreply.github.com"
+          git add Formula/doomscrum.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "doomscrum ${GITHUB_REF_NAME}"
+            git push origin HEAD:main
+          fi
