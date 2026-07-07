@@ -1,0 +1,18 @@
+wrote /private/tmp/claude-501/-Users-phaedrus-Documents-daybook/186911a7-68b2-4cc4-a0e4-eeac5ea84a81/scratchpad/gate0/chrondle-root/doomscrum.toml
+
+setup checklist:
+  1. opencode auth login   # store your OpenRouter credential for dispatch
+  2. gh auth login         # so dispatches can open PRs
+  3. (optional) OPENROUTER_API_KEY (env or ~/.secrets) for LLM scripts
+  4. (optional) FAL_API_KEY (env or ~/.secrets) for real AI video
+
+current state:
+
+[ok  ] openrouter (scriptwriter): OPENROUTER_API_KEY found
+[ok  ] opencode agent auth: opencode has a stored OpenRouter credential
+[ok  ] github (gh) auth: gh is authenticated
+[ok  ] synced repo: the synced path is a git repository
+[ok  ] git remote: the repo has a push remote
+[ok  ] render provider: using the free offline fixture provider (no FAL key needed)
+
+all checks passed — ready to swipe.

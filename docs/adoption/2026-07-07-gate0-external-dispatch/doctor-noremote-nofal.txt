@@ -1,0 +1,13 @@
+[FAIL] openrouter (scriptwriter): script.mode is "llm" but OPENROUTER_API_KEY is not set (env or ~/.secrets)
+       ↳ fix: export OPENROUTER_API_KEY=… (or add it to ~/.secrets), or set script.mode = "templates"
+[FAIL] opencode agent auth: the dispatched opencode agent runs with a scrubbed environment, so it needs a STORED credential — an env-only OPENROUTER_API_KEY will not reach it
+       ↳ fix: run `opencode auth login` and choose OpenRouter
+[FAIL] github (gh) auth: gh CLI is not authenticated; dispatches cannot open PRs
+       ↳ fix: run `gh auth login`
+[ok  ] synced repo: the synced path is a git repository
+[warn] git remote: no git remote; agents still run and commit, but PRs cannot be opened — the branch stays local
+       ↳ fix: add an `origin` remote to open PRs
+[FAIL] render provider: video.provider = "fal" but no FAL_API_KEY found (env or ~/.secrets)
+       ↳ fix: set FAL_API_KEY, or use the free fixture provider (provider = "fake")
+
+not ready — resolve the FAIL items above.
