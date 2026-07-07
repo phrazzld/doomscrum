@@ -18,6 +18,7 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 toml = "0.8"
+ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 headless_chrome = "1.0.22"

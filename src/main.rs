@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod canary;
+
 use doomscrum::config::Config;
 use doomscrum::dispatch;
 use doomscrum::gc::{self, GcOptions};
@@ -104,8 +106,30 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
+    let result = run().await;
+    if let Err(err) = &result {
+        // Top-level failure path: report to Canary, flush before exit so a
+        // one-shot CLI invocation's proof event beats process teardown, and
+        // still surface + exit non-zero exactly as before.
+        canary::report_error("doomscrum.run.failed", &format!("{err:#}"));
+    }
+    canary::flush();
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("Error: {err:?}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<()> {
     let cli = Cli::parse();
+    // Fire as early as possible so any invocation (including one that later
+    // errors) proves the process ran. One-shot per invocation — no
+    // background loop; doomscrum is a CLI/local-run tool, not a service.
+    canary::check_in();
     let root = match cli.root {
         Some(root) => root.canonicalize()?,
         None => std::env::current_dir()?,
