@@ -121,7 +121,7 @@ jobs:
               token = Homebrew::EnvConfig.github_api_token
               raise CurlDownloadStrategyError, "Set HOMEBREW_GITHUB_API_TOKEN (repo-scoped PAT) to install from this private-repo tap." if token.blank?
 
-              ohai "Downloading #{url}" if $stdout.tty?
+              ohai "Downloading #{url}" if \$stdout.tty?
               curl_download resolved_url, to: temporary_path, timeout: timeout,
                              headers: ["Authorization: token #{token}", "Accept: application/octet-stream"]
             end
