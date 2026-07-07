@@ -122,6 +122,20 @@ async fn main() -> Result<()> {
                 ctx.cfg.feed.max_items,
                 &ctx.renders_dir(),
             );
+            // Reconcile runtime truth from disk before serving: a crash mid-
+            // dispatch must not leave a frozen agent_running status or a
+            // GC-protected orphan worktree.
+            match ctx.reconcile_on_boot() {
+                Ok(reconciled) => {
+                    for receipt in &reconciled {
+                        println!(
+                            "reconciled stranded dispatch {} ({}) -> failed",
+                            receipt.id, receipt.prd_title
+                        );
+                    }
+                }
+                Err(err) => println!("boot reconcile failed: {err:#}"),
+            }
             let app = server::router(ctx);
             let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
             println!("doomscrum listening on http://{host}:{port}");
@@ -176,13 +190,17 @@ async fn main() -> Result<()> {
                 .collect();
 
             if provider_name == "fal" {
-                let spent = server::total_spend(&existing);
+                // Spend truth from the durable cost ledger (unioned with any
+                // provenance it does not know about) — a wiped renders dir
+                // must not reopen the wallet.
+                let entries = ctx.spend_entries(&existing);
+                let spent = server::total_spend(&entries);
                 // Each spec may draw a different pipeline from the mix, so
                 // the planned spend is the sum of per-spec unit costs.
                 let planned = server::planned_fal_spend(&ctx.cfg.video, &targets);
                 let cap = ctx.cfg.video.max_total_spend_usd;
                 let now = chrono::Utc::now();
-                let today = server::daily_spend(&existing, now);
+                let today = server::daily_spend(&entries, now);
                 let daily_cap = ctx.cfg.video.max_daily_spend_usd;
                 // Same gate as the server, via the one arithmetic site. No
                 // pending term: the CLI has no concurrent in-flight reservations.
@@ -265,28 +283,21 @@ async fn main() -> Result<()> {
             let renders = load_renders(&ctx.renders_dir()).unwrap_or_default();
             let dispatches =
                 dispatch::load_receipts(&ctx.dispatcher().dispatches_dir).unwrap_or_default();
-            println!("specs={}", prds.len());
-            println!(
-                "spend=${:.2} cap=${:.2}",
-                server::total_spend(&renders),
-                ctx.cfg.video.max_total_spend_usd
+            let entries = ctx.spend_entries(&renders);
+            let events = doomscrum::events::read_all(&ctx.events_path()).unwrap_or_default();
+            print!(
+                "{}",
+                doomscrum::report::render(&doomscrum::report::ReportInputs {
+                    specs: &prds,
+                    entries: &entries,
+                    renders: &renders,
+                    receipts: &dispatches,
+                    events: &events,
+                    video: &ctx.cfg.video,
+                    max_concurrent_dispatches: ctx.cfg.agent.max_concurrent_dispatches,
+                    now: chrono::Utc::now(),
+                })
             );
-            println!(
-                "renders={} ready={}",
-                renders.len(),
-                renders.iter().filter(|r| r.status == "ready").count()
-            );
-            println!("dispatches={}", dispatches.len());
-            for d in dispatches.iter().take(10) {
-                println!(
-                    "  [{}] {:?} {} -> {} {}",
-                    d.status,
-                    d.kind,
-                    d.prd_title,
-                    d.branch,
-                    d.pr_url.clone().unwrap_or_default()
-                );
-            }
         }
         Command::Egress => {
             print!("{}", doomscrum::egress::render_cli());
