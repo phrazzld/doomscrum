@@ -120,6 +120,25 @@ pub fn flush() {
 /// No-ops (via [`config`]) when creds are unset, same as every other path.
 pub struct CanaryLayer;
 
+/// Target prefixes this layer must never auto-forward. `tower_http`'s
+/// `CatchPanicLayer` re-emits `tracing::error!` at
+/// `tower_http::catch_panic` for a panic [`install_panic_hook`] has already
+/// reported once via `<service>.panic` — forwarding it too would double-report
+/// every caught panic. The transport crates are denied for recursion safety:
+/// [`spawn_send`] itself goes out over `ureq` (which layers `hyper`/`h2`/
+/// `rustls`), so an ERROR there could feed straight back into this layer.
+/// Deliberately does NOT include `tower_http::trace::on_failure` — that's a
+/// legitimate 5xx signal, not report noise. Prefix match (not exact) since
+/// real targets are deeper, e.g. `hyper::proto::h1::io`.
+const DENY_TARGET_PREFIXES: &[&str] = &[
+    "tower_http::catch_panic",
+    "hyper",
+    "reqwest",
+    "rustls",
+    "h2",
+    "ureq",
+];
+
 impl<S: tracing::Subscriber> tracing_subscriber::layer::Layer<S> for CanaryLayer {
     fn on_event(
         &self,
@@ -129,9 +148,13 @@ impl<S: tracing::Subscriber> tracing_subscriber::layer::Layer<S> for CanaryLayer
         if config().is_none() || *event.metadata().level() != tracing::Level::ERROR {
             return;
         }
+        let target = event.metadata().target();
+        if DENY_TARGET_PREFIXES.iter().any(|p| target.starts_with(p)) {
+            return;
+        }
         let mut msg = String::new();
         event.record(&mut FieldVisitor(&mut msg));
-        let class = format!("{}.{}", service(), event.metadata().target());
+        let class = format!("{}.{}", service(), target);
         // Defense in depth: the same masking the write path already applies
         // to agent log tails (see server::log_tail) — an ERROR event that
         // happens to echo a stored provider key must not leave the process
@@ -224,6 +247,15 @@ fn spawn_send(endpoint: String, key: String, path: &'static str, body: serde_jso
     };
     let pending = PENDING.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(mut guard) = pending.lock() {
+        // Reap on every push, not just at `flush()`. `flush()` only ever
+        // runs on the short-lived CLI exit path — `serve` blocks until
+        // killed, so without this the health loop (one handle every
+        // `CHECKIN_INTERVAL`) plus every report send would accumulate here
+        // forever: unbounded `Vec` growth and unreaped OS threads for the
+        // life of the standing service. Each send thread is bounded by
+        // `SEND_TIMEOUT` (times at most two attempts), so by the time the
+        // next send spawns, prior sends have almost always already finished.
+        guard.retain(|h| !h.is_finished());
         guard.push(handle);
     }
 }
