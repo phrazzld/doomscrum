@@ -1,6 +1,13 @@
 # First-run onboarding: repo, key, first video in 60s
 
-Priority: P1 · Status: ready · Estimate: M
+Priority: P1 · Status: absorbed → Powder card **doomscrum-942** · Estimate: M
+
+> **Absorbed 2026-07-07 by doomscrum-942** (first-run inside the app: every
+> empty state becomes an on-ramp). The "no first-run path exists today" note
+> below is stale: the demo cartridge (PR #12) bootstraps 3 sample brainrot
+> videos on first `serve` with zero keys (`providers/samples.rs::bootstrap`).
+> Remaining scope (in-app key sheet, empty/error-state on-ramps, gesture
+> coach, consequence-framed consent) shipped under doomscrum-942.
 
 ## Goal
 First launch walks a new user from zero to a playing (fixture) video and explains exactly what swipes do and what costs money.

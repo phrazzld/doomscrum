@@ -188,7 +188,41 @@ impl AppCtx {
     }
 
     fn fal_key(&self) -> Option<String> {
-        secrets::get(&["FAL_API_KEY", "FAL_KEY"])
+        secrets::get(&["FAL_API_KEY", "FAL_KEY"]).or_else(|| self.stored_key("FAL_API_KEY"))
+    }
+
+    /// Keys entered through the in-app key sheet (`POST /api/keys`). Operator-
+    /// level, so they live under the base state dir (like the recents file),
+    /// not the per-repo state dir — a key follows the operator across repos.
+    fn keys_path(&self) -> PathBuf {
+        self.root.join(&self.cfg.repo.state_dir).join("keys.json")
+    }
+
+    /// A key previously stored via the in-app key sheet. Env and `~/.secrets`
+    /// take precedence (see [`Self::fal_key`]); this is the zero-terminal path.
+    pub fn stored_key(&self, name: &str) -> Option<String> {
+        let raw = std::fs::read_to_string(self.keys_path()).ok()?;
+        let map: std::collections::HashMap<String, String> = serde_json::from_str(&raw).ok()?;
+        map.get(name).filter(|v| !v.trim().is_empty()).cloned()
+    }
+
+    /// Persist an in-app key. Owner-only file permissions; the value is never
+    /// logged or echoed (route responses report only `*_configured` booleans).
+    pub fn store_key(&self, name: &str, value: &str) -> anyhow::Result<()> {
+        let path = self.keys_path();
+        std::fs::create_dir_all(path.parent().expect("keys path has a parent"))?;
+        let mut map: std::collections::HashMap<String, String> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        map.insert(name.to_string(), value.to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&map)?)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
     }
 
     pub fn provider(&self, name: &str) -> anyhow::Result<Provider> {
@@ -227,6 +261,7 @@ pub fn router(ctx: AppCtx) -> Router {
         .route("/api/dispatch/{id}/log", get(api_dispatch_log))
         .route("/api/dispatch/{id}/cancel", post(api_dispatch_cancel))
         .route("/api/repo", get(api_repo_get).post(api_repo_set))
+        .route("/api/keys", post(api_keys_set))
         .route("/api/egress", get(api_egress))
         .route("/media/{sha}/{file}", get(media))
         .with_state(ctx)
@@ -254,6 +289,51 @@ async fn api_repo_get(State(ctx): State<AppCtx>) -> Response {
         "current": ctx.repo().to_string_lossy(),
         "name": ctx.repo().file_name().map(|n| n.to_string_lossy().to_string()),
         "recents": ctx.recent_repos(),
+        // The UI's empty-backlog on-ramp names the exact spec path; it reads
+        // the configured dir here instead of hardcoding "backlog.d".
+        "backlog_dir": ctx.cfg.repo.backlog_dir,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct KeyBody {
+    provider: String,
+    key: String,
+}
+
+/// `POST /api/keys` — the in-app key sheet. Stores a provider key under the
+/// state dir so enabling real renders never requires leaving the app. The
+/// response quotes the per-render price and the starter budget the wallet
+/// already enforces; the key value itself is never echoed back or logged.
+async fn api_keys_set(State(ctx): State<AppCtx>, Json(body): Json<KeyBody>) -> Response {
+    if body.provider != "fal" {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "unknown key provider '{}' — only 'fal' has an in-app key surface",
+                body.provider
+            ),
+        );
+    }
+    let key = body.key.trim();
+    if key.is_empty() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "empty key — paste your fal.ai API key (dashboard → keys)",
+        );
+    }
+    if let Err(err) = ctx.store_key("FAL_API_KEY", key) {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not store key: {err:#}"),
+        );
+    }
+    Json(json!({
+        "fal_configured": ctx.fal_key().is_some(),
+        "price_per_render_usd": crate::providers::fal::avg_unit_cost(&ctx.cfg.video),
+        "daily_cap_usd": ctx.cfg.video.max_daily_spend_usd,
+        "cap_usd": ctx.cfg.video.max_total_spend_usd,
     }))
     .into_response()
 }

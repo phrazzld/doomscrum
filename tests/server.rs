@@ -1199,3 +1199,69 @@ async fn the_prefetch_window_follows_the_cursor_as_it_advances() {
         "spec 1 renders once the cursor reaches it"
     );
 }
+
+// --- first-run on-ramps (doomscrum-942) ------------------------------------
+// In-app FAL key entry: the UI's key sheet posts here so a stranger never has
+// to leave the app to enable real renders. The key is stored under the state
+// dir (0600), never echoed back, and the response quotes the per-render price
+// and the starter budget the wallet already enforces.
+#[tokio::test]
+async fn in_app_key_entry_stores_fal_key_and_quotes_price_and_budget() {
+    let app = spawn_app().await;
+
+    // Blank or whitespace keys are rejected with a recovery-grade message.
+    let (code, body) = app
+        .post("/api/keys", json!({"provider": "fal", "key": "   "}))
+        .await;
+    assert_eq!(code, 400, "{body}");
+
+    // Unknown providers are rejected — only fal has an in-app key surface.
+    let (code, body) = app
+        .post(
+            "/api/keys",
+            json!({"provider": "openai", "key": "abcdef123456"}),
+        )
+        .await;
+    assert_eq!(code, 400, "{body}");
+
+    // A valid key is accepted, stored, and priced — but never echoed back.
+    let fal_key = "2b8c4d9e1f0a:f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6";
+    let (code, body) = app
+        .post("/api/keys", json!({"provider": "fal", "key": fal_key}))
+        .await;
+    assert_eq!(code, 200, "{body}");
+    assert_eq!(body["fal_configured"], true);
+    assert!(
+        body["price_per_render_usd"].as_f64().unwrap() > 0.0,
+        "key response must quote the per-render price: {body}"
+    );
+    assert!(
+        body["daily_cap_usd"].as_f64().unwrap() > 0.0 && body["cap_usd"].as_f64().unwrap() > 0.0,
+        "key response must state the starter budget: {body}"
+    );
+    assert!(
+        !body.to_string().contains(fal_key),
+        "the key value must never be echoed back: {body}"
+    );
+
+    // Persisted under the state dir with owner-only permissions.
+    let keys_path = app.root.join(".doomscrum").join("keys.json");
+    let raw = std::fs::read_to_string(&keys_path).unwrap();
+    assert!(raw.contains(fal_key), "key file must hold the stored key");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&keys_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "keys.json must be owner-only");
+    }
+}
+
+// The empty-backlog on-ramp names the exact backlog path; the UI reads the
+// configured backlog dir from /api/repo instead of hardcoding "backlog.d".
+#[tokio::test]
+async fn repo_route_names_the_backlog_dir_for_onramp_copy() {
+    let app = spawn_app().await;
+    let (code, body) = app.get("/api/repo").await;
+    assert_eq!(code, 200, "{body}");
+    assert_eq!(body["backlog_dir"], "backlog.d", "{body}");
+}
