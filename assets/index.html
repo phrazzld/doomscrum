@@ -162,6 +162,11 @@
   .sticker.review.fast-merge { border-color: var(--ok); color: var(--ok); }
   .sticker.review.needs-review { border-color: var(--warn); color: var(--warn); }
   .sticker.superseded { border-color: var(--dead); color: var(--muted); }
+  .sticker.prstate.open { border-color: var(--cyan); color: var(--cyan); }
+  .sticker.prstate.merged { border-color: var(--ok); color: var(--ok); }
+  .sticker.prstate.closed { border-color: var(--err); color: var(--err); }
+  .sticker.ready.high { border-color: var(--acid); color: var(--acid); }
+  .sticker.ready.low { border-color: var(--warn); color: var(--warn); }
 
   /* the deck: card + ledge. Every interactive affordance that used to float
      over the caption zone (vibe, cook/retry, PR) lives on the ledge BELOW
@@ -581,6 +586,7 @@
     opening_pr: "opening pr", pr_opened: "pr opened",
     completed_local: "done (local)", failed: "agent flopped",
   };
+  const prStateLabel = { open: "PR open", merged: "merged", closed: "closed" };
   const vibeRatings = ["cursed", "brainrot", "solid", "corporate"];
 
   let toastVisible = false;
@@ -725,6 +731,9 @@
       item && item.vibe_rating,
       item && item.dispatch && item.dispatch.id,
       item && item.dispatch && item.dispatch.pr_url,
+      item && item.dispatch && item.dispatch.pr_state,
+      item && item.readiness && item.readiness.score,
+      item && item.readiness && (item.readiness.signals || []).join(","),
       window.__falConfigured,
     ]);
     const sig = cardSig + "|" + liveStatus;
@@ -797,6 +806,10 @@
 
     const st = item.dispatch ? item.dispatch.status : status;
     const pr = item.dispatch && item.dispatch.pr_url;
+    const prState = item.dispatch && item.dispatch.pr_state;
+    const readiness = item.readiness || { score: 0, signals: [] };
+    const readyScore = Number(readiness.score || 0);
+    const readySignals = (readiness.signals || []).join(", ");
     // Card anatomy (doomscrum-941, lab winner "status ledge"): the caption
     // zone at the frame bottom is sacred — flow-only spec content, pointer
     // inert. Interactive chrome (vibe, cook/retry, PR) lives on the ledge
@@ -829,6 +842,8 @@
             ${item.dispatch && item.dispatch.review
               ? `<span class="sticker review ${esc(item.dispatch.review)}">${esc(item.dispatch.review)}${item.dispatch.diff_lines != null ? " " + item.dispatch.diff_lines + "L" : ""}</span>`
               : ""}
+            ${prState ? `<span class="sticker prstate ${esc(prState)}">${esc(prStateLabel[prState] || prState)}</span>` : ""}
+            ${readyScore !== 0 ? `<span class="sticker ready ${readyScore > 0 ? "high" : "low"}" title="${esc(readySignals)}">${readyScore > 0 ? "+" : ""}${readyScore.toFixed(1)}</span>` : ""}
             ${item.superseded ? '<span class="sticker superseded">superseded</span>' : ""}
           </div>
           <div class="hud">

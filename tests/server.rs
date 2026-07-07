@@ -224,6 +224,55 @@ fn render_fixture(
     }
 }
 
+fn seed_dispatch_receipt(
+    app: &TestApp,
+    prd: &Value,
+    id: &str,
+    status: &str,
+    pr_url: Option<&str>,
+    pr_state: Option<&str>,
+) {
+    let dispatches = app.root.join(".doomscrum/dispatches");
+    std::fs::create_dir_all(&dispatches).unwrap();
+    let mut receipt = json!({
+        "id": id,
+        "prd_id": prd["id"].as_str().unwrap(),
+        "prd_sha256": prd["sha256"].as_str().unwrap(),
+        "prd_title": prd["title"].as_str().unwrap(),
+        "prd_rel_path": prd["path"].as_str().unwrap(),
+        "kind": "implement",
+        "branch": format!("doomscrum/impl-test-{id}"),
+        "worktree": app.root.join(".doomscrum/worktrees").join(id).to_string_lossy(),
+        "status": status,
+        "stages": [],
+        "pr_url": pr_url,
+        "note": null,
+        "agent_log": dispatches.join(format!("{id}.agent.log")).to_string_lossy(),
+        "created_at": "2026-07-07T00:00:00.000Z",
+        "updated_at": "2026-07-07T00:00:00.000Z"
+    });
+    if let Some(state) = pr_state {
+        receipt["pr_state"] = json!(state);
+        receipt["pr_state_at"] = json!("2026-07-07T00:00:00.000Z");
+    }
+    std::fs::write(
+        dispatches.join(format!("{id}.json")),
+        serde_json::to_string_pretty(&receipt).unwrap(),
+    )
+    .unwrap();
+}
+
+fn state_item<'a>(state: &'a Value, prd_id: &str) -> &'a Value {
+    state["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["prd"]["id"] == prd_id)
+        .unwrap()
+}
+
+static GH_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test(flavor = "multi_thread")]
 async fn feed_renders_and_serves_video() {
     let app = spawn_app().await;
@@ -262,6 +311,183 @@ async fn feed_renders_and_serves_video() {
     // Regenerate is idempotent unless forced.
     let (_, body) = app.post("/api/generate", json!({})).await;
     assert_eq!(body["renders"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn outcome_history_scores_and_orders_feed_without_touching_specs() {
+    let app = spawn_app().await;
+    let (_, initial) = app.get("/api/state").await;
+    let prds: Vec<Value> = initial["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["prd"].clone())
+        .collect();
+    assert_eq!(
+        prds.iter()
+            .map(|p| p["title"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["First Spec", "Second Spec", "Third Spec"]
+    );
+    let source_before: Vec<(String, Vec<u8>)> = prds
+        .iter()
+        .map(|prd| {
+            let path = prd["path"].as_str().unwrap().to_string();
+            (path.clone(), std::fs::read(app.root.join(&path)).unwrap())
+        })
+        .collect();
+
+    save_render(
+        &app.root.join(".doomscrum/renders"),
+        &render_fixture(
+            prds[1]["id"].as_str().unwrap(),
+            prds[1]["sha256"].as_str().unwrap(),
+            "second-render",
+            "fake-local",
+            "2026-07-07T00:00:00.000Z",
+        ),
+    )
+    .unwrap();
+    let (status, body) = app
+        .post(
+            "/api/vibe",
+            json!({
+                "prd_id": prds[1]["id"],
+                "render_id": "second-render",
+                "rating": "cursed"
+            }),
+        )
+        .await;
+    assert_eq!(status, 200, "vibe rating failed: {body}");
+    seed_dispatch_receipt(
+        &app,
+        &prds[1],
+        "second-merged",
+        "pr_opened",
+        Some("https://github.com/example/repo/pull/2"),
+        Some("merged"),
+    );
+    seed_dispatch_receipt(
+        &app,
+        &prds[2],
+        "third-closed",
+        "pr_opened",
+        Some("https://github.com/example/repo/pull/3"),
+        Some("closed"),
+    );
+
+    let (_, ranked) = app.get("/api/state").await;
+    let items = ranked["items"].as_array().unwrap();
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item["prd"]["title"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["Second Spec", "First Spec", "Third Spec"],
+        "feed should be readiness score order with filename as tiebreaker: {ranked}"
+    );
+    assert_eq!(items.len(), 3, "readiness must not hide or gate specs");
+    let first_score = state_item(&ranked, prds[0]["id"].as_str().unwrap())["readiness"]["score"]
+        .as_f64()
+        .unwrap();
+    let second = state_item(&ranked, prds[1]["id"].as_str().unwrap());
+    let third_score = state_item(&ranked, prds[2]["id"].as_str().unwrap())["readiness"]["score"]
+        .as_f64()
+        .unwrap();
+    assert!(
+        second["readiness"]["score"].as_f64().unwrap() > first_score,
+        "merged PR plus high vibe should raise readiness: {second}"
+    );
+    assert!(
+        third_score < first_score,
+        "closed-unmerged PR should lower readiness: {ranked}"
+    );
+    assert!(
+        second["readiness"]["signals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|signal| signal == "merged_pr"),
+        "readiness should explain the PR signal: {second}"
+    );
+
+    for (path, before) in &source_before {
+        assert_eq!(
+            before,
+            &std::fs::read(app.root.join(path)).unwrap(),
+            "scoring must not mutate source spec {path}"
+        );
+    }
+
+    std::fs::remove_dir_all(app.root.join(".doomscrum")).unwrap();
+    let (_, reset) = app.get("/api/state").await;
+    assert_eq!(
+        reset["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["prd"]["title"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["First Spec", "Second Spec", "Third Spec"],
+        "deleting generated state should reset learning to filename order"
+    );
+    for item in reset["items"].as_array().unwrap() {
+        assert_eq!(item["readiness"]["score"], 0.0);
+    }
+    for (path, before) in &source_before {
+        assert_eq!(before, &std::fs::read(app.root.join(path)).unwrap());
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn state_poll_reconciles_pr_state_from_gh_and_surfaces_on_card() {
+    let _guard = GH_ENV_LOCK.lock().await;
+    let old_gh = std::env::var_os("DOOMSCRUM_GH_BIN");
+    let app = spawn_app().await;
+    let (_, state) = app.get("/api/state").await;
+    let prd = state["items"][0]["prd"].clone();
+    seed_dispatch_receipt(
+        &app,
+        &prd,
+        "needs-reconcile",
+        "pr_opened",
+        Some("https://github.com/example/repo/pull/42"),
+        None,
+    );
+
+    let gh = app.root.parent().unwrap().join("fake-gh");
+    std::fs::write(
+        &gh,
+        "#!/bin/sh\nprintf '%s\\n' '{\"state\":\"MERGED\",\"mergedAt\":\"2026-07-07T12:00:00Z\",\"closedAt\":\"2026-07-07T12:00:00Z\"}'\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::env::set_var("DOOMSCRUM_GH_BIN", &gh);
+
+    let (_, reconciled) = app.get("/api/state").await;
+    let item = state_item(&reconciled, prd["id"].as_str().unwrap());
+    assert_eq!(item["dispatch"]["pr_state"], "merged", "{item}");
+    assert!(
+        item["dispatch"]["pr_state_at"]
+            .as_str()
+            .unwrap()
+            .contains('T'),
+        "{item}"
+    );
+    assert_eq!(item["readiness"]["signals"][0], "merged_pr");
+
+    let raw = std::fs::read_to_string(app.root.join(".doomscrum/dispatches/needs-reconcile.json"))
+        .unwrap();
+    assert!(raw.contains("\"pr_state\": \"merged\""), "{raw}");
+
+    match old_gh {
+        Some(value) => std::env::set_var("DOOMSCRUM_GH_BIN", value),
+        None => std::env::remove_var("DOOMSCRUM_GH_BIN"),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

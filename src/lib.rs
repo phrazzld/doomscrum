@@ -7,6 +7,7 @@ pub mod events;
 pub mod gc;
 pub mod preflight;
 pub mod providers;
+pub mod readiness;
 pub mod render;
 pub mod report;
 pub mod scriptwriter;

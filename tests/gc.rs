@@ -88,6 +88,8 @@ fn write_receipt(ctx: &AppCtx, id: &str, status: &str, worktree: &Path) {
         diff_lines: None,
         plan: None,
         pr_url: None,
+        pr_state: None,
+        pr_state_at: None,
         note: None,
         agent_log: ctx
             .dispatcher()

@@ -7,7 +7,9 @@ doomscrum/* PRs get an automatic first review (tests, scope vs spec, diff size) 
 
 ## Oracle
 - [ ] Each agent PR receives an automated review comment: gate results + does-the-diff-address-the-spec verdict.
-- [ ] Feed shows PR state (open/merged/closed) on the spec card.
+- [x] Feed shows PR state (open/merged/closed) on the spec card. Absorbed by
+      Powder card `doomscrum-944` on 2026-07-07; automated review and stale-PR
+      flagging remain here.
 - [ ] Stale agent PRs (14d) are flagged in the feed.
 
 ## Notes
