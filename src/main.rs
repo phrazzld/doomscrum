@@ -116,7 +116,6 @@ async fn main() -> Result<()> {
         Command::Serve { host, port } => {
             let ctx = AppCtx::new(root.clone(), cfg);
             let _ = samples::bootstrap(
-                &ctx.root,
                 &ctx.repo(),
                 &ctx.cfg.repo.backlog_dir,
                 ctx.cfg.feed.max_items,
@@ -160,7 +159,6 @@ async fn main() -> Result<()> {
             let provider_name = provider.unwrap_or_else(|| cfg.video.provider.clone());
             let ctx = AppCtx::new(root, cfg);
             let _ = samples::bootstrap(
-                &ctx.root,
                 &ctx.repo(),
                 &ctx.cfg.repo.backlog_dir,
                 ctx.cfg.feed.max_items,
@@ -347,7 +345,6 @@ async fn main() -> Result<()> {
             let repo_path = root.join(&cfg.repo.path);
             let renders_dir = root.join(&cfg.repo.state_dir).join("renders");
             let _ = samples::bootstrap(
-                &root,
                 &repo_path,
                 &cfg.repo.backlog_dir,
                 cfg.feed.max_items,

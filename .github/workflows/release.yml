@@ -89,6 +89,7 @@ jobs:
         if: env.HOMEBREW_TAP_TOKEN != ''
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
@@ -96,9 +97,36 @@ jobs:
           linux_sha=$(awk '{print $1}' dist/doomscrum-linux-x86_64.tar.gz.sha256)
           repo_url="https://github.com/${GITHUB_REPOSITORY}"
 
+          # This repo is private, so a plain browser download URL 404s for
+          # an unauthenticated `curl` (which is what a stock Homebrew `url`
+          # stanza does). Resolve each asset's numeric id and point the
+          # formula at the authenticated REST API download endpoint
+          # instead, via a custom download strategy that adds the bearer
+          # token from HOMEBREW_GITHUB_API_TOKEN. If/when this repo goes
+          # public, drop the custom strategy and use the plain release URL.
+          arm64_asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            --jq '.assets[] | select(.name == "doomscrum-macos-arm64.tar.gz") | .id')
+          linux_asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            --jq '.assets[] | select(.name == "doomscrum-linux-x86_64.tar.gz") | .id')
+
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/phrazzld/homebrew-doomscrum.git" tap
           mkdir -p tap/Formula
           cat > tap/Formula/doomscrum.rb <<EOF
+          require "download_strategy"
+
+          # doomscrum's source repo is private (docs/adoption/2026-07-07-installable-releases/);
+          # authenticate release-asset downloads with HOMEBREW_GITHUB_API_TOKEN.
+          class DoomscrumPrivateReleaseDownloadStrategy < CurlDownloadStrategy
+            def _fetch(url:, resolved_url:, timeout:)
+              token = Homebrew::EnvConfig.github_api_token
+              raise CurlDownloadStrategyError, "Set HOMEBREW_GITHUB_API_TOKEN (repo-scoped PAT) to install from this private-repo tap." if token.blank?
+
+              ohai "Downloading #{url}" if $stdout.tty?
+              curl_download resolved_url, to: temporary_path, timeout: timeout,
+                             headers: ["Authorization: token #{token}", "Accept: application/octet-stream"]
+            end
+          end
+
           class Doomscrum < Formula
             desc "PRD brainrot triage: backlog specs as swipeable shortform video"
             homepage "${repo_url}"
@@ -107,14 +135,16 @@ jobs:
 
             on_macos do
               on_arm do
-                url "${repo_url}/releases/download/${GITHUB_REF_NAME}/doomscrum-macos-arm64.tar.gz"
+                url "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${arm64_asset_id}",
+                    using: DoomscrumPrivateReleaseDownloadStrategy
                 sha256 "${arm64_sha}"
               end
             end
 
             on_linux do
               on_intel do
-                url "${repo_url}/releases/download/${GITHUB_REF_NAME}/doomscrum-linux-x86_64.tar.gz"
+                url "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${linux_asset_id}",
+                    using: DoomscrumPrivateReleaseDownloadStrategy
                 sha256 "${linux_sha}"
               end
             end
