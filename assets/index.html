@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>DOOMSCRUM — spec brainrot triage</title>
+<!-- PWA (backlog 015): installable on a phone; pair with `serve --host 0.0.0.0` for LAN -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#121212">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- fonts: Geist + Geist Mono embedded below as woff2 (OFL) — page stays self-contained, no external CDN -->
 <style>
   /* self-hosted Geist + Geist Mono (OFL), embedded woff2 — no external font CDN, page is self-contained */
@@ -376,6 +384,48 @@
   .empty button:active { transform: translateY(1px); }
   .empty p { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 10px; }
 
+  /* drag-commit stamps: while a drag is live, the action release will trigger
+     is named on the frame before the finger lifts; crossing the threshold
+     arms the stamp (fill = commitment feedback, motion answers the gesture) */
+  .stamp {
+    position: absolute; z-index: 6; top: 16%;
+    font-family: var(--font); font-weight: 800; text-transform: uppercase;
+    font-size: clamp(18px, 3.2vh, 28px); letter-spacing: .04em; line-height: 1.05;
+    padding: 8px 14px; border: 2px solid currentColor; background: rgba(0,0,0,.6);
+    opacity: 0; pointer-events: none;
+  }
+  .stamp small {
+    display: block; font-family: var(--mono); font-weight: 700;
+    font-size: 10px; letter-spacing: .1em; margin-top: 4px;
+  }
+  .stamp.ship { left: 12px; transform: rotate(-8deg); color: var(--acid); }
+  .stamp.skip { right: 12px; transform: rotate(8deg); color: var(--pink); }
+  .stamp.up   { left: 50%; transform: translateX(-50%) rotate(-2deg); color: var(--pink); }
+  .stamp.back { left: 50%; top: auto; bottom: 26%; transform: translateX(-50%) rotate(2deg); color: var(--cyan); }
+  .stamp.armed.ship { background: var(--acid); color: #000; }
+  .stamp.armed.skip, .stamp.armed.up { background: var(--pink); color: #000; }
+  .stamp.armed.back { background: var(--cyan); color: #000; }
+
+  /* clip progress: a hairline at the very bottom edge of the frame — under
+     the caption zone's flow content, never over it */
+  .progress {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+    height: 3px; background: rgba(255,255,255,.16); pointer-events: none;
+  }
+  .progress i { display: block; height: 100%; width: 0; background: var(--acid); }
+
+  /* word-synced live captions (backlog 024): the spoken script for
+     caption-less models, from the persisted caption artifact. Flow-only spec
+     content inside the sacred caption zone; two lines max in the safe width. */
+  .livecap {
+    font-family: var(--font); font-weight: 800; text-transform: uppercase;
+    font-size: clamp(15px, 2.6vh, 22px); line-height: 1.18;
+    color: #fff; margin-bottom: 10px; padding-right: 4%;
+    height: calc(2 * 1.18em); overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .livecap b { color: var(--acid); font-weight: 800; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
@@ -485,6 +535,46 @@
   let started = false;   // sound gate passed
   let busy = false;      // a swipe action is in flight
 
+  const TH = 70;         // gesture commit threshold, px — shared by drag + stamps
+
+  // --- neighbor preload (backlog 015) -------------------------------
+  // Prev/next renders stay warm as reusable <video> elements, so advancing
+  // re-attaches an already-buffered element instead of cold-loading a src.
+  const vidCache = new Map(); // asset_url -> HTMLVideoElement
+  let advanceMark = 0;        // performance.now() at the advance gesture
+  function cachedVideo(url) {
+    let v = vidCache.get(url);
+    if (!v) {
+      v = document.createElement("video");
+      v.src = url;
+      v.loop = true;
+      v.playsInline = true;
+      v.setAttribute("playsinline", "");
+      v.preload = "auto";
+      v.muted = true;
+      vidCache.set(url, v);
+    }
+    return v;
+  }
+  function preloadNeighbors() {
+    if (!items.length) return;
+    const keep = new Set();
+    for (const delta of [0, 1, -1]) {
+      const item = items[(idx + delta + items.length) % items.length];
+      if (item && item.render) {
+        keep.add(item.render.asset_url);
+        cachedVideo(item.render.asset_url);
+      }
+    }
+    for (const [url, v] of vidCache) {
+      if (!keep.has(url)) {
+        v.removeAttribute("src");
+        v.load();
+        vidCache.delete(url);
+      }
+    }
+  }
+
   const statusLabel = {
     new: "unrendered", rendered: "fresh", skipped: "skipped",
     queued: "agent queued", agent_running: "agent cooking",
@@ -493,11 +583,21 @@
   };
   const vibeRatings = ["cursed", "brainrot", "solid", "corporate"];
 
+  let toastVisible = false;
   function showToast(msg, isErr) {
     toast.textContent = msg;
     toast.className = "toast show" + (isErr ? " err" : "");
+    // Duck video audio while the toast is up; restore every cached element
+    // on hide (the playing video may have changed under a long toast).
+    toastVisible = true;
+    const v = $("vid");
+    if (v) v.volume = 0.15;
     clearTimeout(showToast.t);
-    showToast.t = setTimeout(() => (toast.className = "toast"), 2600);
+    showToast.t = setTimeout(() => {
+      toast.className = "toast";
+      toastVisible = false;
+      for (const cached of vidCache.values()) cached.volume = 1;
+    }, 2600);
   }
 
   async function api(path, opts) {
@@ -621,6 +721,7 @@
       idx, items.length, item && item.prd.id,
       item && item.render && item.render.id,
       item && item.render && item.render.asset_url,
+      item && item.captions && item.captions.url,
       item && item.vibe_rating,
       item && item.dispatch && item.dispatch.pr_url,
       window.__falConfigured,
@@ -710,10 +811,17 @@
             ? '<button class="aiify" id="aiify">fixture → cook with AI ($)</button>' : "")),
       pr ? `<a class="prlink" href="${esc(pr)}">PR ↗</a>` : "",
     ].join("");
+    // Overlay word-synced captions only when the persisted artifact exists
+    // and the model doesn't already burn captions into the frame (024).
+    const overlayCaptions = item.captions && item.captions.url && !item.captions.native;
     stage.innerHTML = `
       <div class="deck">
         <div class="card" id="card">
-          <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
+          <span id="vidslot"></span>
+          <div class="stamp ship">SHIP IT<small>real agent + PR</small></div>
+          <div class="stamp skip">SKIP<small>spec untouched</small></div>
+          <div class="stamp up">SKIP<small>spec untouched</small></div>
+          <div class="stamp back">BACK<small>previous card</small></div>
           <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
           <div class="tags">
             <span class="sticker prio">#${prd.priority + 1}</span>
@@ -727,10 +835,12 @@
             <div class="logbox" id="logbox" style="display:none"></div>
           </div>
           <div class="caption">
+            ${overlayCaptions ? '<div class="livecap" id="livecap"></div>' : ""}
             <div class="meme">${esc(prd.title)}</div>
             ${item.dispatch && item.dispatch.plan ? `<div class="meta">▶ ${esc(item.dispatch.plan)}</div>` : ""}
             ${vid.degraded_reason ? `<div style="margin-top:8px;display:inline-block;padding:3px 8px;border:1px solid var(--warn);color:var(--warn);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(vid.degraded_reason)}</div>` : ""}
           </div>
+          <div class="progress"><i id="prog"></i></div>
         </div>
         <div class="ledge">
           <div class="vibe" id="vibe" aria-label="brainrot vibe rating">
@@ -739,8 +849,24 @@
           ${acts ? `<div class="acts">${acts}</div>` : ""}
         </div>
       </div>`;
-    const video = $("vid");
+    // Attach the (pre)loaded element for this render instead of cold-loading
+    // a fresh <video src> — advancing to a warm neighbor starts in <100ms.
+    const video = cachedVideo(vid.asset_url);
+    video.id = "vid";
+    video.volume = toastVisible ? 0.15 : 1;
+    $("vidslot").replaceWith(video);
     if (started) { video.muted = false; video.play().catch(() => {}); }
+    if (advanceMark) {
+      const t0 = advanceMark;
+      advanceMark = 0;
+      const report = () =>
+        console.log(`[doomscrum] advance → playing in ${(performance.now() - t0).toFixed(0)}ms`);
+      if (started && !video.paused && video.readyState >= 3) report();
+      else video.addEventListener("playing", report, { once: true });
+    }
+    preloadNeighbors();
+    currentCaptionUrl = overlayCaptions ? item.captions.url : null;
+    if (currentCaptionUrl) loadCaptions(currentCaptionUrl);
     const vibe = $("vibe");
     if (vibe) {
       vibe.onpointerdown = (e) => e.stopPropagation();
@@ -782,6 +908,7 @@
 
   function go(delta) {
     if (!items.length) return;
+    advanceMark = performance.now();
     idx = (idx + delta + items.length) % items.length;
     render();
   }
@@ -837,6 +964,26 @@
     } catch (e) { showToast(e.message, true); }
   }
 
+  // Drag-commit legibility: while a drag is live, the stamp for the action a
+  // release would trigger fades in with drag distance and ARMS (fills) past
+  // the threshold — release-right never silently launches a real agent.
+  function updateStamps(card, dx, dy) {
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+    const active = horizontal ? (dx > 0 ? "ship" : "skip") : (dy < 0 ? "up" : "back");
+    const mag = Math.abs(horizontal ? dx : dy);
+    for (const stamp of card.querySelectorAll(".stamp")) {
+      const on = stamp.classList.contains(active);
+      stamp.style.opacity = on ? Math.min(1, mag / TH).toFixed(2) : "0";
+      stamp.classList.toggle("armed", on && mag > TH);
+    }
+  }
+  function clearStamps(card) {
+    for (const stamp of card.querySelectorAll(".stamp")) {
+      stamp.style.opacity = "0";
+      stamp.classList.remove("armed");
+    }
+  }
+
   function bindGestures(card, video) {
     let sx = 0, sy = 0, dragging = false, moved = false;
     card.addEventListener("pointerdown", (e) => {
@@ -849,13 +996,14 @@
       const dx = e.clientX - sx, dy = e.clientY - sy;
       if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
       card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx / 22}deg)`;
+      if (moved) updateStamps(card, dx, dy);
     });
     card.addEventListener("pointerup", (e) => {
       if (!dragging) return;
       dragging = false;
       const dx = e.clientX - sx, dy = e.clientY - sy;
-      const TH = 70;
       card.style.transform = "";
+      clearStamps(card);
       if (!moved) {           // tap = read the spec
         if (video.paused) video.play().catch(() => {});
         openSpec();
@@ -868,9 +1016,76 @@
         if (dy < -TH) return fly(card, "up", async () => { await swipe("skip"); go(1); });
         if (dy > TH) return fly(card, "down", () => go(-1));
       }
-      card.classList.add("snap"); // not far enough: snap back
+      card.classList.add("snap"); // not far enough: snap back, no dispatch
     });
   }
+
+  // --- word-synced live captions (backlog 024) -----------------------
+  // The persisted caption artifact (words[].text/start_ms/end_ms) is fetched
+  // once per render and paged so no page ever exceeds two lines in the
+  // feed-safe width. No playback-time transcription: timing comes from disk.
+  let currentCaptionUrl = null;
+  const capCache = new Map(); // caption url -> pages | null (fetch in flight)
+  const CAP_PAGE_CHARS = 34;  // ~two lines at the livecap font size
+  function captionPages(words) {
+    const pages = [];
+    let page = null;
+    for (const word of words || []) {
+      const text = String(word.text || "").trim();
+      if (!text) continue;
+      if (!page || page.chars + 1 + text.length > CAP_PAGE_CHARS) {
+        page = { words: [], chars: 0, start: word.start_ms, end: word.end_ms };
+        pages.push(page);
+      }
+      page.words.push({ text, start: word.start_ms, end: word.end_ms });
+      page.chars += (page.chars ? 1 : 0) + text.length;
+      page.end = word.end_ms;
+    }
+    return pages;
+  }
+  async function loadCaptions(url) {
+    if (capCache.has(url)) return;
+    capCache.set(url, null);
+    try {
+      const artifact = await api(url);
+      capCache.set(url, captionPages(artifact.words));
+    } catch {
+      capCache.delete(url); // transient failure: retried on the next render pass
+    }
+  }
+  function paintCaptions(box, ms) {
+    const pages = currentCaptionUrl ? capCache.get(currentCaptionUrl) : null;
+    if (!pages || !pages.length) return;
+    // Active page: the last page that has started; hold it until the next
+    // one starts so pauses between words never blank the zone mid-sentence.
+    let pageIdx = -1;
+    for (let i = 0; i < pages.length; i++) if (pages[i].start <= ms) pageIdx = i;
+    if (pageIdx < 0) { if (box.dataset.sig) { box.dataset.sig = ""; box.textContent = ""; } return; }
+    const page = pages[pageIdx];
+    let wordIdx = 0;
+    for (let i = 0; i < page.words.length; i++) if (page.words[i].start <= ms) wordIdx = i;
+    const sig = pageIdx + ":" + wordIdx;
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.innerHTML = page.words
+      .map((w, i) => (i === wordIdx ? `<b>${esc(w.text)}</b>` : esc(w.text)))
+      .join(" ");
+  }
+
+  // One playback loop drives the progress hairline and the caption page for
+  // whatever video is on stage — bypassing render()'s signature machinery,
+  // like the logbox, so the looping video never restarts.
+  function playbackTick() {
+    const video = $("vid");
+    if (video && video.duration) {
+      const prog = $("prog");
+      if (prog) prog.style.width = ((video.currentTime / video.duration) * 100).toFixed(2) + "%";
+      const box = $("livecap");
+      if (box) paintCaptions(box, video.currentTime * 1000);
+    }
+    requestAnimationFrame(playbackTick);
+  }
+  requestAnimationFrame(playbackTick);
 
   // --- live agent log on the card ------------------------------------
   // While an agent cooks (or after it flops), the card shows the tail of

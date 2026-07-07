@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doomscrum — drag-commit affordance lab (doomscrum-943)</title>
+<style>
+  :root {
+    --bg:#121212; --wash:#1b1b1b; --ink:#ededed; --muted:#8f8f8f; --line:#262626;
+    --acid:#b6ff2e; --pink:#ff2ea6; --cyan:#2ee6ff;
+    --font:'Helvetica Neue', Arial, sans-serif; --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--mono); padding:32px 24px 80px; }
+  h1 { font-family:var(--font); font-weight:800; text-transform:uppercase; font-size:26px; letter-spacing:.02em; }
+  .sub { color:var(--muted); font-size:12px; margin:8px 0 6px; max-width:70ch; line-height:1.6; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:22px; margin-top:28px; }
+  .opt { border:1px solid var(--line); padding:16px; }
+  .opt.winner { border-color:var(--acid); }
+  .opt h2 { font-family:var(--font); font-weight:800; text-transform:uppercase; font-size:14px; letter-spacing:.06em; }
+  .opt .tag { font-size:10px; color:var(--acid); text-transform:uppercase; letter-spacing:.12em; }
+  .opt p { font-size:11px; color:var(--muted); line-height:1.6; margin:8px 0 14px; }
+  .frames { display:flex; gap:12px; }
+  .frame { position:relative; width:150px; aspect-ratio:9/16; border:1px solid var(--ink); background:#000 linear-gradient(160deg,#0b2a10,#000 70%); overflow:hidden; flex:none; }
+  .frame::after { content:attr(data-state); position:absolute; bottom:4px; left:6px; font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; }
+  .meme { position:absolute; left:8px; right:8px; bottom:16px; font-family:var(--font); font-weight:800; font-size:12px; text-transform:uppercase; color:#fff; }
+  .tilt { transform:translateX(18px) rotate(4deg); }
+  .tilt2 { transform:translateX(46px) rotate(8deg); }
+  /* A — corner stamp */
+  .stampA { position:absolute; top:14%; left:8px; font-family:var(--font); font-weight:800; text-transform:uppercase; font-size:13px; padding:4px 7px; border:2px solid var(--acid); color:var(--acid); background:rgba(0,0,0,.6); transform:rotate(-8deg); }
+  .stampA small { display:block; font-size:7px; font-family:var(--mono); }
+  .stampA.armed { background:var(--acid); color:#000; }
+  .stampA.dim { opacity:.55; }
+  /* B — edge glow */
+  .glowB { position:absolute; inset:0; box-shadow:inset -14px 0 22px -8px var(--acid); }
+  .glowB.armed { box-shadow:inset -34px 0 34px -6px var(--acid); }
+  .glowB span { position:absolute; right:6px; top:45%; writing-mode:vertical-rl; font-size:10px; color:var(--acid); text-transform:uppercase; letter-spacing:.2em; }
+  /* C — threshold meter */
+  .meterC { position:absolute; left:8px; right:8px; top:10px; height:8px; border:1px solid var(--line); background:rgba(0,0,0,.6); }
+  .meterC i { display:block; height:100%; width:55%; background:var(--acid); }
+  .meterC.armed i { width:100%; }
+  .meterC b { position:absolute; right:0; top:12px; font-size:8px; color:var(--acid); text-transform:uppercase; }
+  /* D — full-frame wash */
+  .washD { position:absolute; inset:0; background:rgba(182,255,46,.18); display:grid; place-items:center; }
+  .washD.armed { background:rgba(182,255,46,.42); }
+  .washD b { font-family:var(--font); font-weight:800; font-size:18px; color:var(--acid); text-transform:uppercase; }
+  .washD.armed b { color:#000; }
+  /* E — status chip morph */
+  .chipE { position:absolute; top:8px; right:8px; font-size:9px; padding:3px 6px; border:1px solid var(--acid); color:var(--acid); background:var(--bg); text-transform:uppercase; }
+  .chipE.armed { background:var(--acid); color:#000; }
+  /* F — consequence underlay */
+  .underF { position:absolute; inset:0; background:var(--wash); display:grid; place-items:center; text-align:center; font-size:9px; color:var(--acid); text-transform:uppercase; line-height:1.8; padding:10px; }
+  .cardF { position:absolute; inset:0; background:#000 linear-gradient(160deg,#0b2a10,#000 70%); }
+  .verdict { margin-top:34px; border:1px solid var(--acid); padding:18px; max-width:86ch; }
+  .verdict h2 { font-family:var(--font); font-weight:800; text-transform:uppercase; font-size:15px; color:var(--acid); }
+  .verdict p { font-size:12px; line-height:1.7; color:var(--ink); margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>Drag-commit affordance lab</h1>
+<p class="sub">doomscrum-943 · During a drag, the action a release will trigger (implement vs skip) must be named on-screen before release, with a visible threshold crossing (TH=70px). Constraint set: card-anatomy law (doomscrum-941) — the caption zone at the frame bottom is sacred; interactive chrome lives off the frame; motion is feedback only. Each option shows mid-drag (below threshold) and armed (past threshold) for the right/SHIP direction; all options mirror for left/SKIP, up/SKIP, down/BACK.</p>
+
+<div class="grid">
+  <div class="opt winner">
+    <span class="tag">A · winner</span><h2>Corner stamp (Tinder grammar)</h2>
+    <p>A rotated stamp fades in with drag distance, naming the action + consequence ("SHIP IT — real agent + PR"). Crossing TH arms it: the stamp fills solid. Rides the top corners — never the caption zone.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="tilt" style="position:absolute;inset:0"><div class="stampA dim">SHIP IT<small>real agent + PR</small></div><div class="meme">cache chaos exorcism</div></div></div>
+      <div class="frame" data-state="armed"><div class="tilt2" style="position:absolute;inset:0"><div class="stampA armed">SHIP IT<small>real agent + PR</small></div><div class="meme">cache chaos exorcism</div></div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <span class="tag">B</span><h2>Directional edge glow</h2>
+    <p>The leading edge blooms in the action color with a vertical label. Legible peripheral signal, but the label is small, the consequence line doesn't fit, and an ambient-looking glow skirts the "nothing ambient" law.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="glowB"><span>ship it</span></div><div class="meme">cache chaos exorcism</div></div>
+      <div class="frame" data-state="armed"><div class="glowB armed"><span>ship it</span></div><div class="meme">cache chaos exorcism</div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <span class="tag">C</span><h2>Threshold meter</h2>
+    <p>A commit gauge at the frame top fills toward the action label; full = armed. Threshold crossing is the most literal of all options, but it reads instrument-panel, not shortform — and steals the top chrome row from the status chips.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="meterC"><i></i><b>ship 55%</b></div><div class="meme">cache chaos exorcism</div></div>
+      <div class="frame" data-state="armed"><div class="meterC armed"><i></i><b>ship — release</b></div><div class="meme">cache chaos exorcism</div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <span class="tag">D</span><h2>Full-frame wash</h2>
+    <p>The whole frame tints in the action color with a giant centered verb. Unmissable, but it floods the sacred caption zone, hides the video being judged, and a filled field fights the hairline aesthetic.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="washD"><b>ship it</b></div><div class="meme">cache chaos exorcism</div></div>
+      <div class="frame" data-state="armed"><div class="washD armed"><b>ship it</b></div><div class="meme">cache chaos exorcism</div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <span class="tag">E</span><h2>Status-chip morph</h2>
+    <p>The existing corner status chip swaps to the action name during the drag and fills at threshold. Zero new surface, maximally quiet — but an 11px chip is too small to carry "this launches a real agent" at arm's length mid-gesture.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="chipE">→ ship it</div><div class="meme">cache chaos exorcism</div></div>
+      <div class="frame" data-state="armed"><div class="chipE armed">release = agent + PR</div><div class="meme">cache chaos exorcism</div></div>
+    </div>
+  </div>
+  <div class="opt">
+    <span class="tag">F</span><h2>Consequence underlay</h2>
+    <p>Dragging peels the card off a plate that states the consequence in plain terms ("a fresh worktree · a real agent · a real PR"). Strong narrative, but legibility depends on drag distance — at 30px you can't read it, so the naming arrives too late.</p>
+    <div class="frames">
+      <div class="frame" data-state="mid-drag"><div class="underF">release =<br>fresh worktree<br>real agent<br>real PR</div><div class="cardF tilt"><div class="meme">cache chaos exorcism</div></div></div>
+      <div class="frame" data-state="armed"><div class="underF">release =<br>fresh worktree<br>real agent<br>real PR</div><div class="cardF tilt2"><div class="meme">cache chaos exorcism</div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="verdict">
+  <h2>Verdict — A, corner stamp (implemented)</h2>
+  <p><b>Why A wins:</b> it is the only option that scores on all four requirements at once — names the action AND the consequence in readable type from the first centimeter of drag (F and B name it too late or too small), makes the threshold crossing unmistakable via the outline→fill state change (the fill is commitment feedback, the one place the aesthetic law permits it), keeps the sacred caption zone untouched (D floods it, C collides with the chip row), and borrows a gesture grammar (Tinder stamps) every shortform user already knows — zero teaching cost for a product whose hook is "feels like a native shortform app." E remains the runner-up as a quiet composable layer if the stamps ever feel loud in daily triage.</p>
+  <p style="color:var(--muted)">Delegated-mode pick (operator delegation 2026-07-07); re-verdict welcome. Implementation: assets/index.html .stamp/.armed + updateStamps().</p>
+</div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Feed polish: preload, snap, progress, PWA
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P2 · Status: absorbed by doomscrum-943 (Powder) · Estimate: M
 
 ## Goal
 The feed feels like a native shortform app: instant next-video, physical gesture snap, installable on a phone.

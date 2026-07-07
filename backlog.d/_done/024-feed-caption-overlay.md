@@ -1,6 +1,6 @@
 # Burn word-synced captions into feed playback for caption-less models
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P2 · Status: absorbed by doomscrum-943 (Powder) · Estimate: M
 
 ## Goal
 Feed clips stay readable with sound off regardless of video model - overlay

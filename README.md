@@ -80,6 +80,23 @@ starts a real render, enforces both `max_total_spend_usd` and an independent
 daily budget is exhausted. The fixture provider (`fake`) is the default and
 never leaves the machine.
 
+## Phone on the couch (LAN + PWA)
+
+The server binds `127.0.0.1` by default. To triage from a phone on the same
+network, bind a LAN-reachable host:
+
+```bash
+cargo run --release -- serve --host 0.0.0.0          # or your machine's LAN IP
+# then on the phone: http://<your-machine's-LAN-IP>:4173
+```
+
+The feed is an installable PWA (`/manifest.webmanifest` + icons): open it on
+the phone and use **Add to Home Screen** (iOS Safari share sheet, or Chrome's
+install prompt) to get a standalone, full-screen app icon.
+
+Only bind a non-loopback host on a network you trust: the feed can dispatch
+real agents and spend the render budget, and it ships no authentication.
+
 ## Legal / safety disclosure
 
 DoomScrum is MIT-licensed (see `LICENSE`). **Videos are AI-generated** — they
