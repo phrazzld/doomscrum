@@ -71,6 +71,16 @@ pub fn model_price_per_second(model: &str) -> Option<f64> {
     }
 }
 
+/// Whether a model burns its own captions into the frame. Verified against
+/// real renders 2026-06-10: seedance is the only fal model that renders
+/// native on-screen captions; veo3.1, sora-2, kling, and ltx are caption-less,
+/// as are the local fixture/sample models (their drawtext is a title card,
+/// not the spoken script). Caption-less renders get the feed's word-synced
+/// overlay from the persisted caption artifact instead.
+pub fn model_renders_native_captions(model: &str) -> bool {
+    model.contains("seedance")
+}
+
 /// Snap a requested duration to the model's supported values, preferring
 /// the next longer clip so the script never loses breathing room.
 /// (sora-2 takes 4/8/12, kling only 5/10, seedance any 4–15, veo 4/6/8.)
@@ -327,5 +337,32 @@ impl FalProvider {
             }
         }
         bail!("fal job timed out after {} polls", self.max_polls)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_seedance_renders_native_captions() {
+        assert!(model_renders_native_captions(
+            "fal-ai/bytedance/seedance-2.0/fast"
+        ));
+        assert!(model_renders_native_captions("sample-seedance"));
+        for caption_less in [
+            "fal-ai/veo3.1/lite",
+            "fal-ai/veo3.1/fast",
+            "fal-ai/sora-2/text-to-video",
+            "fal-ai/kling-video/v2.6/pro",
+            "fal-ai/ltx-2.3/fast",
+            "embedded-fixture",
+            "sample-veo3",
+        ] {
+            assert!(
+                !model_renders_native_captions(caption_less),
+                "{caption_less} must get the overlay"
+            );
+        }
     }
 }

@@ -36,6 +36,9 @@ use crate::secrets;
 pub use crate::render::wallet::{daily_spend, next_daily_reset_at, planned_fal_spend, total_spend};
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
+const MANIFEST: &str = include_str!("../assets/manifest.webmanifest");
+const ICON_192: &[u8] = include_bytes!("../assets/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../assets/icon-512.png");
 const VIBE_RATINGS: &[&str] = &["cursed", "brainrot", "solid", "corporate"];
 
 /// One spec's in-flight render state in the `cooking` map. The feed API
@@ -340,6 +343,9 @@ impl AppCtx {
 pub fn router(ctx: AppCtx) -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/manifest.webmanifest", get(manifest))
+        .route("/icon-192.png", get(icon_192))
+        .route("/icon-512.png", get(icon_512))
         .route("/api/state", get(api_state))
         .route("/api/generate", post(api_generate))
         .route("/api/vibe", post(api_vibe))
@@ -357,6 +363,25 @@ pub fn router(ctx: AppCtx) -> Router {
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+/// PWA installability (backlog 015): manifest + icons make the feed
+/// add-to-home-screen installable, so the couch/phone scenario is a real
+/// app icon, not a browser tab.
+async fn manifest() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/manifest+json")],
+        MANIFEST,
+    )
+        .into_response()
+}
+
+async fn icon_192() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], ICON_192).into_response()
+}
+
+async fn icon_512() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], ICON_512).into_response()
 }
 
 /// `GET /api/egress` — runtime data-egress disclosure. Names exactly what
@@ -740,6 +765,18 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
                 (None, false, Some(_)) => "rendered".into(),
                 (None, false, None) => "new".into(),
             };
+            // Word-synced captions (backlog 024): point the feed at the
+            // persisted caption artifact when one exists, and declare whether
+            // the model already burns captions into the frame so the overlay
+            // never doubles seedance's native ones.
+            let captions = render.as_ref().and_then(|r| {
+                crate::providers::caption_artifact_url(&ctx.renders_dir(), r).map(|url| {
+                    json!({
+                        "url": url,
+                        "native": crate::providers::fal::model_renders_native_captions(&r.model),
+                    })
+                })
+            });
             json!({
                 "prd": {
                     "id": prd.id,
@@ -749,6 +786,7 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
                     "priority": prd.priority,
                 },
                 "render": render,
+                "captions": captions,
                 "vibe_rating": vibe_rating,
                 "dispatch": dispatch.map(|d| json!({
                     "id": d.id,
@@ -1271,9 +1309,23 @@ fn parse_byte_range(value: &str, len: u64) -> Option<(u64, u64)> {
     (len > 0 && range.0 <= range.1 && range.0 < len).then_some(range)
 }
 
-/// Serve render MP4s with HTTP Range support — browsers' media stacks
-/// require 206 responses to start playback and to seek/loop. Stream from disk
-/// so a range request never buffers the whole render.
+/// What the media route may serve out of `renders/{sha}/`, by filename.
+/// Render MP4s and their caption-artifact sidecars only — provenance JSON
+/// and anything else stay unreachable.
+fn media_content_type(file: &str) -> Option<&'static str> {
+    if file.ends_with(".captions.json") {
+        Some("application/json")
+    } else if file.ends_with(".mp4") {
+        Some("video/mp4")
+    } else {
+        None
+    }
+}
+
+/// Serve render MP4s (and caption-artifact sidecars) with HTTP Range support
+/// — browsers' media stacks require 206 responses to start playback and to
+/// seek/loop. Stream from disk so a range request never buffers the whole
+/// render.
 async fn media(
     State(ctx): State<AppCtx>,
     UrlPath((sha, file)): UrlPath<(String, String)>,
@@ -1284,9 +1336,11 @@ async fn media(
             && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
     };
-    if !safe(&sha) || !safe(&file) || !file.ends_with(".mp4") || file.contains("..") {
+    let content_type = media_content_type(&file);
+    if !safe(&sha) || !safe(&file) || content_type.is_none() || file.contains("..") {
         return error_response(StatusCode::FORBIDDEN, "forbidden");
     }
+    let content_type = content_type.expect("checked above");
     let path = ctx.renders_dir().join(&sha).join(&file);
     let Ok(metadata) = tokio::fs::metadata(&path).await else {
         return error_response(StatusCode::NOT_FOUND, "no such render");
@@ -1306,6 +1360,7 @@ async fn media(
             };
             media_stream_response(
                 StatusCode::OK,
+                content_type,
                 len,
                 None,
                 Body::from_stream(ReaderStream::new(file)),
@@ -1321,6 +1376,7 @@ async fn media(
             let body_len = end - start + 1;
             media_stream_response(
                 StatusCode::PARTIAL_CONTENT,
+                content_type,
                 body_len,
                 Some(format!("bytes {start}-{end}/{len}")),
                 Body::from_stream(ReaderStream::new(file.take(body_len))),
@@ -1328,6 +1384,7 @@ async fn media(
         }
         Some(None) => media_stream_response(
             StatusCode::RANGE_NOT_SATISFIABLE,
+            content_type,
             0,
             Some(format!("bytes */{len}")),
             Body::empty(),
@@ -1337,13 +1394,14 @@ async fn media(
 
 fn media_stream_response(
     status: StatusCode,
+    content_type: &'static str,
     content_len: u64,
     content_range: Option<String>,
     body: Body,
 ) -> Response {
     let mut builder = Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, "video/mp4")
+        .header(header::CONTENT_TYPE, content_type)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "no-cache")
         .header(header::CONTENT_LENGTH, content_len.to_string());
@@ -1361,8 +1419,9 @@ fn media_stream_response(
 #[cfg(test)]
 mod tests {
     use super::{
-        await_render_task, latest_render, log_tail, parse_byte_range, prefetch_window, render_plan,
-        CookEntry, PrefetchReason, RenderPlan, RetryPolicy,
+        await_render_task, latest_render, log_tail, media_content_type, parse_byte_range,
+        prefetch_window, render_plan, CookEntry, PrefetchReason, RenderPlan, RetryPolicy, ICON_192,
+        ICON_512, MANIFEST,
     };
     use crate::backlog::PrdSource;
     use crate::providers::VideoRender;
@@ -1379,6 +1438,42 @@ mod tests {
         max_attempts: 3,
         backoff: Duration::ZERO,
     };
+
+    #[test]
+    fn media_route_serves_mp4s_and_caption_sidecars_only() {
+        assert_eq!(media_content_type("render-1.mp4"), Some("video/mp4"));
+        assert_eq!(
+            media_content_type("render-1.captions.json"),
+            Some("application/json")
+        );
+        // Render provenance JSON must stay unreachable over HTTP.
+        assert_eq!(media_content_type("render-1.json"), None);
+        assert_eq!(media_content_type("captions.json"), None);
+        assert_eq!(media_content_type("secrets.env"), None);
+    }
+
+    #[test]
+    fn pwa_manifest_declares_an_installable_app() {
+        let manifest: serde_json::Value = serde_json::from_str(MANIFEST).expect("valid JSON");
+        assert_eq!(manifest["display"], "standalone");
+        assert_eq!(manifest["start_url"], "/");
+        assert!(manifest["name"].as_str().is_some_and(|n| !n.is_empty()));
+        let icons = manifest["icons"].as_array().expect("icons array");
+        let sizes: Vec<&str> = icons.iter().filter_map(|i| i["sizes"].as_str()).collect();
+        assert!(sizes.contains(&"192x192"));
+        assert!(sizes.contains(&"512x512"));
+        for icon in icons {
+            let src = icon["src"].as_str().expect("icon src");
+            assert!(src == "/icon-192.png" || src == "/icon-512.png");
+        }
+    }
+
+    #[test]
+    fn pwa_icons_are_real_pngs() {
+        const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
+        assert!(ICON_192.starts_with(PNG_MAGIC));
+        assert!(ICON_512.starts_with(PNG_MAGIC));
+    }
 
     fn prd(id: &str) -> PrdSource {
         PrdSource {

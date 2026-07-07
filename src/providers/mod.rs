@@ -198,6 +198,18 @@ pub fn load_caption_artifact(
     }
 }
 
+/// URL path the feed can fetch this render's caption artifact at, if the
+/// sidecar actually exists on disk. Served by the same `/media` route as the
+/// MP4 so LAN/phone clients reach it wherever they reach the video.
+pub fn caption_artifact_url(renders_dir: &Path, render: &VideoRender) -> Option<String> {
+    let file = caption_artifact_file(render);
+    renders_dir
+        .join(&render.prd_sha256)
+        .join(&file)
+        .is_file()
+        .then(|| format!("/media/{}/{}", render.prd_sha256, file))
+}
+
 pub(crate) fn cache_distinct_render_id(seed: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -331,6 +343,43 @@ mod tests {
         assert_eq!(
             artifact.to_srt(),
             "1\n00:00:00,000 --> 00:00:00,500\nShip\n\n2\n00:00:00,500 --> 00:00:00,700\nthe\n\n3\n00:00:00,700 --> 00:00:01,300\ndemo\n"
+        );
+    }
+
+    #[test]
+    fn caption_artifact_url_present_only_when_sidecar_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let render = VideoRender {
+            id: "render-1".into(),
+            prd_id: "prd-1".into(),
+            prd_sha256: "sha-1".into(),
+            storyboard_id: "storyboard-1".into(),
+            provider: "fal".into(),
+            model: "fal-ai/veo3.1/lite".into(),
+            native_audio: true,
+            status: "ready".into(),
+            asset_file: "render-1.mp4".into(),
+            asset_url: "/media/sha-1/render-1.mp4".into(),
+            caption_artifact_file: None,
+            degraded_reason: None,
+            provider_job_id: None,
+            cost_estimate_usd: 0.1,
+            latency_ms: 10,
+            created_at: "2026-06-16T00:00:00Z".into(),
+        };
+        assert_eq!(caption_artifact_url(dir.path(), &render), None);
+
+        let artifact = CaptionArtifact::new(
+            CaptionSource::FalWhisper,
+            "render-sha",
+            "Expected",
+            "Observed",
+            vec![CaptionWord::new("Observed", 100, 900, None)],
+        );
+        save_caption_artifact(dir.path(), &render, &artifact).unwrap();
+        assert_eq!(
+            caption_artifact_url(dir.path(), &render).as_deref(),
+            Some("/media/sha-1/render-1.captions.json")
         );
     }
 
