@@ -723,6 +723,7 @@
       item && item.render && item.render.asset_url,
       item && item.captions && item.captions.url,
       item && item.vibe_rating,
+      item && item.dispatch && item.dispatch.id,
       item && item.dispatch && item.dispatch.pr_url,
       window.__falConfigured,
     ]);
@@ -915,24 +916,32 @@
 
   async function swipe(action) {
     const item = items[idx];
-    if (!item || busy) return;
+    if (!item || busy) return false;
     // Hold the busy lock across the consent prompt so a slow /api/repo fetch
     // can't let a second swipe re-enter and orphan the first prompt's promise.
     busy = true;
     if ((action === "implement" || action === "shape") && !(await ensureDispatchConsent())) {
       busy = false;
       showToast("dispatch cancelled");
-      return;
+      return false;
     }
+    let advance = false;
     try {
       if (action === "skip") {
         await api("/api/swipe", { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ prd_id: item.prd.id, action: "skip" }) });
         showToast("skipped. next.");
+        advance = true;
       } else {
         const res = await api("/api/swipe", { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ prd_id: item.prd.id, action }) });
         const branch = res.dispatch ? res.dispatch.branch : "?";
+        if (res.dispatch) {
+          item.dispatch = res.dispatch;
+          item.status = res.dispatch.status || item.status;
+          render();
+          await refreshLogbox();
+        }
         showToast(action === "implement"
           ? `agent dispatched → ${branch} → PR incoming`
           : `shape agent dispatched → ${branch}`);
@@ -943,11 +952,22 @@
       busy = false;
     }
     await load(false).catch(() => {});
+    return advance;
   }
 
   function fly(card, dir, after) {
-    card.classList.add("fly-" + dir);
-    setTimeout(() => { Promise.resolve(after()).catch((e) => showToast(e.message, true)); }, 170);
+    const cls = "fly-" + dir;
+    card.classList.add(cls);
+    setTimeout(() => {
+      Promise.resolve(after())
+        .then((advanced) => {
+          if (advanced === false && card.isConnected) {
+            card.classList.remove(cls);
+            card.classList.add("snap");
+          }
+        })
+        .catch((e) => showToast(e.message, true));
+    }, 170);
   }
 
   async function openSpec() {
@@ -1010,10 +1030,10 @@
         return;
       }
       if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx > TH) return fly(card, "right", async () => { await swipe("implement"); go(1); });
-        if (dx < -TH) return fly(card, "left", async () => { await swipe("skip"); go(1); });
+        if (dx > TH) return fly(card, "right", async () => { const advance = await swipe("implement"); if (advance) go(1); return advance; });
+        if (dx < -TH) return fly(card, "left", async () => { const advance = await swipe("skip"); if (advance) go(1); return advance; });
       } else {
-        if (dy < -TH) return fly(card, "up", async () => { await swipe("skip"); go(1); });
+        if (dy < -TH) return fly(card, "up", async () => { const advance = await swipe("skip"); if (advance) go(1); return advance; });
         if (dy > TH) return fly(card, "down", () => go(-1));
       }
       card.classList.add("snap"); // not far enough: snap back, no dispatch
@@ -1091,6 +1111,28 @@
   // While an agent cooks (or after it flops), the card shows the tail of
   // its log. Updates bypass render()'s signature machinery so the looping
   // video never restarts.
+  function bindLogboxControls(box, d) {
+    box.style.display = "block";
+    box.onpointerdown = (e) => e.stopPropagation();
+    const retry = $("retryBtn");
+    if (retry) retry.onclick = (e) => {
+      e.stopPropagation();
+      swipe(d.kind === "shape" ? "shape" : "implement");
+      showToast("re-dispatched. run it back.");
+    };
+    const cancelBtn = $("cancelBtn");
+    if (cancelBtn) cancelBtn.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        await api(`/api/dispatch/${d.id}/cancel`, { method: "POST" });
+        showToast("dispatch cancelled — no PR");
+        await load();
+      } catch (err) {
+        showToast(err.status === 409 ? "too late — agent already started" : "cancel failed");
+      }
+    };
+  }
+
   async function refreshLogbox() {
     const box = $("logbox");
     const item = items[idx];
@@ -1099,38 +1141,23 @@
     const active = ["queued", "agent_running", "opening_pr"].includes(d.status);
     const failed = d.status === "failed";
     if (!active && !failed) { box.style.display = "none"; return; }
+    if (d.status === "queued") {
+      box.className = "logbox";
+      box.innerHTML = `<div class="lhead">agent queued — undo window</div>` +
+        `<button class="retry" id="cancelBtn">cancel dispatch</button>`;
+      bindLogboxControls(box, d);
+      return;
+    }
     try {
       const log = await api(`/api/dispatch/${d.id}/log`);
       const tail = (log.tail || []).slice(failed ? -6 : -4).join("\n");
-      const queued = d.status === "queued";
       box.className = "logbox" + (failed ? " failed" : "");
       box.innerHTML = failed
         ? `<div class="lhead">agent flopped${log.failing_stage ? " @ " + esc(log.failing_stage) : ""}</div>` +
           `<div class="ltail">${esc(log.note || "")}\n${esc(tail)}</div>` +
           `<button class="retry" id="retryBtn">run it back</button>`
-        : queued
-          ? `<div class="lhead">agent queued — undo window</div>` +
-            `<button class="retry" id="cancelBtn">cancel dispatch</button>`
-          : `<div class="lhead">agent cooking…</div><div class="ltail">${esc(tail) || "(warming up)"}</div>`;
-      box.style.display = "block";
-      box.onpointerdown = (e) => e.stopPropagation();
-      const retry = $("retryBtn");
-      if (retry) retry.onclick = (e) => {
-        e.stopPropagation();
-        swipe(d.kind === "shape" ? "shape" : "implement");
-        showToast("re-dispatched. run it back.");
-      };
-      const cancelBtn = $("cancelBtn");
-      if (cancelBtn) cancelBtn.onclick = async (e) => {
-        e.stopPropagation();
-        try {
-          await api(`/api/dispatch/${d.id}/cancel`, { method: "POST" });
-          showToast("dispatch cancelled — no PR");
-          await load();
-        } catch (err) {
-          showToast(err.status === 409 ? "too late — agent already started" : "cancel failed");
-        }
-      };
+        : `<div class="lhead">agent cooking…</div><div class="ltail">${esc(tail) || "(warming up)"}</div>`;
+      bindLogboxControls(box, d);
     } catch { box.style.display = "none"; }
   }
   setInterval(() => { if (started) refreshLogbox().catch(() => {}); }, 2000);
@@ -1343,9 +1370,9 @@
     }
     if (e.target.closest("button, a, input, textarea, select")) return;
     const card = $("card");
-    if (e.key === "ArrowRight" && card) fly(card, "right", async () => { await swipe("implement"); go(1); });
-    else if (e.key === "ArrowLeft" && card) fly(card, "left", async () => { await swipe("skip"); go(1); });
-    else if (e.key === "ArrowUp" && card) fly(card, "up", async () => { await swipe("skip"); go(1); });
+    if (e.key === "ArrowRight" && card) fly(card, "right", async () => { const advance = await swipe("implement"); if (advance) go(1); return advance; });
+    else if (e.key === "ArrowLeft" && card) fly(card, "left", async () => { const advance = await swipe("skip"); if (advance) go(1); return advance; });
+    else if (e.key === "ArrowUp" && card) fly(card, "up", async () => { const advance = await swipe("skip"); if (advance) go(1); return advance; });
     else if (e.key === "ArrowDown" && card) fly(card, "down", () => go(-1));
     else if (e.key === " ") {
       e.preventDefault();
