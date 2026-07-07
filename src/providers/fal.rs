@@ -19,6 +19,11 @@ pub struct FalProvider {
     pub price_per_second_usd: f64,
     pub poll_interval: Duration,
     pub max_polls: u32,
+    /// Per-request timeout on every HTTP call (submit, status poll, result
+    /// fetch, video download). Without it a hung connection pins its render
+    /// reservation past the 20-minute poll ceiling — the reservation only
+    /// releases when the detached job finishes.
+    pub request_timeout: Duration,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +136,9 @@ impl FalProvider {
             // strands a billed render. 2s × 600 = 20 min ceiling.
             poll_interval: Duration::from_secs(2),
             max_polls: 600,
+            // Generous enough for a multi-MB MP4 download on a slow link;
+            // small next to the 20-min poll ceiling a hung socket would pin.
+            request_timeout: Duration::from_secs(120),
         }
     }
 
@@ -205,7 +213,10 @@ impl FalProvider {
             bail!("FAL_API_KEY or FAL_KEY is required for real video generation");
         }
         let started = Instant::now();
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(self.request_timeout)
+            .build()
+            .context("building fal http client")?;
 
         let result = self.submit_and_poll(&client, storyboard).await?;
         let url = result

@@ -67,6 +67,14 @@ pub struct FeedConfig {
     /// the feed cost nothing until the cursor approaches them. 0 disables JIT
     /// rendering entirely (renders only happen on explicit `generate`).
     pub prefetch_depth: usize,
+    /// A failed just-in-time render is retried on a later feed poll — up to
+    /// this many total attempts per spec, after which the failure sticks and
+    /// stays badged in the feed. Bounded so a persistent provider error can
+    /// never become a paid retry storm.
+    pub render_max_attempts: u32,
+    /// Seconds a failed just-in-time render waits before it becomes eligible
+    /// for its next attempt (the retry backoff).
+    pub render_retry_backoff_sec: u64,
 }
 
 impl Default for FeedConfig {
@@ -74,6 +82,8 @@ impl Default for FeedConfig {
         Self {
             max_items: 10,
             prefetch_depth: 3,
+            render_max_attempts: 3,
+            render_retry_backoff_sec: 30,
         }
     }
 }

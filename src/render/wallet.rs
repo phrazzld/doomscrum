@@ -14,7 +14,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::backlog::PrdSource;
 use crate::config::VideoConfig;
-use crate::providers::VideoRender;
+use crate::render::ledger::CostEntry;
 
 /// Paid render spend that has been approved and started but not yet persisted as
 /// render provenance — counted against the cap so concurrent jobs can't overshoot.
@@ -33,29 +33,32 @@ fn clean_money(value: f64) -> f64 {
     }
 }
 
-/// Total estimated spend on real renders, summed from provenance on disk.
-pub fn total_spend(renders: &[VideoRender]) -> f64 {
-    let sum = renders
+/// Total estimated spend on real renders, summed from the durable cost
+/// record ([`crate::render::ledger::spend_entries`] — the ledger unioned with
+/// any provenance it does not know about). Never read spend from surviving
+/// render JSONs alone: wiping `.doomscrum/renders` must not reset the meter.
+pub fn total_spend(entries: &[CostEntry]) -> f64 {
+    let sum = entries
         .iter()
-        .filter(|r| r.provider == "fal")
-        .map(|r| r.cost_estimate_usd)
+        .filter(|e| e.provider == "fal")
+        .map(|e| e.cost_usd)
         .sum();
     clean_money(sum)
 }
 
-/// Spend on real renders whose provenance timestamp falls on the UTC date of
+/// Spend on real renders whose recorded timestamp falls on the UTC date of
 /// `now`. The reset boundary is UTC so it is stable across operator machines.
-pub fn daily_spend(renders: &[VideoRender], now: DateTime<Utc>) -> f64 {
+pub fn daily_spend(entries: &[CostEntry], now: DateTime<Utc>) -> f64 {
     let today = now.date_naive();
-    let sum = renders
+    let sum = entries
         .iter()
-        .filter(|r| r.provider == "fal")
-        .filter(|r| {
-            DateTime::parse_from_rfc3339(&r.created_at)
+        .filter(|e| e.provider == "fal")
+        .filter(|e| {
+            DateTime::parse_from_rfc3339(&e.created_at)
                 .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
                 .unwrap_or(false)
         })
-        .map(|r| r.cost_estimate_usd)
+        .map(|e| e.cost_usd)
         .sum();
     clean_money(sum)
 }

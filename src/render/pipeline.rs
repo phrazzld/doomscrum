@@ -32,6 +32,16 @@ pub async fn render_spec(
         serde_json::to_string_pretty(&storyboard).unwrap_or_default(),
     );
     let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
+    // Paid spend is recorded in the durable append-only cost ledger the
+    // moment provenance exists. Best-effort by design: if this append fails,
+    // `ledger::spend_entries` still counts the render from its provenance
+    // JSON (union by render id), so no spend goes missing.
+    if render.provider == "fal" {
+        let _ = crate::render::ledger::append(
+            &ctx.ledger_path(),
+            &crate::render::ledger::CostEntry::from_render(&render),
+        );
+    }
     let _ = crate::events::append(
         &ctx.events_path(),
         &prd.id,

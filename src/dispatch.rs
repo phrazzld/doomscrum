@@ -186,6 +186,56 @@ impl Dispatcher {
         Ok(true)
     }
 
+    /// Force a non-terminal dispatch to `failed` with an explanatory note —
+    /// the recovery path for a dispatch whose driving task is gone (a panic in
+    /// the detached run task, or a server crash that stranded the receipt).
+    /// Terminal receipts are left alone. Returns true if the receipt flipped.
+    pub fn mark_failed(&self, id: &str, note: &str) -> Result<bool> {
+        let _guard = self.lock();
+        let Some(mut receipt) = self.load_one(id) else {
+            return Ok(false);
+        };
+        if matches!(
+            receipt.status.as_str(),
+            "pr_opened" | "completed_local" | "failed" | "cancelled"
+        ) {
+            return Ok(false);
+        }
+        receipt.status = "failed".into();
+        receipt.note = Some(note.into());
+        receipt.updated_at = now_rfc3339();
+        self.persist(&receipt)?;
+        Ok(true)
+    }
+
+    /// Boot-time reconcile: any receipt still in an in-flight status
+    /// (`queued` / `agent_running` / `opening_pr`) was stranded by a crash —
+    /// the tokio task that owned it died with the old process, so the status
+    /// would otherwise stay frozen forever, and GC would keep protecting its
+    /// orphaned worktree (`is_active_dispatch`). Flip each to `failed` so the
+    /// feed shows the truth and GC can reclaim the worktree. Returns the
+    /// receipts that were reconciled.
+    pub fn reconcile_stranded(&self) -> Result<Vec<DispatchReceipt>> {
+        let mut reconciled = Vec::new();
+        for receipt in load_receipts(&self.dispatches_dir)? {
+            let stranded = matches!(
+                receipt.status.as_str(),
+                "queued" | "agent_running" | "opening_pr"
+            );
+            if stranded
+                && self.mark_failed(
+                    &receipt.id,
+                    "stranded by server restart — reconciled on boot",
+                )?
+            {
+                if let Some(updated) = self.load_one(&receipt.id) {
+                    reconciled.push(updated);
+                }
+            }
+        }
+        Ok(reconciled)
+    }
+
     /// Atomically transition a queued dispatch to `agent_running`, or report it
     /// cancelled/stale. Shares `state_lock` with [`cancel`](Self::cancel), so the
     /// undo and the agent start can never both win the race past `queued`.
@@ -1112,6 +1162,54 @@ mod tests {
         assert_eq!(review_size(0), "fast-merge");
         assert_eq!(review_size(REVIEW_THRESHOLD_LINES), "fast-merge");
         assert_eq!(review_size(REVIEW_THRESHOLD_LINES + 1), "needs-review");
+    }
+
+    #[test]
+    fn reconcile_stranded_fails_in_flight_receipts_and_leaves_terminal_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+
+        // queued → stranded; agent_running → stranded; terminal → untouched.
+        let queued = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        let running = dispatcher.create(&prd(), DispatchKind::Shape).unwrap();
+        assert!(matches!(
+            dispatcher.claim(&running.id).unwrap(),
+            Claim::Started
+        ));
+        let mut done = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        done.status = "pr_opened".into();
+        dispatcher.persist(&done).unwrap();
+
+        let reconciled = dispatcher.reconcile_stranded().unwrap();
+        let mut ids: Vec<&str> = reconciled.iter().map(|r| r.id.as_str()).collect();
+        ids.sort_unstable();
+        let mut expected = vec![queued.id.as_str(), running.id.as_str()];
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+        for r in &reconciled {
+            assert_eq!(r.status, "failed");
+            assert!(
+                r.note.as_deref().unwrap_or_default().contains("stranded"),
+                "{r:?}"
+            );
+        }
+        assert_eq!(dispatcher.load_one(&done.id).unwrap().status, "pr_opened");
+        // A second boot reconciles nothing — idempotent.
+        assert!(dispatcher.reconcile_stranded().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mark_failed_flips_in_flight_but_never_terminal_receipts() {
+        let dir = tempfile::tempdir().unwrap();
+        let dispatcher = test_dispatcher(dir.path());
+        let r = dispatcher.create(&prd(), DispatchKind::Implement).unwrap();
+        assert!(dispatcher.mark_failed(&r.id, "task panicked").unwrap());
+        let loaded = dispatcher.load_one(&r.id).unwrap();
+        assert_eq!(loaded.status, "failed");
+        assert_eq!(loaded.note.as_deref(), Some("task panicked"));
+        // Already failed → refuse to overwrite; unknown id → false.
+        assert!(!dispatcher.mark_failed(&r.id, "again").unwrap());
+        assert!(!dispatcher.mark_failed("nope", "x").unwrap());
     }
 
     #[test]

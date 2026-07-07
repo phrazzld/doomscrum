@@ -8,6 +8,7 @@ pub mod gc;
 pub mod preflight;
 pub mod providers;
 pub mod render;
+pub mod report;
 pub mod scriptwriter;
 pub mod secrets;
 pub mod server;

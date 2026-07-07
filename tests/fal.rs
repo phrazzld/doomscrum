@@ -19,6 +19,7 @@ fn provider(base_url: String, api_key: &str) -> FalProvider {
         price_per_second_usd: 0.15,
         poll_interval: Duration::from_millis(10),
         max_polls: 10,
+        request_timeout: Duration::from_secs(5),
     }
 }
 
@@ -247,6 +248,41 @@ async fn missing_api_key_is_a_clear_error() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("FAL_API_KEY"), "err: {err}");
+}
+
+/// A hung fal connection must not pin its render reservation until the
+/// 20-minute poll ceiling: every HTTP call carries a request timeout, so a
+/// stalled submit surfaces as a normal error (which releases the reservation
+/// and records the failure upstream).
+#[tokio::test]
+async fn hung_provider_connection_times_out_instead_of_pinning_the_job() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/test-model"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(30)) // far past the client timeout
+                .set_body_json(serde_json::json!({})),
+        )
+        .mount(&server)
+        .await;
+
+    let prd = sample_prd();
+    let storyboard = compile_storyboard(&prd, &distill(&prd), 8);
+    let dir = tempfile::tempdir().unwrap();
+    let mut p = provider(server.uri(), "k");
+    p.request_timeout = Duration::from_millis(200);
+    let started = std::time::Instant::now();
+    let err = p.render(&storyboard, dir.path()).await.unwrap_err();
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "timeout must fire long before the mock's 30s delay"
+    );
+    let msg = format!("{err:#}").to_lowercase();
+    assert!(
+        msg.contains("timed out") || msg.contains("timeout"),
+        "{msg}"
+    );
 }
 
 #[tokio::test]

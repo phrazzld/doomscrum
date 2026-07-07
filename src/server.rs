@@ -23,6 +23,7 @@ use crate::providers::{
     compare_render_freshness, fake::FakeProvider, fal::FalProvider, load_renders, Provider,
     VideoRender,
 };
+use crate::render::ledger::{self, CostEntry};
 use crate::render::pipeline::render_spec;
 use crate::render::wallet::{
     self, cap_breach, pending_daily_spend, pending_total_spend, render_plan, CapBreach, RenderPlan,
@@ -37,6 +38,54 @@ pub use crate::render::wallet::{daily_spend, next_daily_reset_at, planned_fal_sp
 const INDEX_HTML: &str = include_str!("../assets/index.html");
 const VIBE_RATINGS: &[&str] = &["cursed", "brainrot", "solid", "corporate"];
 
+/// One spec's in-flight render state in the `cooking` map. The feed API
+/// serializes only `label` (`"cooking"` | `"failed: …"`) — the retry
+/// bookkeeping stays server-side.
+#[derive(Clone)]
+pub struct CookEntry {
+    /// "cooking" while in flight; "failed: …" after a failure.
+    pub label: String,
+    /// Render starts for this spec so far — the bounded-retry budget.
+    pub attempts: u32,
+    /// When the last attempt failed (drives the retry backoff).
+    pub failed_at: Option<std::time::Instant>,
+}
+
+impl CookEntry {
+    fn cooking(attempts: u32) -> Self {
+        Self {
+            label: "cooking".into(),
+            attempts,
+            failed_at: None,
+        }
+    }
+
+    fn is_cooking(&self) -> bool {
+        self.label == "cooking"
+    }
+}
+
+/// How a failed just-in-time render becomes eligible for another attempt.
+#[derive(Clone, Copy)]
+struct RetryPolicy {
+    max_attempts: u32,
+    backoff: std::time::Duration,
+}
+
+/// Why a windowed spec is being (re)rendered — decides how strict the wallet
+/// treatment is in [`maybe_prefetch`].
+#[derive(Debug, PartialEq, Eq)]
+enum PrefetchReason {
+    /// No render at all yet.
+    Fresh,
+    /// A degraded (budget-exhausted) fixture stands in; upgrade it to a real
+    /// render — but ONLY when the budget actually allows one, otherwise the
+    /// feed would re-render the same fixture on every poll.
+    DegradedUpgrade,
+    /// The previous attempt failed; retry within the bounded budget.
+    FailedRetry { attempts: u32 },
+}
+
 #[derive(Clone)]
 pub struct AppCtx {
     pub cfg: Config,
@@ -44,10 +93,11 @@ pub struct AppCtx {
     pub root: PathBuf,
     /// The currently synced repo — switchable at runtime via /api/repo.
     repo_sel: Arc<std::sync::RwLock<PathBuf>>,
-    /// In-flight single-spec AI renders: prd_id -> "cooking" | "failed: …".
+    /// In-flight single-spec AI renders: prd_id -> [`CookEntry`].
     /// UI-triggered renders run detached so a page refresh can't abort a
-    /// paid job; the feed poll reads this map for progress/failure.
-    cooking: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// paid job; the feed poll reads this map for progress/failure, and the
+    /// prefetch loop reads the attempt count for bounded retry.
+    cooking: Arc<std::sync::Mutex<std::collections::HashMap<String, CookEntry>>>,
     /// Concurrency limiter for agent dispatches. Receipts are created before
     /// acquiring a permit so excess swipes are durable and visible as queued.
     dispatch_slots: Arc<Semaphore>,
@@ -173,6 +223,44 @@ impl AppCtx {
 
     pub fn events_path(&self) -> PathBuf {
         self.state_dir().join("events.ndjson")
+    }
+
+    /// The durable append-only cost ledger. Deliberately OUTSIDE the renders
+    /// dir: wiping `.doomscrum/renders` must not reset the spend meter.
+    pub fn ledger_path(&self) -> PathBuf {
+        self.state_dir().join("costs.ndjson")
+    }
+
+    /// The complete paid-spend record every wallet gate reads: the durable
+    /// ledger unioned with any render provenance it does not know about.
+    pub fn spend_entries(&self, renders: &[VideoRender]) -> Vec<CostEntry> {
+        let recorded = ledger::read_all(&self.ledger_path()).unwrap_or_default();
+        ledger::spend_entries(recorded, renders)
+    }
+
+    /// Boot-time reconcile: rebuild runtime truth from disk instead of
+    /// starting empty. A crash kills the detached tasks that owned in-flight
+    /// dispatches, so their receipts would stay frozen (`agent_running` /
+    /// `opening_pr` / `queued`) forever and GC would keep protecting their
+    /// orphaned worktrees. Flip each to `failed` and append a durable
+    /// `dispatch_failed` event. (In-flight renders need no adoption: paid
+    /// provenance + the cost ledger are written atomically-enough at
+    /// completion, and a crashed job's reservation dies with the process.)
+    pub fn reconcile_on_boot(&self) -> anyhow::Result<Vec<crate::dispatch::DispatchReceipt>> {
+        let reconciled = self.dispatcher().reconcile_stranded()?;
+        for receipt in &reconciled {
+            let _ = events::append(
+                &self.events_path(),
+                &receipt.prd_id,
+                &receipt.prd_sha256,
+                "dispatch_failed",
+                Some(format!(
+                    "dispatch {} stranded by restart — reconciled on boot",
+                    receipt.id
+                )),
+            );
+        }
+        Ok(reconciled)
     }
 
     async fn release_render_reservation(&self, id: Option<&str>) {
@@ -384,31 +472,78 @@ struct StateQuery {
     cursor: Option<usize>,
 }
 
-/// Specs in the viewport window `[cursor, cursor + depth)` that still need a
-/// render: no ready render yet (a revisit replays the cached render — no
-/// second spend) and not already cooking (idempotent across the feed's poll).
-/// Specs deeper than the window are never returned, so they cost nothing until
-/// the cursor approaches them.
+/// Specs in the viewport window `[cursor, cursor + depth)` that need a
+/// render, each with its [`PrefetchReason`]:
+/// - no render yet → `Fresh` (a ready revisit replays the cache — no second
+///   spend);
+/// - latest render is a budget-degraded fixture → `DegradedUpgrade` (the
+///   caller only acts on it when the wallet allows a real render);
+/// - last attempt failed → `FailedRetry` once the backoff has elapsed and the
+///   attempt budget remains; an in-flight or attempt-exhausted spec is
+///   skipped (idempotent across the feed's poll, and no retry storm).
+///
+/// Specs deeper than the window are never returned, so they cost nothing
+/// until the cursor approaches them.
 fn prefetch_window<'a>(
     prds: &'a [PrdSource],
     renders: &[VideoRender],
-    cooking: &std::collections::HashMap<String, String>,
+    cooking: &std::collections::HashMap<String, CookEntry>,
     cursor: usize,
     depth: usize,
-) -> Vec<&'a PrdSource> {
+    retry: RetryPolicy,
+) -> Vec<(&'a PrdSource, PrefetchReason)> {
     let start = cursor.min(prds.len());
     let end = cursor.saturating_add(depth).min(prds.len());
     prds[start..end]
         .iter()
-        .filter(|prd| latest_render(&prd.id, renders).is_none())
-        .filter(|prd| !cooking.contains_key(&prd.id))
+        .filter_map(|prd| {
+            if let Some(entry) = cooking.get(&prd.id) {
+                if entry.is_cooking() {
+                    return None; // in flight — idempotent across polls
+                }
+                let backoff_elapsed = entry
+                    .failed_at
+                    .is_none_or(|at| at.elapsed() >= retry.backoff);
+                if entry.attempts < retry.max_attempts && backoff_elapsed {
+                    return Some((
+                        prd,
+                        PrefetchReason::FailedRetry {
+                            attempts: entry.attempts,
+                        },
+                    ));
+                }
+                return None; // exhausted or still backing off — failure stays badged
+            }
+            match latest_render(&prd.id, renders) {
+                None => Some((prd, PrefetchReason::Fresh)),
+                Some(render) if render.degraded_reason.is_some() => {
+                    Some((prd, PrefetchReason::DegradedUpgrade))
+                }
+                Some(_) => None, // cached real render — replay, no re-spend
+            }
+        })
         .collect()
+}
+
+/// Await a detached render task, converting a panic into a normal `Err` so
+/// the caller's cleanup (cooking map, failure event, reservation release)
+/// always runs — a panicked task must never silently pin a reservation.
+async fn await_render_task(
+    handle: tokio::task::JoinHandle<anyhow::Result<VideoRender>>,
+) -> anyhow::Result<VideoRender> {
+    match handle.await {
+        Ok(outcome) => outcome,
+        Err(join_err) => Err(anyhow::anyhow!("render task panicked: {join_err}")),
+    }
 }
 
 /// Run one render detached: a page refresh or a fast feed poll must never abort
 /// a job that may cost money. Updates `cooking` on completion, tags a degraded
-/// substitute so the feed can badge it, and releases the reservation. The caller
-/// marks `cooking` before spawning so the job is visible on the next poll.
+/// substitute so the feed can badge it, appends a durable `render_failed`
+/// event on failure (so failures survive restart instead of dying with the
+/// in-memory map), and releases the reservation — even if the render task
+/// panics. The caller marks `cooking` before spawning so the job is visible
+/// on the next poll.
 fn spawn_render_job(
     ctx: &AppCtx,
     prd: PrdSource,
@@ -418,7 +553,15 @@ fn spawn_render_job(
 ) {
     let bg = ctx.clone();
     tokio::spawn(async move {
-        let outcome = render_spec(&bg, &provider, &prd).await;
+        // Inner spawn: a panic in the render pipeline surfaces as a JoinError
+        // here instead of killing this supervisor, so cleanup always runs.
+        let task = {
+            let ctx = bg.clone();
+            let provider = provider.clone();
+            let prd = prd.clone();
+            tokio::spawn(async move { render_spec(&ctx, &provider, &prd).await })
+        };
+        let outcome = await_render_task(task).await;
         {
             let mut map = bg.cooking.lock().expect("cooking lock");
             match &outcome {
@@ -426,9 +569,28 @@ fn spawn_render_job(
                     map.remove(&prd.id);
                 }
                 Err(err) => {
-                    map.insert(prd.id.clone(), format!("failed: {err:#}"));
+                    let attempts = map.get(&prd.id).map(|e| e.attempts).unwrap_or(1);
+                    map.insert(
+                        prd.id.clone(),
+                        CookEntry {
+                            label: format!("failed: {err:#}"),
+                            attempts,
+                            failed_at: Some(std::time::Instant::now()),
+                        },
+                    );
                 }
             }
+        }
+        if let Err(err) = &outcome {
+            // Durable failure record: the in-memory map dies with the process,
+            // the events ledger does not.
+            let _ = events::append(
+                &bg.events_path(),
+                &prd.id,
+                &prd.sha256,
+                "render_failed",
+                Some(format!("{err:#}")),
+            );
         }
         // Tag a degraded substitute so the feed badges it (overwrites the render
         // JSON the provider just wrote at the same path).
@@ -456,18 +618,26 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
     let now = Utc::now();
     let cap_total = ctx.cfg.video.max_total_spend_usd;
     let cap_daily = ctx.cfg.video.max_daily_spend_usd;
+    let retry = RetryPolicy {
+        max_attempts: ctx.cfg.feed.render_max_attempts,
+        backoff: std::time::Duration::from_secs(ctx.cfg.feed.render_retry_backoff_sec),
+    };
+    // Spend truth comes from the durable ledger (unioned with provenance),
+    // never from surviving render JSONs alone.
+    let entries = ctx.spend_entries(renders);
 
     let mut reservations = ctx.wallet.lock().await;
-    let mut spent_total = total_spend(renders) + pending_total_spend(&reservations);
-    let mut spent_today = daily_spend(renders, now) + pending_daily_spend(&reservations, now);
+    let mut spent_total = total_spend(&entries) + pending_total_spend(&reservations);
+    let mut spent_today = daily_spend(&entries, now) + pending_daily_spend(&reservations, now);
     let mut cooking = ctx.cooking.lock().expect("cooking lock");
 
     // (spec, render provider, reservation id, degraded badge) — decided and
-    // reserved synchronously, then spawned after the locks drop.
+    // reserved synchronously, then spawned after the locks drop. The attempt
+    // count rides on the CookEntry; the failure path reads it back from there.
     let mut jobs: Vec<(PrdSource, &'static str, Option<String>, Option<String>)> = Vec::new();
-    for prd in prefetch_window(prds, renders, &cooking, cursor, depth) {
+    for (prd, reason) in prefetch_window(prds, renders, &cooking, cursor, depth, retry) {
         let cost = crate::providers::fal::unit_cost(&ctx.cfg.video.with_pipeline(&prd.sha256));
-        match render_plan(
+        let plan = render_plan(
             &provider,
             fal_key,
             cost,
@@ -475,7 +645,18 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
             spent_today,
             cap_total,
             cap_daily,
-        ) {
+        );
+        // A degraded fixture only upgrades when the budget actually allows a
+        // real render; anything else would re-render the same fixture (or
+        // burn a poll) every time the spec crosses the viewport.
+        if reason == PrefetchReason::DegradedUpgrade && !matches!(plan, RenderPlan::Real { .. }) {
+            continue;
+        }
+        let attempt = match reason {
+            PrefetchReason::FailedRetry { attempts } => attempts + 1,
+            _ => 1,
+        };
+        match plan {
             RenderPlan::Real { cost } => {
                 spent_total += cost;
                 spent_today += cost;
@@ -485,11 +666,11 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
                     amount_usd: cost,
                     created_at: now,
                 });
-                cooking.insert(prd.id.clone(), "cooking".into());
+                cooking.insert(prd.id.clone(), CookEntry::cooking(attempt));
                 jobs.push((prd.clone(), "fal", Some(id), None));
             }
             RenderPlan::DegradedFake => {
-                cooking.insert(prd.id.clone(), "cooking".into());
+                cooking.insert(prd.id.clone(), CookEntry::cooking(attempt));
                 jobs.push((
                     prd.clone(),
                     "fake",
@@ -498,7 +679,7 @@ async fn maybe_prefetch(ctx: &AppCtx, prds: &[PrdSource], renders: &[VideoRender
                 ));
             }
             RenderPlan::Fake => {
-                cooking.insert(prd.id.clone(), "cooking".into());
+                cooking.insert(prd.id.clone(), CookEntry::cooking(attempt));
                 jobs.push((prd.clone(), "fake", None, None));
             }
             RenderPlan::Skip => {}
@@ -530,6 +711,7 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
     let reservations = ctx.wallet.snapshot().await;
     let pending_usd = pending_total_spend(&reservations);
     let pending_daily_usd = pending_daily_spend(&reservations, now);
+    let spend_entries = ctx.spend_entries(&renders);
 
     let items: Vec<Value> = prds
         .iter()
@@ -591,19 +773,29 @@ async fn api_state(State(ctx): State<AppCtx>, Query(q): Query<StateQuery>) -> Re
         maybe_prefetch(&ctx, &prds, &renders, cursor).await;
     }
 
+    // The API serializes cooking as prd_id -> label ("cooking" | "failed: …");
+    // the retry bookkeeping stays server-side.
+    let cooking_labels: std::collections::BTreeMap<String, String> = ctx
+        .cooking
+        .lock()
+        .expect("cooking lock")
+        .iter()
+        .map(|(id, entry)| (id.clone(), entry.label.clone()))
+        .collect();
+
     (
         [(header::CACHE_CONTROL, "no-store")],
         Json(json!({
             "items": items,
-            "cooking": *ctx.cooking.lock().expect("cooking lock"),
+            "cooking": cooking_labels,
             "video_provider": ctx.cfg.video.provider,
             "fal_configured": ctx.fal_key().is_some(),
             "max_items": ctx.cfg.feed.max_items,
             "spend": {
-                "total_usd": total_spend(&renders),
+                "total_usd": total_spend(&spend_entries),
                 "cap_usd": ctx.cfg.video.max_total_spend_usd,
                 "pending_usd": pending_usd,
-                "daily_usd": daily_spend(&renders, now),
+                "daily_usd": daily_spend(&spend_entries, now),
                 "daily_pending_usd": pending_daily_usd,
                 "daily_cap_usd": ctx.cfg.video.max_daily_spend_usd,
                 "daily_reset_at": next_daily_reset_at(now),
@@ -703,7 +895,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
             .lock()
             .expect("cooking lock")
             .iter()
-            .filter(|(_, status)| status.as_str() == "cooking")
+            .filter(|(_, entry)| entry.is_cooking())
             .map(|(prd_id, _)| prd_id.clone())
             .collect()
     } else {
@@ -734,7 +926,10 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
     // either the lifetime or daily cap. This runs before provider construction
     // so budget failures do not require a FAL key.
     if provider_name == "fal" {
-        let spent = total_spend(&existing);
+        // Spend truth from the durable ledger (unioned with provenance) — a
+        // wiped renders dir must not reopen the wallet.
+        let spend_entries = ctx.spend_entries(&existing);
+        let spent = total_spend(&spend_entries);
         let planned = planned_fal_spend(&ctx.cfg.video, &targets);
         if planned > 0.0 && body.confirmed_cost != Some(true) {
             let now = Utc::now();
@@ -751,7 +946,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
                     "render_count": targets.len(),
                     "price_per_render_usd": crate::providers::fal::avg_unit_cost(&ctx.cfg.video),
                     "pending_usd": pending_total_spend(&reservations),
-                    "daily_spent_usd": daily_spend(&existing, now),
+                    "daily_spent_usd": daily_spend(&spend_entries, now),
                     "daily_pending_usd": pending_daily_spend(&reservations, now),
                     "daily_cap_usd": ctx.cfg.video.max_daily_spend_usd,
                     "daily_reset_at": next_daily_reset_at(now),
@@ -764,7 +959,7 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         let pending_total = pending_total_spend(&reservations);
         let pending_daily = pending_daily_spend(&reservations, now);
         let cap = ctx.cfg.video.max_total_spend_usd;
-        let today = daily_spend(&existing, now);
+        let today = daily_spend(&spend_entries, now);
         let daily_cap = ctx.cfg.video.max_daily_spend_usd;
         // One gate. `cap_breach` owns the arithmetic; this match owns the
         // HTTP shaping (402 lifetime, 429 daily — same precedence as before).
@@ -839,9 +1034,11 @@ async fn api_generate(State(ctx): State<AppCtx>, body: Option<Json<GenerateBody>
         // spec is never double-submitted to the paid provider.
         let already_cooking = {
             let mut cooking = ctx.cooking.lock().expect("cooking lock");
-            let present = cooking.contains_key(&prd.id);
+            // A stale "failed: …" entry does not block an explicit re-cook —
+            // the operator asked, so the attempt budget resets.
+            let present = cooking.get(&prd.id).is_some_and(CookEntry::is_cooking);
             if !present {
-                cooking.insert(prd.id.clone(), "cooking".into());
+                cooking.insert(prd.id.clone(), CookEntry::cooking(1));
             }
             present
         };
@@ -954,7 +1151,19 @@ async fn api_swipe(State(ctx): State<AppCtx>, Json(body): Json<SwipeBody>) -> Re
                 let Ok(_permit) = slots.acquire_owned().await else {
                     return;
                 };
-                dispatcher.run(queued, prd).await;
+                // Inner spawn: run() itself never panics the pipeline, but if
+                // it ever does, the receipt must not stay frozen at
+                // `agent_running` — mark it failed so the feed and GC see a
+                // terminal status instead of a permanently "cooking" agent.
+                let receipt_id = queued.id.clone();
+                let runner = dispatcher.clone();
+                if tokio::spawn(async move { runner.run(queued, prd).await })
+                    .await
+                    .is_err()
+                {
+                    let _ =
+                        dispatcher.mark_failed(&receipt_id, "dispatch task panicked — reconciled");
+                }
             });
             Json(json!({ "dispatch": receipt })).into_response()
         }
@@ -1152,12 +1361,24 @@ fn media_stream_response(
 #[cfg(test)]
 mod tests {
     use super::{
-        latest_render, log_tail, parse_byte_range, prefetch_window, render_plan, RenderPlan,
+        await_render_task, latest_render, log_tail, parse_byte_range, prefetch_window, render_plan,
+        CookEntry, PrefetchReason, RenderPlan, RetryPolicy,
     };
     use crate::backlog::PrdSource;
     use crate::providers::VideoRender;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::time::Duration;
+
+    const NO_RETRY_YET: RetryPolicy = RetryPolicy {
+        max_attempts: 3,
+        backoff: Duration::from_secs(3600), // effectively "never" within a test
+    };
+
+    const RETRY_NOW: RetryPolicy = RetryPolicy {
+        max_attempts: 3,
+        backoff: Duration::ZERO,
+    };
 
     fn prd(id: &str) -> PrdSource {
         PrdSource {
@@ -1199,23 +1420,30 @@ mod tests {
         }
     }
 
+    fn ids(win: &[(&PrdSource, PrefetchReason)]) -> Vec<String> {
+        win.iter().map(|(p, _)| p.id.clone()).collect()
+    }
+
+    fn failed_entry(attempts: u32) -> CookEntry {
+        CookEntry {
+            label: "failed: boom".into(),
+            attempts,
+            failed_at: Some(std::time::Instant::now()),
+        }
+    }
+
     #[test]
     fn prefetch_window_covers_only_depth_specs_ahead_of_cursor() {
         let prds = vec![prd("a"), prd("b"), prd("c"), prd("d"), prd("e")];
         let renders: Vec<VideoRender> = vec![];
         let cooking = HashMap::new();
         // cursor 0, depth 3 -> the top three; d and e (deeper) cost nothing.
-        let win: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 0, 3)
-            .iter()
-            .map(|p| p.id.as_str())
-            .collect();
-        assert_eq!(win, vec!["a", "b", "c"]);
+        let win = prefetch_window(&prds, &renders, &cooking, 0, 3, NO_RETRY_YET);
+        assert_eq!(ids(&win), vec!["a", "b", "c"]);
+        assert!(win.iter().all(|(_, r)| *r == PrefetchReason::Fresh));
         // cursor advances -> the window slides, bringing d and e into view.
-        let win2: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 2, 3)
-            .iter()
-            .map(|p| p.id.as_str())
-            .collect();
-        assert_eq!(win2, vec!["c", "d", "e"]);
+        let win2 = prefetch_window(&prds, &renders, &cooking, 2, 3, NO_RETRY_YET);
+        assert_eq!(ids(&win2), vec!["c", "d", "e"]);
     }
 
     #[test]
@@ -1223,12 +1451,9 @@ mod tests {
         let prds = vec![prd("a"), prd("b"), prd("c")];
         let renders = vec![ready_render_for("a")]; // a is cached — revisit, no re-spend
         let mut cooking = HashMap::new();
-        cooking.insert("b".to_string(), "cooking".to_string()); // b is in flight
-        let win: Vec<&str> = prefetch_window(&prds, &renders, &cooking, 0, 3)
-            .iter()
-            .map(|p| p.id.as_str())
-            .collect();
-        assert_eq!(win, vec!["c"]); // only c still needs a render
+        cooking.insert("b".to_string(), CookEntry::cooking(1)); // b is in flight
+        let win = prefetch_window(&prds, &renders, &cooking, 0, 3, NO_RETRY_YET);
+        assert_eq!(ids(&win), vec!["c"]); // only c still needs a render
     }
 
     #[test]
@@ -1236,8 +1461,47 @@ mod tests {
         let prds = vec![prd("a"), prd("b")];
         let renders: Vec<VideoRender> = vec![];
         let cooking = HashMap::new();
-        assert!(prefetch_window(&prds, &renders, &cooking, 0, 0).is_empty());
-        assert!(prefetch_window(&prds, &renders, &cooking, 9, 3).is_empty());
+        assert!(prefetch_window(&prds, &renders, &cooking, 0, 0, NO_RETRY_YET).is_empty());
+        assert!(prefetch_window(&prds, &renders, &cooking, 9, 3, NO_RETRY_YET).is_empty());
+    }
+
+    #[test]
+    fn prefetch_window_offers_a_degraded_fixture_for_upgrade() {
+        // A budget-degraded fixture is not "done": it re-enters the window as
+        // an upgrade candidate (the caller only acts when budget allows).
+        let prds = vec![prd("a")];
+        let mut degraded = ready_render_for("a");
+        degraded.degraded_reason = Some("render budget exhausted".into());
+        let win = prefetch_window(&prds, &[degraded], &HashMap::new(), 0, 1, NO_RETRY_YET);
+        assert_eq!(ids(&win), vec!["a"]);
+        assert_eq!(win[0].1, PrefetchReason::DegradedUpgrade);
+    }
+
+    #[test]
+    fn prefetch_window_retries_a_failed_render_after_backoff_within_attempt_budget() {
+        let prds = vec![prd("a")];
+        let renders: Vec<VideoRender> = vec![];
+        let mut cooking = HashMap::new();
+        cooking.insert("a".to_string(), failed_entry(1));
+        // Backoff not yet elapsed → skipped (no retry storm on every poll).
+        assert!(prefetch_window(&prds, &renders, &cooking, 0, 1, NO_RETRY_YET).is_empty());
+        // Backoff elapsed → retried, carrying the attempt count.
+        let win = prefetch_window(&prds, &renders, &cooking, 0, 1, RETRY_NOW);
+        assert_eq!(ids(&win), vec!["a"]);
+        assert_eq!(win[0].1, PrefetchReason::FailedRetry { attempts: 1 });
+        // Attempt budget exhausted → the failure sticks, no more paid retries.
+        cooking.insert("a".to_string(), failed_entry(RETRY_NOW.max_attempts));
+        assert!(prefetch_window(&prds, &renders, &cooking, 0, 1, RETRY_NOW).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_panicked_render_task_surfaces_as_a_normal_error() {
+        // The supervisor path: a panic inside the detached render task must
+        // come back as Err (so cleanup — cooking map, failure event,
+        // reservation release — runs), never a silent swallow.
+        let handle = tokio::spawn(async { panic!("render blew up") });
+        let err = await_render_task(handle).await.unwrap_err();
+        assert!(err.to_string().contains("panicked"), "{err:#}");
     }
 
     #[test]

@@ -1265,3 +1265,356 @@ async fn repo_route_names_the_backlog_dir_for_onramp_copy() {
     assert_eq!(code, 200, "{body}");
     assert_eq!(body["backlog_dir"], "backlog.d", "{body}");
 }
+
+// --- runtime reliability epic (doomscrum-931) --------------------------------
+// Crash recovery, self-healing render lifecycle, and the durable cost ledger.
+
+/// Mount a fal mock that answers the submit with an inline (synchronous)
+/// video URL and serves the MP4 bytes.
+async fn mount_fal_success(fal: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/test-model"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "video": { "url": format!("{}/files/out.mp4", fal.uri()) }
+        })))
+        .mount(fal)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/files/out.mp4"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_bytes(b"\x00\x00\x00\x18ftypmp42-doomscrum-test"),
+        )
+        .mount(fal)
+        .await;
+}
+
+fn fal_test_config(cfg: &mut Config, fal_uri: String) {
+    cfg.script.mode = "templates".into();
+    cfg.video.provider = "fal".into();
+    cfg.video.fal_model = "fal-ai/test-model".into();
+    cfg.video.fal_base_url = fal_uri;
+    cfg.video.price_per_second_usd = 0.15; // 8s clip → $1.20/render
+}
+
+/// Acceptance (doomscrum-931): a budget-degraded fixture upgrades to a real
+/// render once it re-enters the viewport window and budget allows.
+#[tokio::test(flavor = "multi_thread")]
+async fn budget_degraded_fixture_upgrades_to_real_render_once_budget_allows() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let fal = MockServer::start().await;
+    mount_fal_success(&fal).await;
+    let app = spawn_app_with(|cfg| {
+        fal_test_config(cfg, fal.uri());
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 100.0;
+        cfg.feed.prefetch_depth = 1;
+    })
+    .await;
+
+    let (_, state) = app.get("/api/state").await;
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let prd_sha = state["items"][0]["prd"]["sha256"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // Seed the pre-crash world: the wallet was exhausted, so this spec holds a
+    // degraded fixture instead of a real render.
+    let mut degraded = render_fixture(
+        &prd_id,
+        &prd_sha,
+        "degraded-fixture",
+        "fake-local",
+        "2026-01-01T00:00:00.000Z",
+    );
+    degraded.degraded_reason = Some("render budget exhausted".into());
+    save_render(&app.root.join(".doomscrum/renders"), &degraded).unwrap();
+
+    // Budget is now available: the viewport poll upgrades the fixture.
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("?cursor=0", |b| {
+            b["items"][0]["render"]["provider"] == "fal"
+        })
+        .await;
+    assert!(
+        body["items"][0]["render"]["degraded_reason"].is_null(),
+        "the upgraded render is real, not badged: {}",
+        body["items"][0]["render"]
+    );
+    // Exactly one paid render: once real, the spec never re-enters the window.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    app.get("/api/state?cursor=0").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let submits = fal
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|r| r.url.path() == "/fal-ai/test-model")
+        .count();
+    assert_eq!(submits, 1, "an upgraded spec must not re-render");
+}
+
+/// Acceptance (doomscrum-931): while the wallet is still exhausted, a
+/// degraded fixture is NOT re-rendered on every poll.
+#[tokio::test(flavor = "multi_thread")]
+async fn degraded_fixture_is_not_rerendered_while_still_over_budget() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let app = spawn_app_with(|cfg| {
+        cfg.script.mode = "templates".into();
+        cfg.video.provider = "fal".into();
+        cfg.video.max_total_spend_usd = 0.0; // still over budget
+        cfg.feed.prefetch_depth = 1;
+    })
+    .await;
+    let (_, state) = app.get("/api/state").await;
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let prd_sha = state["items"][0]["prd"]["sha256"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut degraded = render_fixture(
+        &prd_id,
+        &prd_sha,
+        "degraded-fixture",
+        "fake-local",
+        "2026-01-01T00:00:00.000Z",
+    );
+    degraded.degraded_reason = Some("render budget exhausted".into());
+    save_render(&app.root.join(".doomscrum/renders"), &degraded).unwrap();
+
+    for _ in 0..3 {
+        app.get("/api/state?cursor=0").await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let (_, body) = app.get("/api/state?cursor=0").await;
+    assert_eq!(
+        body["items"][0]["render"]["id"], "degraded-fixture",
+        "the fixture must not be re-rendered while over budget: {}",
+        body["items"][0]["render"]
+    );
+    assert_eq!(
+        body["cooking"],
+        json!({}),
+        "no render job may start while the wallet refuses an upgrade"
+    );
+}
+
+/// Acceptance (doomscrum-931): a failed JIT render is retried on a later poll
+/// via the bounded retry — the cooking "failed: …" key is cleared and the spec
+/// re-attempted at the route level — and the failure survives in the durable
+/// events ledger.
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_jit_render_is_retried_on_a_later_poll_and_recorded_durably() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let fal = MockServer::start().await;
+    // First submit blows up; every later one succeeds.
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/test-model"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("transient provider error"))
+        .up_to_n_times(1)
+        .mount(&fal)
+        .await;
+    mount_fal_success(&fal).await;
+
+    let app = spawn_app_with(|cfg| {
+        fal_test_config(cfg, fal.uri());
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 100.0;
+        cfg.feed.prefetch_depth = 1;
+        cfg.feed.render_retry_backoff_sec = 0; // retry on the next poll
+        cfg.feed.render_max_attempts = 3;
+    })
+    .await;
+    let (_, state) = app.get("/api/state").await;
+    let prd_id = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+
+    // Cursor poll starts attempt 1 (which fails). A bare query observes the
+    // failed key without triggering the retry.
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("", |b| {
+            b["cooking"][&prd_id]
+                .as_str()
+                .is_some_and(|s| s.starts_with("failed:"))
+        })
+        .await;
+    assert!(
+        body["cooking"][&prd_id].as_str().unwrap().contains("fal"),
+        "failure label carries the provider error: {}",
+        body["cooking"][&prd_id]
+    );
+    // The failure is durable — it survives the in-memory map.
+    let events = std::fs::read_to_string(app.root.join(".doomscrum/events.ndjson")).unwrap();
+    assert!(
+        events.contains("render_failed"),
+        "render failure must append a durable event: {events}"
+    );
+
+    // The next cursor poll clears the failed key and re-attempts; the retry
+    // succeeds against the now-healthy provider.
+    let body = app
+        .poll_state("?cursor=0", |b| {
+            b["items"][0]["render"]["provider"] == "fal"
+        })
+        .await;
+    assert!(
+        body["cooking"][&prd_id].is_null(),
+        "the failed cooking key must be cleared after the successful retry: {}",
+        body["cooking"]
+    );
+}
+
+/// Acceptance (doomscrum-931): the durable cost ledger survives the renders
+/// dir being wiped — the spend meter and the wallet gate keep the truth.
+#[tokio::test(flavor = "multi_thread")]
+async fn cost_ledger_survives_renders_wipe_and_wallet_gate_reads_it() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let fal = MockServer::start().await;
+    mount_fal_success(&fal).await;
+    let app = spawn_app_with(|cfg| {
+        fal_test_config(cfg, fal.uri());
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 1.8; // one $1.20 render fits, two don't
+    })
+    .await;
+    let (_, state) = app.get("/api/state").await;
+    let first = state["items"][0]["prd"]["id"].as_str().unwrap().to_string();
+    let second = state["items"][1]["prd"]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fal", "prd_id": first, "confirmed_cost": true }),
+        )
+        .await;
+    assert_eq!(status, 200, "first paid render should start: {body}");
+    // Wait for the detached render to land as provenance + ledger entry.
+    app.poll_state("", |b| {
+        b["spend"]["total_usd"].as_f64().unwrap_or(0.0) > 1.0
+    })
+    .await;
+    let ledger_path = app.root.join(".doomscrum/costs.ndjson");
+    let ledger = std::fs::read_to_string(&ledger_path).unwrap();
+    assert!(
+        ledger.contains("\"cost_usd\":1.2"),
+        "ledger records the paid render: {ledger}"
+    );
+
+    // Wipe the renders dir — the classic meter-reset footgun.
+    std::fs::remove_dir_all(app.root.join(".doomscrum/renders")).unwrap();
+
+    let (_, body) = app.get("/api/state").await;
+    assert!(
+        (body["spend"]["total_usd"].as_f64().unwrap() - 1.2).abs() < 1e-9,
+        "spend must survive a renders wipe: {}",
+        body["spend"]
+    );
+    // And the wallet gate refuses as if nothing was wiped: $1.20 spent today
+    // + $1.20 planned > $1.80 daily cap.
+    let (status, body) = app
+        .post(
+            "/api/generate",
+            json!({ "provider": "fal", "prd_id": second, "confirmed_cost": true }),
+        )
+        .await;
+    assert_eq!(
+        status, 429,
+        "the wallet gate must read the ledger, not surviving render JSONs: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("daily render budget"),
+        "{body}"
+    );
+}
+
+/// 032's mid-window accounting oracle: with a cap that affords some-but-not-
+/// all of the window, the first spec renders real and the next degrades —
+/// the per-iteration spend accumulation, proven at the route level.
+#[tokio::test(flavor = "multi_thread")]
+async fn budget_accumulates_mid_window_first_real_then_degraded() {
+    std::env::set_var("FAL_API_KEY", "test-key");
+    let fal = MockServer::start().await;
+    mount_fal_success(&fal).await;
+    let app = spawn_app_with(|cfg| {
+        fal_test_config(cfg, fal.uri());
+        cfg.video.max_total_spend_usd = 100.0;
+        cfg.video.max_daily_spend_usd = 1.3; // affords one $1.20 render, not two
+        cfg.feed.prefetch_depth = 2;
+    })
+    .await;
+
+    app.get("/api/state?cursor=0").await;
+    let body = app
+        .poll_state("?cursor=0", |b| {
+            b["items"][0]["render"].is_object() && b["items"][1]["render"].is_object()
+        })
+        .await;
+    assert_eq!(
+        body["items"][0]["render"]["provider"], "fal",
+        "first windowed spec renders real: {}",
+        body["items"][0]["render"]
+    );
+    assert_eq!(
+        body["items"][1]["render"]["provider"], "fake-local",
+        "second spec exceeds the remaining budget and degrades: {}",
+        body["items"][1]["render"]
+    );
+    assert_eq!(
+        body["items"][1]["render"]["degraded_reason"], "render budget exhausted",
+        "{}",
+        body["items"][1]["render"]
+    );
+}
+
+/// Acceptance (doomscrum-931): boot reconciles dispatch status from disk — a
+/// crash mid-dispatch must not leave a permanently frozen `agent_running`
+/// receipt (which would also keep GC protecting its orphaned worktree).
+#[tokio::test]
+async fn boot_reconcile_fails_stranded_dispatches_and_appends_durable_events() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("project");
+    std::fs::create_dir_all(root.join("backlog.d")).unwrap();
+    std::fs::write(root.join("backlog.d/001-first.md"), SPECS[0].1).unwrap();
+
+    let ctx = AppCtx::new(root.clone(), Config::default());
+    let dispatcher = ctx.dispatcher();
+    let prd = doomscrum::backlog::PrdSource {
+        id: "prd-stranded".into(),
+        sha256: "sha-stranded".into(),
+        rel_path: "backlog.d/001-first.md".into(),
+        abs_path: root.join("backlog.d/001-first.md"),
+        title: "First Spec".into(),
+        priority: 0,
+        raw: SPECS[0].1.into(),
+    };
+    // The pre-crash world: a receipt persisted `queued` whose driving task
+    // died with the old process.
+    let receipt = dispatcher
+        .create(&prd, doomscrum::dispatch::DispatchKind::Implement)
+        .unwrap();
+    assert_eq!(receipt.status, "queued");
+
+    // Boot reconcile: the stranded receipt flips to failed…
+    let reconciled = ctx.reconcile_on_boot().unwrap();
+    assert_eq!(reconciled.len(), 1);
+    assert_eq!(reconciled[0].status, "failed");
+    let receipts = doomscrum::dispatch::load_receipts(&ctx.dispatcher().dispatches_dir).unwrap();
+    assert_eq!(receipts[0].status, "failed");
+    assert!(
+        receipts[0]
+            .note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("stranded"),
+        "{:?}",
+        receipts[0].note
+    );
+    // …with a durable event, and a second boot reconciles nothing.
+    let events = std::fs::read_to_string(root.join(".doomscrum/events.ndjson")).unwrap();
+    assert!(events.contains("dispatch_failed"), "{events}");
+    assert!(ctx.reconcile_on_boot().unwrap().is_empty());
+}
