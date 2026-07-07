@@ -36,6 +36,10 @@ fn sh(cwd: &Path, cmd: &[&str]) {
 }
 
 async fn spawn_browser_app() -> TestApp {
+    spawn_browser_app_with(|_| {}).await
+}
+
+async fn spawn_browser_app_with(configure: impl FnOnce(&mut Config)) -> TestApp {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("project");
     let bare = tmp.path().join("origin.git");
@@ -91,7 +95,8 @@ max_concurrent_dispatches = 1
         &["git", "remote", "add", "origin", bare.to_str().unwrap()],
     );
 
-    let cfg = Config::load(&root).unwrap();
+    let mut cfg = Config::load(&root).unwrap();
+    configure(&mut cfg);
     assert_eq!(
         cfg.agent.implement_cmd,
         ["sh", "-c", "echo implemented > impl-marker.txt"],
@@ -299,6 +304,74 @@ async fn first_dispatch_swipe_requires_consent_then_remembers() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_dispatch_shows_cancel_affordance_immediately_and_can_cancel() {
+    let app = spawn_browser_app_with(|cfg| cfg.agent.undo_window_sec = 15).await;
+    let (status, body) = app
+        .post("/api/generate", json!({ "provider": "fake" }))
+        .await;
+    assert_eq!(status, 200, "fixture generation failed: {body}");
+
+    let browser = launch_browser();
+    let tab = browser.new_tab().unwrap();
+    tab.set_default_timeout(Duration::from_secs(10));
+    tab.navigate_to(&app.url("/"))
+        .unwrap()
+        .wait_until_navigated()
+        .unwrap();
+    tab.wait_for_element("#splash").unwrap().click().unwrap();
+    wait_for_js(&tab, "Boolean(document.querySelector('#card video'))");
+
+    pointer_swipe(&tab, "#card", 160, 0);
+    wait_for_js(
+        &tab,
+        "Boolean(document.querySelector('#consentOverlay.show'))",
+    );
+    tab.wait_for_element("#consentConfirm")
+        .unwrap()
+        .click()
+        .unwrap();
+
+    assert!(
+        js_becomes_true(
+            &tab,
+            "Boolean(document.querySelector('#cancelBtn'))",
+            Duration::from_millis(500),
+        ),
+        "cancel dispatch affordance must render within the visible undo window"
+    );
+
+    tab.evaluate("document.querySelector('#cancelBtn').click()", false)
+        .unwrap();
+    let receipt = wait_for_dispatch_status(&app, "implement", "cancelled").await;
+    assert_eq!(receipt["status"], "cancelled", "receipt: {receipt}");
+    let worktree = PathBuf::from(receipt["worktree"].as_str().unwrap());
+    assert!(
+        !worktree.exists(),
+        "cancel during the queued undo window must not create a worktree"
+    );
+}
+
+async fn wait_for_dispatch_status(app: &TestApp, kind: &str, expected: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let (_, dispatches) = app.get("/api/dispatches").await;
+        if let Some(receipt) = dispatches["dispatches"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|d| d["kind"] == kind)
+        {
+            if receipt["status"] == expected {
+                return receipt.clone();
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (_, dispatches) = app.get("/api/dispatches").await;
+    panic!("dispatch {kind} did not reach status {expected}: {dispatches}");
+}
+
 async fn wait_until_status(app: &TestApp, index: usize, expected: &str) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
@@ -391,15 +464,22 @@ fn dispatch_pointer(tab: &Tab, selector: &str, dx: i32, dy: i32) {
 }
 
 fn wait_for_js(tab: &Tab, expression: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    assert!(
+        js_becomes_true(tab, expression, Duration::from_secs(10)),
+        "condition did not become true: {expression}"
+    );
+}
+
+fn js_becomes_true(tab: &Tab, expression: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let value = tab.evaluate(expression, false).unwrap();
         if value.value == Some(Value::Bool(true)) {
-            return;
+            return true;
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("condition did not become true: {expression}");
+    false
 }
 
 fn js_string(tab: &Tab, expression: &str) -> String {
