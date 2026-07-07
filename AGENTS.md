@@ -12,7 +12,6 @@ direction call is ambiguous, that file decides — read it, don't guess.
 
 - Config: `doomscrum.toml` (model, durations, spend cap). State:
   `.doomscrum/` (renders, storyboards, launches — gitignored).
-  `.brainrot/` is the pre-rename state dir; ignore it.
 - Render profiles: `doomscrum.toml`'s `profile` key / `--profile` flag picks
   a `[profiles.*]` override — `dev` (default, free fixtures) vs `content`
   (real paid renders). Details: README.md "Render profiles".
