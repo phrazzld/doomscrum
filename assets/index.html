@@ -42,7 +42,9 @@
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
     --quick: 160ms;
     --ease: cubic-bezier(0.23, 1, 0.32, 1);
-    --frame-w: min(92vw, 46vh);
+    /* the frame leaves room for the rail at the left edge, the chrome rows
+       above, and the ledge below — see the card-anatomy lab (doomscrum-941) */
+    --frame-w: min(86vw, calc((100vh - 220px) * 9 / 16));
     color-scheme: dark;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,18 +59,22 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* the ticker: a quiet chrome-register strip — no marquee crawl */
+  /* the ticker: a quiet chrome-register strip — brand left, feed position and
+     spend right. Nothing crawls and nothing truncates mid-sentence: the
+     subtitle is dropped whole at phone width instead of ellipsized. */
   .ticker {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     border-bottom: 1px solid var(--line);
     background: var(--bg);
-    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    display: flex; align-items: baseline; gap: 8px;
+    overflow: hidden; white-space: nowrap;
     font-family: var(--mono);
     font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
     padding: 8px 16px; color: var(--muted);
   }
-  .ticker span { display: inline-block; }
+  .ticker .pos { margin-left: auto; flex: none; }
   .ticker b, .ticker strong { color: var(--acid); font-weight: 550; }
+  @media (max-width: 640px) { .ticker .sub { display: none; } }
 
   .stage {
     position: relative; z-index: 1;
@@ -119,7 +125,7 @@
   }
   .caption .meta {
     margin-top: 8px; font-family: var(--mono);
-    font-size: 13px; color: var(--acid); letter-spacing: .08em;
+    font-size: 12px; color: var(--muted); letter-spacing: .08em;
   }
 
   /* stickers become tags: a hairline chip, the hue on border and ink,
@@ -131,37 +137,51 @@
     padding: 4px 9px; border: 1px solid var(--acid); color: var(--acid);
     background: var(--bg);
   }
-  .sticker.status { top: -12px; right: -12px; }
-  .sticker.aiify {
-    top: auto; bottom: 120px; left: 50%; right: auto;
-    transform: translateX(-50%); max-width: 80%;
-    border-color: var(--pink); color: var(--pink); cursor: pointer;
+  /* status chips live INSIDE the frame corners — no -12px overhang, so the
+     top-right chip never collides with the page chrome above the card */
+  .sticker.status { top: 10px; right: 10px; }
+  .tags { /* prio / review / superseded row, top-left inside the frame */
+    position: absolute; top: 10px; left: 10px; right: 130px; z-index: 4;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start;
   }
-  .sticker.aiify.cooking { border-color: var(--warn); color: var(--warn); cursor: default; }
+  .tags .sticker { position: static; }
   .sticker.status.queued, .sticker.status.agent_running { border-color: var(--warn); color: var(--warn); }
   .sticker.status.opening_pr { border-color: var(--cyan); color: var(--cyan); }
   .sticker.status.pr_opened, .sticker.status.completed_local { border-color: var(--ok); color: var(--ok); }
   .sticker.status.failed { border-color: var(--err); color: var(--err); }
   .sticker.status.skipped { border-color: var(--dead); color: var(--muted); }
-  .sticker.prio { bottom: -12px; left: -12px; border-color: var(--pink); color: var(--pink); }
-  .sticker.review { top: -12px; left: -12px; }
+  .sticker.prio { border-color: var(--pink); color: var(--pink); }
   .sticker.review.fast-merge { border-color: var(--ok); color: var(--ok); }
   .sticker.review.needs-review { border-color: var(--warn); color: var(--warn); }
-  .sticker.superseded { top: 28px; left: -12px; border-color: var(--dead); color: var(--muted); }
+  .sticker.superseded { border-color: var(--dead); color: var(--muted); }
 
+  /* the deck: card + ledge. Every interactive affordance that used to float
+     over the caption zone (vibe, cook/retry, PR) lives on the ledge BELOW
+     the frame — occluding the meme is structurally impossible. */
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .ledge { width: var(--frame-w); display: flex; flex-direction: column; gap: 8px; }
   .vibe {
-    position: absolute; left: 10px; right: 10px; bottom: 92px; z-index: 4;
     display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
   }
   .vibe button {
     min-width: 0; padding: 8px 4px; border: 1px solid var(--line);
-    background: rgba(18,18,18,.82); color: var(--ink);
+    background: var(--bg); color: var(--ink);
     font-family: var(--mono); font-weight: 700;
     font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
     cursor: pointer; transition: border-color var(--quick) var(--ease), color var(--quick) var(--ease);
   }
   .vibe button:hover { border-color: var(--ink); }
   .vibe button.on { border-color: var(--acid); color: var(--acid); }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .acts .aiify, .acts .prlink, .acts .cooknote {
+    font-family: var(--mono); font-weight: 700; text-transform: uppercase;
+    font-size: 11px; letter-spacing: .1em; padding: 5px 10px;
+    border: 1px solid var(--pink); color: var(--pink); background: var(--bg);
+    text-decoration: none;
+  }
+  .acts .aiify { cursor: pointer; }
+  .acts .cooknote { border-color: var(--warn); color: var(--warn); }
+  .acts .prlink { border-color: var(--cyan); color: var(--cyan); }
 
   .hint {
     position: fixed; z-index: 9; font-family: var(--mono);
@@ -173,6 +193,11 @@
   .hint.l { left: 38px; top: 50%; transform: translateY(-50%) rotate(-90deg); color: var(--pink); }
   .hint.t { top: 40px; left: 50%; transform: translateX(-50%); }
   .hint.b { bottom: 14px; left: 50%; transform: translateX(-50%); }
+  @media (max-width: 700px) {
+    /* at phone width the rotated side hints would ride the frame edges;
+       the coach + bottom hint carry the gesture grammar */
+    .hint.l, .hint.r { display: none; }
+  }
 
   /* the toast: news at the top — appears once, no bounce, no fill */
   .toast {
@@ -214,13 +239,21 @@
   }
   .overlay .close:hover { border-color: var(--ink); }
 
+  /* the agent HUD: log tail / undo / retry anchored to the frame TOP, under
+     the corner chips — the caption zone at the bottom stays sacred */
+  .hud {
+    position: absolute; top: 46px; left: 10px; right: 10px; z-index: 5;
+    display: flex; flex-direction: column; gap: 8px;
+  }
   .logbox {
-    position: absolute; left: 10px; right: 10px; bottom: 86px; z-index: 5;
     background: var(--wash); border: 1px solid var(--acid);
     padding: 9px 11px;
     font-family: var(--mono); font-size: 11px; line-height: 1.55; color: var(--acid);
-    max-height: 130px; overflow: hidden; white-space: pre-wrap; word-break: break-all;
+    white-space: pre-wrap; word-break: break-all;
   }
+  /* the clip lives on the log TAIL, not the box — the retry / cancel
+     affordance below it can never be scissored off */
+  .logbox .ltail { max-height: 130px; overflow: hidden; }
   .logbox.failed { border-color: var(--err); color: var(--err); }
   .logbox .lhead {
     font-family: var(--font); font-weight: 800; text-transform: uppercase;
@@ -236,7 +269,7 @@
   .logbox button.retry:active { transform: translateY(1px); }
 
   .repochip {
-    position: fixed; top: 34px; left: 16px; z-index: 31;
+    position: fixed; top: 41px; left: 16px; z-index: 31;
     font-family: var(--mono); font-weight: 700; text-transform: uppercase;
     font-size: 12px; letter-spacing: .08em; cursor: pointer;
     background: var(--bg); color: var(--cyan); border: 1px solid var(--cyan);
@@ -245,7 +278,7 @@
   }
   .repochip:active { transform: translateY(1px); }
   .egresschip {
-    left: auto; right: 16px; top: 64px;
+    left: auto; right: 16px; top: 41px;
     border-color: var(--warn); color: var(--warn);
   }
   .picker { max-width: 560px; margin: 0 auto; }
@@ -349,8 +382,7 @@
 </style>
 </head>
 <body>
-<div class="ticker"><span id="ticker">DOOMSCRUM // spec brainrot triage // swipe → dispatch implement agent // swipe ← skip // swipe ↑ skip // tap = read the actual spec</span></div>
-<div class="hint" style="top: 40px; right: 18px;" id="spend"></div>
+<div class="ticker"><span>DOOMSCRUM</span><span class="sub">// spec brainrot triage</span><span class="pos"><b id="tickerPos"></b> <span id="spend"></span></span></div>
 
 <button class="repochip" id="repoChip" title="switch repo">repo: …</button>
 
@@ -395,6 +427,16 @@
     <p class="consent-copy" style="color:var(--muted)">Change your mind? The dispatch sits in a short queue window first — tap <b>cancel dispatch</b> on the card before the agent starts.</p>
     <button class="go" id="consentConfirm">Cook it — I get it</button>
     <button class="cancel" id="consentCancel">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="costOverlay">
+  <div class="head"><h2>cook with real money?</h2><span class="hash">fal.ai — spec-derived prompts leave this machine</span></div>
+  <div class="picker">
+    <p class="consent-copy">Cook <b id="costCount"></b> for about <b id="costPlanned" style="color:var(--pink)"></b>.</p>
+    <p class="consent-copy" style="color:var(--muted)">Budget: <b id="costToday" style="color:var(--acid)"></b> — daily and lifetime caps enforced (doomscrum.toml [video]).</p>
+    <button class="go" id="costConfirm">cook it — spend the money</button>
+    <button class="cancel" id="costCancel">cancel — keep it free</button>
   </div>
 </div>
 
@@ -490,17 +532,33 @@
     return err.message;
   }
 
+  // Real-money confirmation as a styled overlay consistent with the consent
+  // and egress surfaces — the highest-stakes dialog must not be the page's
+  // only native window.confirm. Quotes planned USD + today's budget.
+  const costOverlay = $("costOverlay");
+  let costResolve = null;
+  function settleCost(ok) {
+    costOverlay.classList.remove("show");
+    const resolve = costResolve; costResolve = null;
+    if (resolve) resolve(ok);
+  }
   function confirmRealRenderCost(renderCount, plannedUsd) {
+    if (costResolve) return Promise.resolve(false);
     const s = window.__spend || {};
     const planned = plannedUsd == null
       ? Number(s.price_per_render_usd || 0) * renderCount
       : Number(plannedUsd || 0);
-    const today = `${dollars(s.daily_usd)} / ${dollars(s.daily_cap_usd)} today`;
-    return window.confirm(
-      `Cook ${renderCount} real AI render${renderCount === 1 ? "" : "s"} for about ${dollars(planned)}?\n\n` +
-      `${today}. Spec-derived prompts leave this machine for fal.ai.`
-    );
+    $("costCount").textContent = `${renderCount} real AI render${renderCount === 1 ? "" : "s"}`;
+    $("costPlanned").textContent = dollars(planned);
+    $("costToday").textContent = `${dollars(s.daily_usd)} / ${dollars(s.daily_cap_usd)} today`;
+    costOverlay.classList.add("show");
+    return new Promise((resolve) => { costResolve = resolve; });
   }
+  $("costConfirm").onclick = () => settleCost(true);
+  $("costCancel").onclick = () => settleCost(false);
+  costOverlay.addEventListener("pointerdown", (e) => {
+    if (e.target === costOverlay) settleCost(false);
+  });
 
   async function generateWithCostConfirmation(body, fallbackCount) {
     try {
@@ -512,7 +570,7 @@
     } catch (err) {
       if (err.status === 409 && err.body && err.body.requires_confirmation) {
         const count = Number(err.body.render_count || fallbackCount || 1);
-        if (!confirmRealRenderCost(count, err.body.planned_usd)) return null;
+        if (!(await confirmRealRenderCost(count, err.body.planned_usd))) return null;
         return api("/api/generate", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -533,7 +591,7 @@
     window.__spend = state.spend || {};
     if (state.spend) {
       const s = state.spend;
-      $("spend").textContent = `${dollars(s.total_usd)} / $${s.cap_usd.toFixed(0)} cap · ${dollars(s.daily_usd)} today`;
+      $("spend").textContent = `· ${dollars(s.total_usd)}/$${s.cap_usd.toFixed(0)} · ${dollars(s.daily_usd)} today`;
       $("spend").style.color = s.total_usd > s.cap_usd * 0.8 ? "var(--warn)" : "var(--muted)";
     }
     if (keepPosition && currentId) {
@@ -548,6 +606,7 @@
     rail.innerHTML = items
       .map((_, i) => `<i class="${i === idx ? "on" : ""}"></i>`)
       .join("");
+    $("tickerPos").textContent = items.length ? `${idx + 1}/${items.length}` : "";
   }
 
   let lastSig = "", lastCardSig = "";
@@ -636,31 +695,48 @@
 
     const st = item.dispatch ? item.dispatch.status : status;
     const pr = item.dispatch && item.dispatch.pr_url;
+    // Card anatomy (doomscrum-941, lab winner "status ledge"): the caption
+    // zone at the frame bottom is sacred — flow-only spec content, pointer
+    // inert. Interactive chrome (vibe, cook/retry, PR) lives on the ledge
+    // BELOW the frame; agent log/undo/retry ride a HUD at the frame TOP;
+    // status chips sit inside the corners; provider/model·sha provenance is
+    // demoted to the tap-spec overlay.
+    const acts = [
+      cook === "cooking"
+        ? '<span class="cooknote">AI render cooking… (~2-4 min, safe to refresh)</span>'
+        : (cook
+          ? `<button class="aiify" id="aiify" title="${esc(cook)}">render flopped — tap to retry ($)</button>`
+          : (vid.provider === "fake-local" && window.__falConfigured
+            ? '<button class="aiify" id="aiify">fixture → cook with AI ($)</button>' : "")),
+      pr ? `<a class="prlink" href="${esc(pr)}">PR ↗</a>` : "",
+    ].join("");
     stage.innerHTML = `
-      <div class="card" id="card">
-        <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
-        <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
-        <span class="sticker prio">#${prd.priority + 1}</span>
-        ${item.dispatch && item.dispatch.review
-          ? `<span class="sticker review ${esc(item.dispatch.review)}">${esc(item.dispatch.review)}${item.dispatch.diff_lines != null ? " " + item.dispatch.diff_lines + "L" : ""}</span>`
-          : ""}
-        ${item.superseded ? '<span class="sticker superseded">superseded</span>' : ""}
-        ${cook === "cooking"
-          ? '<span class="sticker aiify cooking">AI render cooking… (~2-4 min, safe to refresh)</span>'
-          : (cook
-            ? `<button class="sticker aiify" id="aiify" title="${esc(cook)}">render flopped — tap to retry ($)</button>`
-            : (vid.provider === "fake-local" && window.__falConfigured
-              ? '<button class="sticker aiify" id="aiify">fixture → cook with AI ($)</button>' : ""))}
-        ${cook && cook !== "cooking" ? `<div class="logbox failed" style="display:block">${esc(cook)}</div>` : ""}
-        <div class="vibe" id="vibe" aria-label="brainrot vibe rating">
-          ${vibeRatings.map((rating) => `<button data-vibe="${esc(rating)}" class="${item.vibe_rating === rating ? "on" : ""}">${esc(rating)}</button>`).join("")}
+      <div class="deck">
+        <div class="card" id="card">
+          <video id="vid" src="${vid.asset_url}" loop playsinline ${started ? "" : "muted"}></video>
+          <span class="sticker status ${esc(st)}">${esc(statusLabel[st] || st)}</span>
+          <div class="tags">
+            <span class="sticker prio">#${prd.priority + 1}</span>
+            ${item.dispatch && item.dispatch.review
+              ? `<span class="sticker review ${esc(item.dispatch.review)}">${esc(item.dispatch.review)}${item.dispatch.diff_lines != null ? " " + item.dispatch.diff_lines + "L" : ""}</span>`
+              : ""}
+            ${item.superseded ? '<span class="sticker superseded">superseded</span>' : ""}
+          </div>
+          <div class="hud">
+            ${cook && cook !== "cooking" ? `<div class="logbox failed"><div class="ltail">${esc(cook)}</div></div>` : ""}
+            <div class="logbox" id="logbox" style="display:none"></div>
+          </div>
+          <div class="caption">
+            <div class="meme">${esc(prd.title)}</div>
+            ${item.dispatch && item.dispatch.plan ? `<div class="meta">▶ ${esc(item.dispatch.plan)}</div>` : ""}
+            ${vid.degraded_reason ? `<div style="margin-top:8px;display:inline-block;padding:3px 8px;border:1px solid var(--warn);color:var(--warn);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(vid.degraded_reason)}</div>` : ""}
+          </div>
         </div>
-        <div class="logbox" id="logbox" style="display:none"></div>
-        <div class="caption">
-          <div class="meme">${esc(prd.title)}</div>
-          <div class="meta">${esc(vid.provider)}/${esc(vid.model)} · ${esc(prd.sha256.slice(0, 10))}${pr ? ` · <a style="color:var(--cyan)" href="${esc(pr)}">PR ↗</a>` : ""}</div>
-          ${item.dispatch && item.dispatch.plan ? `<div class="meta" style="opacity:.75">▶ ${esc(item.dispatch.plan)}</div>` : ""}
-          ${vid.degraded_reason ? `<div style="margin-top:8px;display:inline-block;padding:3px 8px;border:1px solid var(--warn);color:var(--warn);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(vid.degraded_reason)}</div>` : ""}
+        <div class="ledge">
+          <div class="vibe" id="vibe" aria-label="brainrot vibe rating">
+            ${vibeRatings.map((rating) => `<button data-vibe="${esc(rating)}" class="${item.vibe_rating === rating ? "on" : ""}">${esc(rating)}</button>`).join("")}
+          </div>
+          ${acts ? `<div class="acts">${acts}</div>` : ""}
         </div>
       </div>`;
     const video = $("vid");
@@ -753,7 +829,9 @@
     try {
       const spec = await api("/api/spec/" + item.prd.id);
       $("specTitle").textContent = spec.title;
-      $("specHash").textContent = spec.path + " · sha256 " + spec.sha256;
+      // Render provenance lives here, off the caption hero zone (doomscrum-941).
+      const prov = item.render ? ` · render: ${item.render.provider}/${item.render.model}` : "";
+      $("specHash").textContent = spec.path + " · sha256 " + spec.sha256 + prov;
       $("specRaw").textContent = spec.raw;
       overlay.classList.add("show");
     } catch (e) { showToast(e.message, true); }
@@ -813,12 +891,12 @@
       box.className = "logbox" + (failed ? " failed" : "");
       box.innerHTML = failed
         ? `<div class="lhead">agent flopped${log.failing_stage ? " @ " + esc(log.failing_stage) : ""}</div>` +
-          `${esc(log.note || "")}\n${esc(tail)}` +
-          `<br><button class="retry" id="retryBtn">run it back</button>`
+          `<div class="ltail">${esc(log.note || "")}\n${esc(tail)}</div>` +
+          `<button class="retry" id="retryBtn">run it back</button>`
         : queued
           ? `<div class="lhead">agent queued — undo window</div>` +
             `<button class="retry" id="cancelBtn">cancel dispatch</button>`
-          : `<div class="lhead">agent cooking…</div>${esc(tail) || "(warming up)"}`;
+          : `<div class="lhead">agent cooking…</div><div class="ltail">${esc(tail) || "(warming up)"}</div>`;
       box.style.display = "block";
       box.onpointerdown = (e) => e.stopPropagation();
       const retry = $("retryBtn");
@@ -1030,6 +1108,10 @@
     }
     if (consentOverlay.classList.contains("show")) {
       if (e.key === "Escape") settleConsent(false);
+      return;
+    }
+    if (costOverlay.classList.contains("show")) {
+      if (e.key === "Escape") settleCost(false);
       return;
     }
     if (egressOverlay.classList.contains("show")) {
