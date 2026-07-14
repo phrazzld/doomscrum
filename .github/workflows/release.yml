@@ -109,7 +109,7 @@ jobs:
           linux_asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
             --jq '.assets[] | select(.name == "doomscrum-linux-x86_64.tar.gz") | .id')
 
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/phrazzld/homebrew-doomscrum.git" tap
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/moomooskycow/homebrew-doomscrum.git" tap
           mkdir -p tap/Formula
           cat > tap/Formula/doomscrum.rb <<EOF
           require "download_strategy"
