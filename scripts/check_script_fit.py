@@ -12,16 +12,23 @@ account as generation), and reports:
 Exit code 0 = script fits, 1 = cutoff or low coverage, 2 = usage/infra.
 """
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+DEEPGRAM_MINT_ROUTE = "/proxy/https/api.deepgram.com/v1"
 
 
 def get_key(*names: str) -> str | None:
@@ -91,19 +98,62 @@ def transcribe(mp4: Path, key: str, chunk_level: str = "segment") -> dict:
     sys.exit("whisper timed out")
 
 
-def transcribe_deepgram(mp4: Path, key: str) -> dict:
+def deepgram_base_url() -> str | None:
+    """Derive and verify the one supported Deepgram route through Mint.
+
+    ``DEEPGRAM_BASE_URL`` is retained as a consumer-facing compatibility
+    variable, but it is never trusted as an independent origin. The harmless
+    placeholder may only be paired with the exact route derived from the same
+    ``MINT_BASE_URL`` that the fleet wrapper exports.
+    """
+    mint_base = os.environ.get("MINT_BASE_URL", "").rstrip("/")
+    configured = os.environ.get("DEEPGRAM_BASE_URL", "").rstrip("/")
+    if not mint_base:
+        if configured:
+            raise RuntimeError("DEEPGRAM_BASE_URL requires MINT_BASE_URL")
+        return None
+
+    parsed = urllib.parse.urlsplit(mint_base)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.hostname == "api.deepgram.com"
+    ):
+        raise RuntimeError("MINT_BASE_URL must be a bare non-vendor HTTP(S) origin")
+
+    expected = f"{mint_base}{DEEPGRAM_MINT_ROUTE}"
+    if configured and configured != expected:
+        raise RuntimeError(
+            "DEEPGRAM_BASE_URL must equal MINT_BASE_URL plus Deepgram's exact Mint route"
+        )
+    return expected
+
+
+def transcribe_deepgram(mp4: Path, base_url: str) -> dict:
     """Deepgram fallback: direct binary upload, no storage hop. Returns the
     same {text, chunks:[{text, timestamp:[t0,t1]}]} shape as fal whisper
     (word-level chunks plus confidence when present)."""
+    expected_base_url = deepgram_base_url()
+    if expected_base_url is None or base_url.rstrip("/") != expected_base_url:
+        raise RuntimeError("Deepgram requests require the exact route derived from MINT_BASE_URL")
+    base_url = expected_base_url
     wav = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(mp4), "-ac", "1", "-ar", "16000",
          "-f", "wav", "-"],
         capture_output=True, check=True,
     ).stdout
     req = urllib.request.Request(
-        "https://api.deepgram.com/v1/listen?model=nova-3&language=en&punctuate=true",
+        f"{base_url}/listen?model=nova-3&language=en&punctuate=true",
         data=wav,
-        headers={"authorization": f"Token {key}", "content-type": "audio/wav"},
+        headers={
+            "authorization": "Token __mint.deepgram.default__",
+            "content-type": "audio/wav",
+        },
     )
     result = json.load(urllib.request.urlopen(req))
     alt = result["results"]["channels"][0]["alternatives"][0]
@@ -123,14 +173,31 @@ def transcribe_deepgram(mp4: Path, key: str) -> dict:
 def transcribe_any(mp4: Path, chunk_level: str) -> tuple[str, dict]:
     """fal whisper first (account parity with generation); Deepgram when fal
     storage is unavailable (their upload endpoints started 403ing 2026-06-11)."""
-    try:
-        return "fal_whisper", transcribe(mp4, fal_key(), chunk_level)
-    except urllib.error.HTTPError as e:
-        dg = get_key("DEEPGRAM_API_KEY")
-        if not dg:
-            raise
-        print(f"note      : fal transcription unavailable (HTTP {e.code}); using deepgram")
-        return "deepgram", transcribe_deepgram(mp4, dg)
+    fal_error: BaseException | None = None
+    key = get_key("FAL_API_KEY", "FAL_KEY")
+    if key:
+        try:
+            return "fal_whisper", transcribe(mp4, key, chunk_level)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+            fal_error = error
+            print(f"note      : fal transcription unavailable ({error}); using deepgram")
+        except SystemExit as error:
+            # ``transcribe`` uses SystemExit for an explicitly failed or timed
+            # out remote job. Treat that provider result as fallback-eligible,
+            # but do not catch unrelated process or operator interrupts.
+            fal_error = error
+            print(f"note      : fal transcription unavailable ({error}); using deepgram")
+    else:
+        print("note      : fal transcription unavailable (no FAL key); using deepgram")
+
+    base_url = deepgram_base_url()
+    if base_url:
+        return "deepgram", transcribe_deepgram(mp4, base_url)
+    if fal_error is not None:
+        raise RuntimeError(
+            "fal transcription failed and Mint's Deepgram fallback is not configured"
+        ) from fal_error
+    raise RuntimeError("no FAL key and Mint's Deepgram fallback is not configured")
 
 
 def norm_words(text: str) -> list[str]:

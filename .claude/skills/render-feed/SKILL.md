@@ -78,8 +78,10 @@ use `/usr/bin/trash`.
   clips had catastrophic diction ("no vibes merges, capiche" -> "No merges.
   Copy, sheep."), 1 cut its last word. veo3.1/lite carries the cheap weight.
 - **Transcription fallback**: fal storage upload may 403 independently of
-  the queue; `check_script_fit.py` falls back to Deepgram (DEEPGRAM_API_KEY)
-  automatically — direct binary upload, no storage hop.
+  the queue; `check_script_fit.py` falls back to Deepgram through the exact
+  Mint route derived from `MINT_BASE_URL`, using
+  `__mint.deepgram.default__` — direct binary upload, no storage hop and no
+  raw Deepgram key in the agent process.
 - Scripts must spell numbers as words and skip exotic interjections
   ("capisce") — voice models garble them and the transcript gate eats the
   miss. The scriptwriter prompt enforces this; don't hand-write scripts

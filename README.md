@@ -101,7 +101,7 @@ redistributing generated clips in marketing).
 ## Development
 
 ```bash
-cargo run --bin doomscrum-ci  # aggregate local gate: fmt, clippy, tests
+cargo run --bin doomscrum-ci  # aggregate local gate: fmt, clippy, Rust + script tests
 
 cargo fmt --check             # focused lanes for debugging
 cargo clippy --all-targets -- -D warnings
