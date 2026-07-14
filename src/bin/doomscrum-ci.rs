@@ -23,6 +23,11 @@ fn steps() -> &'static [Step] {
             program: "cargo",
             args: &["test"],
         },
+        Step {
+            name: "script fit tests",
+            program: "python3",
+            args: &["-B", "-m", "unittest", "scripts/test_check_script_fit.py"],
+        },
     ]
 }
 
@@ -66,6 +71,10 @@ mod tests {
                     &["clippy", "--all-targets", "--", "-D", "warnings"][..]
                 ),
                 ("cargo", &["test"][..]),
+                (
+                    "python3",
+                    &["-B", "-m", "unittest", "scripts/test_check_script_fit.py"][..]
+                ),
             ]
         );
     }
