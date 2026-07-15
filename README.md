@@ -139,6 +139,7 @@ All state, logic, and dispatch live in Rust.
 ## Docs
 
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — complete `doomscrum.toml` field reference, verified against `src/config.rs`.
+- [docs/BACKLOG_CONTRACT.md](docs/BACKLOG_CONTRACT.md) — the source-neutral backlog contract (markdown dir + GitHub-Issues), and graceful degradation for foreign house formats.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — render profiles, data egress, provenance, garbage collection, dispatch receipts, stuck-dispatch recovery, LAN/PWA.
 - [docs/FIVE_FACES.md](docs/FIVE_FACES.md) — five-faces floor status, the repo-local skill face, and the v1 MCP waiver.
 - [docs/LEGAL.md](docs/LEGAL.md) — pre-launch legal checklist (provider terms, trademark).

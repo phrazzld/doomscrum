@@ -19,7 +19,7 @@ See "Render profiles" in [OPERATIONS.md](OPERATIONS.md#render-profiles-dev-vs-co
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `path` | string | `"."` | The repository DoomScrum is synced to. Backlog specs are read from `<path>/<backlog_dir>`, and agent worktrees are created from this repo. |
-| `backlog_dir` | string | `"backlog.d"` | Backlog directory inside the synced repo. One markdown file per spec; files starting with `_` are ignored (use for `_done/`-style archives). |
+| `backlog_dir` | string | `"backlog.d"` | Backlog directory inside the synced repo. One markdown file per spec; files prefixed with `_` or `.` are ignored (use for `_done/`-style archives or dotfile sidecars). See [BACKLOG_CONTRACT.md](BACKLOG_CONTRACT.md). |
 | `state_dir` | string | `".doomscrum"` | Runtime state: renders, events, dispatch receipts, worktrees. Deleting this directory destroys only generated state, never specs. |
 
 ## `[feed]`

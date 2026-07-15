@@ -143,6 +143,24 @@ mod tests {
         assert_eq!(prds[0].title, "003 no heading");
     }
 
+    /// Backlog contract: files prefixed with `_` OR `.` are ignored so a
+    /// target repo can keep archive/dotfile sidecars in the same directory
+    /// without polluting the feed. The directory itself may be dot-named
+    /// (e.g. `.backlog.d`) — only file prefixes are filtered.
+    #[test]
+    fn skips_underscore_and_dot_prefixed_files_but_allows_dot_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let backlog = dir.path().join(".backlog.d");
+        std::fs::create_dir_all(&backlog).unwrap();
+        std::fs::write(backlog.join("001-live.md"), "# Live Spec\nbody").unwrap();
+        std::fs::write(backlog.join("_done.md"), "# Archived").unwrap();
+        std::fs::write(backlog.join(".hidden.md"), "# Hidden").unwrap();
+        let prds = scan(dir.path(), ".backlog.d", 10).unwrap();
+        assert_eq!(prds.len(), 1);
+        assert_eq!(prds[0].title, "Live Spec");
+        assert_eq!(prds[0].rel_path, ".backlog.d/001-live.md");
+    }
+
     #[test]
     fn missing_backlog_dir_is_empty_not_error() {
         let dir = tempfile::tempdir().unwrap();
