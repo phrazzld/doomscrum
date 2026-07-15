@@ -827,6 +827,20 @@ mod tests {
         }
     }
 
+    /// Mirror of `backlog::scan`'s title extraction (first `# ` line, then
+    /// filename fallback) so graceful-degradation tests reflect real scans
+    /// of foreign repos, where `distill` falls back to the parsed title.
+    fn prd_with_title(raw: &str) -> PrdSource {
+        let title = raw
+            .lines()
+            .find_map(|line| line.strip_prefix("# ").map(|t| t.trim().to_string()))
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "Untitled".into());
+        let mut p = prd(raw);
+        p.title = title;
+        p
+    }
+
     const SAMPLE: &str = "# Test Spec\n\n## User\nOperators reviewing changes.\n\n## Problem\nStale previews.\n\n## Goal\nAlways show the latest provenance.\n\n## Acceptance Criteria\n- Refresh shows newest render.\n- Old JSON preserved.\n\n## Risk\nCould hide a provider failure.\n";
 
     #[test]
@@ -844,6 +858,61 @@ mod tests {
         let brief = distill(&prd("# Vague\n\n## Goal\nDo something.\n"));
         assert_eq!(brief.ambiguity_flags, vec!["No acceptance criteria found."]);
         assert_eq!(brief.user, "Local operator");
+    }
+
+    /// Graceful degradation for the backlog contract: a spec with only a
+    /// title and free-form body — no Goal/Oracle/User/Problem sections —
+    /// still distills and compiles a storyboard. Title + body is enough;
+    /// nothing DoomScrum-specific is required of a target repo's specs.
+    #[test]
+    fn distill_title_and_body_only_spec_without_goal_or_oracle() {
+        let raw = "# Make the colophon respect reduced motion\n\n\
+                   The typewriter effect should pause when the user opts\n\
+                   into reduced-motion preferences. Keep it simple.\n";
+        let p = prd_with_title(raw);
+        let brief = distill(&p);
+        // Goal falls back to the spec title; user to the default operator;
+        // problem is empty; no acceptance criteria were recoverable.
+        assert_eq!(brief.goal, "Make the colophon respect reduced motion");
+        assert_eq!(brief.user, "Local operator");
+        assert!(brief.problem.is_empty());
+        assert!(brief.acceptance_criteria.is_empty());
+        assert_eq!(brief.ambiguity_flags, vec!["No acceptance criteria found."]);
+        // The storyboard still compiles and speaks the title-as-goal.
+        let sb = compile_storyboard(&p, &brief, 8);
+        assert_eq!(sb.prd_sha256, p.sha256);
+        assert!(
+            sb.provider_prompt
+                .contains("Make the colophon respect reduced motion"),
+            "{}",
+            sb.provider_prompt
+        );
+    }
+
+    /// A spec following a foreign house format that still names an Oracle
+    /// (e.g. the chrondle `.backlog.d` layout: Priority/Status/Non-Goals/
+    /// Oracle) distills its acceptance criteria from the Oracle section
+    /// even though there is no `## Acceptance Criteria` heading, and Goal
+    /// degrades to the title. Proves the contract is house-format-agnostic.
+    #[test]
+    fn distill_foreign_house_format_recovers_oracle_and_degrades_goal() {
+        let raw = "# Polish recovery and motion accessibility\n\n\
+                   ## Priority\nP1\n\n## Status\nready\n\n\
+                   ## Non-Goals\n- No custom motion engine.\n\n\
+                   ## Oracle\n- [ ] Error boundary link has correct semantics.\n\
+                   - [x] Reduced-motion celebration renders.\n";
+        let p = prd_with_title(raw);
+        let brief = distill(&p);
+        assert_eq!(brief.goal, "Polish recovery and motion accessibility");
+        assert_eq!(
+            brief.acceptance_criteria,
+            vec![
+                "Error boundary link has correct semantics.",
+                "Reduced-motion celebration renders.",
+            ]
+        );
+        // Foreign sections DoomScrum doesn't recognize are simply ignored.
+        assert!(brief.ambiguity_flags.is_empty());
     }
 
     #[test]

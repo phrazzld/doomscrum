@@ -190,7 +190,16 @@ backlog_dir = "backlog.d"
 
 Each `*.md` file in the backlog directory is one spec. Priority is filename
 sort order; only the top `feed.max_items` (default 10) enter the feed. Files
-starting with `_` are ignored (use `_done/`-style prefixes for archives).
+prefixed with `_` or `.` are ignored (use `_done/`-style or dotfile sidecars
+to archive without polluting the feed). The directory itself may be
+dot-named (e.g. `.backlog.d`) — only file prefixes are filtered. A spec's
+title is its first `# ` heading (or the filename if there is none), and the
+distiller reads `## Goal` / `## User` / `## Problem` / `## Acceptance
+Criteria` / `## Oracle` / `## Risk` sections, ignoring everything else;
+title + body is enough to distill, so a repo's own house format works
+without DoomScrum-specific edits. See [BACKLOG_CONTRACT.md](BACKLOG_CONTRACT.md)
+for the full, source-neutral contract (including the GitHub-Issues source
+shape).
 
 Real renders happen just-in-time: serving the feed renders at most
 `feed.prefetch_depth` (default 3) specs ahead of your viewport, so a long
