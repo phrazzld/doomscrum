@@ -4,7 +4,8 @@
   "description": "Marketing demo composition. Dev tooling only — the product itself is Rust.",
   "scripts": {
     "studio": "remotion studio src/index.ts",
-    "render": "remotion render src/index.ts DoomScrumDemo out/doomscrum-demo.mp4 --codec h264"
+    "render": "remotion render src/index.ts DoomScrumDemo out/doomscrum-demo.mp4 --codec h264",
+    "render:launch": "remotion render src/index.ts DoomScrumLaunch out/doomscrum-launch.mp4 --codec h264"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.478",

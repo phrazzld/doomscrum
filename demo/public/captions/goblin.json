@@ -1,0 +1,14 @@
+{
+ "script": "Budget goblin reports: local GPU, zero wallet panic, fallback if unreachable.",
+ "speech_end": 6.51,
+ "clip_len": 8.0,
+ "native_captions": false,
+ "issue": 39,
+ "segments": [
+  [
+   0.03,
+   6.51,
+   "Budget goblin reports: local GPU, zero wallet panic, fallback if unreachable."
+  ]
+ ]
+}

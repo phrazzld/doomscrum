@@ -1,0 +1,19 @@
+{
+ "script": "Evidence says no: free path needs demo cartridge, not dry cards.",
+ "speech_end": 6.83,
+ "clip_len": 8.08,
+ "native_captions": true,
+ "issue": 36,
+ "segments": [
+  [
+   1.55,
+   3.05,
+   "Evidence says no."
+  ],
+  [
+   3.95,
+   6.83,
+   "Free path needs demo cartridge, not dry cards."
+  ]
+ ]
+}

@@ -10,3 +10,4 @@ demo/node_modules/
 demo/out/
 demo/public/*.mp4
 demo/public/sfx/*.wav
+demo/public/vo/

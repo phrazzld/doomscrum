@@ -1,0 +1,74 @@
+{
+  "source": "estimated",
+  "render_sha256": "01784159105061803000-000001-a285c5725d14",
+  "normalized_expected": "i m the ratification raccoon first approve then delete the dead stuff",
+  "normalized_observed": "i m the ratification raccoon first approve then delete the dead stuff",
+  "words": [
+    {
+      "text": "I’m",
+      "start_ms": 200,
+      "end_ms": 551,
+      "confidence": null
+    },
+    {
+      "text": "the",
+      "start_ms": 551,
+      "end_ms": 902,
+      "confidence": null
+    },
+    {
+      "text": "Ratification",
+      "start_ms": 902,
+      "end_ms": 1253,
+      "confidence": null
+    },
+    {
+      "text": "Raccoon:",
+      "start_ms": 1253,
+      "end_ms": 1604,
+      "confidence": null
+    },
+    {
+      "text": "first",
+      "start_ms": 1604,
+      "end_ms": 1955,
+      "confidence": null
+    },
+    {
+      "text": "approve,",
+      "start_ms": 1955,
+      "end_ms": 2306,
+      "confidence": null
+    },
+    {
+      "text": "then",
+      "start_ms": 2306,
+      "end_ms": 2657,
+      "confidence": null
+    },
+    {
+      "text": "delete",
+      "start_ms": 2657,
+      "end_ms": 3008,
+      "confidence": null
+    },
+    {
+      "text": "the",
+      "start_ms": 3008,
+      "end_ms": 3359,
+      "confidence": null
+    },
+    {
+      "text": "dead",
+      "start_ms": 3359,
+      "end_ms": 3710,
+      "confidence": null
+    },
+    {
+      "text": "stuff.",
+      "start_ms": 3710,
+      "end_ms": 4070,
+      "confidence": null
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+ "script": "Gate two, baby: QA walks, files GitHub issues, no duplicates.",
+ "speech_end": 5.57,
+ "clip_len": 8.0,
+ "native_captions": false,
+ "issue": 40,
+ "segments": [
+  [
+   1.65,
+   2.87,
+   "QA walks."
+  ],
+  [
+   2.87,
+   4.33,
+   "Files GitHub issues."
+  ],
+  [
+   4.33,
+   5.57,
+   "No duplicates."
+  ]
+ ]
+}

@@ -562,7 +562,7 @@ const Close: React.FC = () => {
           opacity: interpolate(frame, [fps, fps * 1.6], [0, 1], { extrapolateRight: "clamp" }),
         }}
       >
-        github.com/phrazzld/doomscrum
+        github.com/misty-step/doomscrum
       </div>
       <MemeText size={60} color={PINK} delay={Math.round(2.2 * fps)}>
         operators are standing by

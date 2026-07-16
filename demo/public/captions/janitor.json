@@ -1,0 +1,19 @@
+{
+ "script": "I'm the Ratification Raccoon: first approve, then delete the dead stuff.",
+ "speech_end": 3.97,
+ "clip_len": 8.0,
+ "native_captions": false,
+ "issue": 44,
+ "segments": [
+  [
+   0.03,
+   1.41,
+   "I'm the ratification raccoon."
+  ],
+  [
+   1.67,
+   3.97,
+   "First approve, then delete the dead stuff."
+  ]
+ ]
+}

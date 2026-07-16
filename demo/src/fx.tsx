@@ -118,6 +118,81 @@ export const Karaoke: React.FC<{
   );
 };
 
+// ----- segment-timing captions (delivered clip segments) --------------------
+export type Segment = { start: number; end: number; text: string };
+
+export const SegmentKaraoke: React.FC<{
+  segments: Segment[];
+  bottom?: number;
+  size?: number;
+  color?: string;
+}> = ({ segments, bottom = 200, size = 64, color = "#b6ff2e" }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+
+  // Hold the last segment after it ends so the screen never empties mid-scene.
+  let idx = segments.findIndex((s) => t >= s.start && t < s.end);
+  if (idx < 0 && segments.length > 0 && t >= segments[segments.length - 1].end) {
+    idx = segments.length - 1;
+  }
+  if (idx < 0) return null;
+
+  const seg = segments[idx];
+  const pop = spring({
+    fps,
+    frame: frame - Math.round(seg.start * fps),
+    config: { damping: 10, stiffness: 220 },
+  });
+  const drift = Math.sin(frame * 0.03 + idx) * 3;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom,
+        left: 40,
+        right: 40,
+        textAlign: "center",
+        transform: `translateX(${drift}px)`,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: IMPACT,
+          fontSize: size,
+          lineHeight: 1.1,
+          color,
+          textTransform: "uppercase",
+          WebkitTextStroke: "3px #000",
+          textShadow: "7px 7px 0 rgba(0,0,0,.9)",
+          display: "inline-block",
+          transform: `scale(${0.9 + pop * 0.15})`,
+        }}
+      >
+        {seg.text}
+      </span>
+    </div>
+  );
+};
+
+export const SegmentStarburstFlash: React.FC<{
+  segments: Segment[];
+  color?: string;
+  bg?: string;
+}> = ({ segments, color = "#c00", bg = "#ffd400" }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const boundary = segments.some((s) => Math.abs(t - s.start) < 0.12);
+  if (!boundary) return null;
+  return (
+    <Starburst size={160} bg={bg} color={color} style={{ top: 160, right: 90 }}>
+      BOOM!
+    </Starburst>
+  );
+};
+
 // ----- 90s infomercial starburst ---------------------------------------------
 export const Starburst: React.FC<{
   children: React.ReactNode;
