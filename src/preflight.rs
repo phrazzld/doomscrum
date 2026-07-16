@@ -47,6 +47,16 @@ pub struct Facts {
     pub provider_is_fal: bool,
     /// FAL key resolvable from env or `~/.secrets`.
     pub fal_key: bool,
+    /// Any configured pipeline or mix entry starts with `stills/`.
+    pub stills_pipeline_required: bool,
+    /// ffmpeg binary on PATH.
+    pub ffmpeg_on_path: bool,
+    /// ffprobe binary on PATH.
+    pub ffprobe_on_path: bool,
+    /// `repo.source` value (e.g. "markdown" or "github-issues").
+    pub repo_source: String,
+    /// The synced repo's `origin` remote points to GitHub.
+    pub repo_has_github_remote: bool,
 }
 
 /// Pure verdict: the ordered list of checks for these facts.
@@ -137,6 +147,43 @@ pub fn evaluate(f: &Facts) -> Vec<Check> {
         }
     });
 
+    if f.stills_pipeline_required {
+        checks.push(if f.ffmpeg_on_path && f.ffprobe_on_path {
+            ok(
+                "stills pipeline (ffmpeg)",
+                "ffmpeg and ffprobe are available",
+            )
+        } else {
+            Check {
+                name: "stills pipeline (ffmpeg)",
+                status: Status::Fail,
+                detail:
+                    "a stills/ pipeline is configured but ffmpeg or ffprobe was not found on PATH"
+                        .into(),
+                fix: Some("install ffmpeg (brew install ffmpeg)".into()),
+            }
+        });
+    }
+
+    if f.repo_source == "github-issues" {
+        checks.push(if f.gh_authed && f.repo_has_github_remote {
+            ok(
+                "github issues source",
+                "gh is authenticated and the repo has a GitHub remote",
+            )
+        } else {
+            Check {
+                name: "github issues source",
+                status: Status::Fail,
+                detail: "repo.source = \"github-issues\" but gh is not authenticated or the synced repo does not have a GitHub remote".into(),
+                fix: Some(
+                    "run `gh auth login` and ensure [repo].path points to a git repo with `origin` set to a GitHub URL"
+                        .into(),
+                ),
+            }
+        });
+    }
+
     checks
 }
 
@@ -206,6 +253,11 @@ mod tests {
             repo_has_remote: true,
             provider_is_fal: false,
             fal_key: false,
+            stills_pipeline_required: false,
+            ffmpeg_on_path: true,
+            ffprobe_on_path: true,
+            repo_source: "markdown".into(),
+            repo_has_github_remote: true,
         }
     }
 
@@ -320,5 +372,84 @@ mod tests {
         assert_eq!(cfg.repo.path, "../some-repo");
         // Dogfoods the opencode default.
         assert_eq!(cfg.agent.implement_cmd[0], "opencode");
+    }
+
+    #[test]
+    fn stills_pipeline_requires_ffmpeg_and_ffprobe() {
+        let f = Facts {
+            stills_pipeline_required: true,
+            ffmpeg_on_path: false,
+            ffprobe_on_path: false,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        assert!(checks
+            .iter()
+            .any(|c| { c.name == "stills pipeline (ffmpeg)" && c.status == Status::Fail }));
+        assert!(checks
+            .iter()
+            .any(|c| c.fix.as_deref() == Some("install ffmpeg (brew install ffmpeg)")));
+        assert_eq!(worst(&checks), Status::Fail);
+    }
+
+    #[test]
+    fn stills_pipeline_passes_when_ffmpeg_tools_are_present() {
+        let f = Facts {
+            stills_pipeline_required: true,
+            ffmpeg_on_path: true,
+            ffprobe_on_path: true,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        assert!(checks
+            .iter()
+            .any(|c| { c.name == "stills pipeline (ffmpeg)" && c.status == Status::Ok }));
+        assert_eq!(worst(&checks), Status::Ok);
+    }
+
+    #[test]
+    fn no_stills_pipeline_skips_ffmpeg_check() {
+        let checks = evaluate(&all_good());
+        assert!(!checks.iter().any(|c| c.name == "stills pipeline (ffmpeg)"));
+    }
+
+    #[test]
+    fn github_issues_source_needs_gh_auth_and_github_remote() {
+        let f = Facts {
+            repo_source: "github-issues".into(),
+            gh_authed: false,
+            repo_has_github_remote: false,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        assert!(checks
+            .iter()
+            .any(|c| c.name == "github issues source" && c.status == Status::Fail));
+        assert!(checks.iter().any(|c| c.name == "github issues source"
+            && c.fix
+                .as_deref()
+                .is_some_and(|s| s.contains("gh auth login"))));
+        assert_eq!(worst(&checks), Status::Fail);
+    }
+
+    #[test]
+    fn github_issues_source_passes_when_healthy() {
+        let f = Facts {
+            repo_source: "github-issues".into(),
+            gh_authed: true,
+            repo_has_github_remote: true,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        assert!(checks
+            .iter()
+            .any(|c| c.name == "github issues source" && c.status == Status::Ok));
+        assert_eq!(worst(&checks), Status::Ok);
+    }
+
+    #[test]
+    fn markdown_source_skips_github_issues_check() {
+        let checks = evaluate(&all_good());
+        assert!(!checks.iter().any(|c| c.name == "github issues source"));
     }
 }

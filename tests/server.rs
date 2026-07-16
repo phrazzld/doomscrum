@@ -1836,6 +1836,7 @@ async fn boot_reconcile_fails_stranded_dispatches_and_appends_durable_events() {
         title: "First Spec".into(),
         priority: 0,
         raw: SPECS[0].1.into(),
+        issue_number: None,
     };
     // The pre-crash world: a receipt persisted `queued` whose driving task
     // died with the old process.

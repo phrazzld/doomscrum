@@ -1,6 +1,7 @@
 pub mod fake;
 pub mod fal;
 pub mod samples;
+pub mod stills;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -52,6 +53,10 @@ pub enum CaptionSource {
     ForcedAlignment,
     FalWhisper,
     Deepgram,
+    /// Timings are estimated from the known script length and measured
+    /// audio duration. Used by the local deterministic TTS/caption path
+    /// where no word-level forced alignment is available yet.
+    Estimated,
 }
 
 /// Product-owned caption data. Provider payloads normalize into this shape
@@ -127,6 +132,7 @@ impl CaptionWord {
 pub enum Provider {
     Fake(fake::FakeProvider),
     Fal(fal::FalProvider),
+    Stills(stills::StillsProvider),
 }
 
 impl Provider {
@@ -134,6 +140,7 @@ impl Provider {
         match self {
             Provider::Fake(_) => "fake-local",
             Provider::Fal(_) => "fal",
+            Provider::Stills(_) => "stills",
         }
     }
 
@@ -141,6 +148,7 @@ impl Provider {
         match self {
             Provider::Fake(p) => p.render(storyboard, renders_dir),
             Provider::Fal(p) => p.render(storyboard, renders_dir).await,
+            Provider::Stills(p) => p.render(storyboard, renders_dir).await,
         }
     }
 
@@ -151,6 +159,8 @@ impl Provider {
         match self {
             Provider::Fake(_) => target_sec,
             Provider::Fal(p) => fal::clip_duration(&p.model, target_sec),
+            // Stills supports any duration — it simply renders the requested clip.
+            Provider::Stills(_) => target_sec,
         }
     }
 }

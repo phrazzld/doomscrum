@@ -461,7 +461,7 @@
 
 <div class="overlay" id="repoOverlay">
   <button class="close" id="repoClose">close [esc]</button>
-  <div class="head"><h2>sync a repo</h2><span class="hash">any repo with a backlog directory of markdown specs</span></div>
+  <div class="head"><h2>sync a repo</h2><span class="hash">any repo with a backlog directory of markdown specs or source = github-issues</span></div>
   <div class="picker">
     <input id="repoInput" placeholder="/path/to/repo (or ~/Development/...)" spellcheck="false" autocomplete="off">
     <p class="picker-err" id="repoErr" style="display:none"></p>
@@ -752,12 +752,19 @@
     if (!item) {
       const r = window.__repo || {};
       const backlogPath = (r.current || "<repo>") + "/" + (r.backlog_dir || "backlog.d");
+      const isIssues = r.source === "github-issues";
+      const sourceLine = isIssues
+        ? `no open GitHub issues in <b>${esc(r.current || "<repo>")}</b>`
+        : `no markdown specs in <b>${esc(backlogPath)}/</b>`;
+      const authorLine = isIssues
+        ? `open issues in this repo will appear here — then reload`
+        : `or author specs: add markdown files to<br><b>${esc(backlogPath)}/*.md</b> — then reload`;
       stage.innerHTML = `<div class="empty"><div>
         <h3>backlog is empty</h3>
-        <p>no markdown specs in <b>${esc(backlogPath)}/</b></p>
+        <p>${sourceLine}</p>
         <button id="emptyPickRepo">sync a repo</button>
         <button id="emptyReload">reload feed</button>
-        <p>or author specs: add markdown files to<br><b>${esc(backlogPath)}/*.md</b> — then reload</p>
+        <p>${authorLine}</p>
       </div></div>`;
       $("emptyPickRepo").onclick = () => openRepoPicker();
       $("emptyReload").onclick = async () => {
@@ -1213,8 +1220,12 @@
       // Stay in the picker with the failure named in place — pick a recent
       // repo, fix the path, or close. Never a bare error toast dead-end.
       const err = $("repoErr");
-      const dir = (window.__repo && window.__repo.backlog_dir) || "backlog.d";
-      err.textContent = `${e.message} — a syncable repo is any directory with a ${dir}/ of markdown specs. fix the path or pick a recent repo below.`;
+      const repo = window.__repo || {};
+      const dir = repo.backlog_dir || "backlog.d";
+      const sourceHint = repo.source === "github-issues"
+        ? "repo.source is github-issues; the repo needs a GitHub remote with open issues"
+        : `a syncable repo is any directory with a ${dir}/ of markdown specs`;
+      err.textContent = `${e.message} — ${sourceHint}. fix the path or pick a recent repo below.`;
       err.style.display = "block";
     }
   }

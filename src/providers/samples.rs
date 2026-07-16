@@ -32,6 +32,7 @@ const EMBEDDED_SAMPLES: &[(&str, &[u8])] = &[
 /// Returns the number of specs bootstrapped (0 if renders already exist).
 pub fn bootstrap(
     repo_path: &Path,
+    source: &str,
     backlog_dir: &str,
     max_items: usize,
     renders_dir: &Path,
@@ -44,7 +45,12 @@ pub fn bootstrap(
         return Ok(0);
     }
 
-    let prds = backlog::scan(repo_path, backlog_dir, max_items).unwrap_or_default();
+    // Sample fixtures are demo clips for markdown specs; skip for other sources.
+    if source != "markdown" {
+        return Ok(0);
+    }
+
+    let prds = backlog::scan(repo_path, source, backlog_dir, max_items).unwrap_or_default();
     if prds.is_empty() {
         return Ok(0);
     }
@@ -131,7 +137,7 @@ mod tests {
         std::fs::create_dir_all(repo.join("backlog.d")).unwrap();
         let renders = root.path().join("renders");
 
-        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "markdown", "backlog.d", 10, &renders).unwrap();
         assert_eq!(n, 0);
     }
 
@@ -146,7 +152,7 @@ mod tests {
         let renders = root.path().join("renders");
         std::fs::create_dir_all(renders.join("some-sha")).unwrap();
 
-        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "markdown", "backlog.d", 10, &renders).unwrap();
         assert_eq!(n, 0);
     }
 
@@ -162,7 +168,7 @@ mod tests {
 
         let renders = root.path().join("renders");
 
-        let n = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
+        let n = bootstrap(&repo, "markdown", "backlog.d", 10, &renders).unwrap();
         assert!(n >= 1, "should bootstrap at least one spec");
 
         let all = crate::providers::load_renders(&renders).unwrap();
@@ -195,8 +201,8 @@ mod tests {
 
         let renders = root.path().join("renders");
 
-        let first = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
-        let second = bootstrap(&repo, "backlog.d", 10, &renders).unwrap();
+        let first = bootstrap(&repo, "markdown", "backlog.d", 10, &renders).unwrap();
+        let second = bootstrap(&repo, "markdown", "backlog.d", 10, &renders).unwrap();
 
         assert!(first > 0);
         assert_eq!(second, 0, "second bootstrap should be a no-op");

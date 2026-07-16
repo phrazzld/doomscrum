@@ -824,6 +824,7 @@ mod tests {
             title: "Test Spec".into(),
             priority: 0,
             raw: raw.into(),
+            issue_number: None,
         }
     }
 

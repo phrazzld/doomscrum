@@ -33,6 +33,7 @@ fn sample_prd() -> PrdSource {
         title: "Wired Spec".into(),
         priority: 0,
         raw: raw.into(),
+        issue_number: None,
     }
 }
 

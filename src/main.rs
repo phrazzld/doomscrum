@@ -166,6 +166,7 @@ async fn run() -> Result<()> {
             let ctx = AppCtx::new(root.clone(), cfg);
             let _ = samples::bootstrap(
                 &ctx.repo(),
+                &ctx.cfg.repo.source,
                 &ctx.cfg.repo.backlog_dir,
                 ctx.cfg.feed.max_items,
                 &ctx.renders_dir(),
@@ -212,6 +213,7 @@ async fn run() -> Result<()> {
             let ctx = AppCtx::new(root, cfg);
             let _ = samples::bootstrap(
                 &ctx.repo(),
+                &ctx.cfg.repo.source,
                 &ctx.cfg.repo.backlog_dir,
                 ctx.cfg.feed.max_items,
                 &ctx.renders_dir(),
@@ -398,6 +400,7 @@ async fn run() -> Result<()> {
             let renders_dir = root.join(&cfg.repo.state_dir).join("renders");
             let _ = samples::bootstrap(
                 &repo_path,
+                &cfg.repo.source,
                 &cfg.repo.backlog_dir,
                 cfg.feed.max_items,
                 &renders_dir,
@@ -431,6 +434,11 @@ fn gather_facts(root: &std::path::Path, cfg: &Config) -> Facts {
         repo_has_remote: git_has_remote(&repo),
         provider_is_fal: cfg.video.provider == "fal",
         fal_key: secrets::get(&["FAL_API_KEY", "FAL_KEY"]).is_some(),
+        stills_pipeline_required: cfg.video.uses_stills_pipeline(),
+        ffmpeg_on_path: command_ok_in(None, "ffmpeg", &["-version"]),
+        ffprobe_on_path: command_ok_in(None, "ffprobe", &["-version"]),
+        repo_source: cfg.repo.source.clone(),
+        repo_has_github_remote: git_origin_is_github(&repo),
     }
 }
 
@@ -473,4 +481,20 @@ fn command_ok_in(dir: Option<&std::path::Path>, bin: &str, args: &[&str]) -> boo
 /// dispatch that silently stays local.
 fn git_has_remote(dir: &std::path::Path) -> bool {
     command_ok_in(Some(dir), "git", &["remote", "get-url", "origin"])
+}
+
+/// True if the synced repo's `origin` remote points at GitHub. The
+/// `github-issues` source needs this for `gh issue list` to resolve the repo.
+fn git_origin_is_github(dir: &std::path::Path) -> bool {
+    match std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(dir)
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let url = String::from_utf8_lossy(&out.stdout);
+            url.contains("github.com") || url.contains("github.com:")
+        }
+        _ => false,
+    }
 }

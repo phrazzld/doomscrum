@@ -13,12 +13,12 @@ from two dispatch runs driven through the real swipe feed in a browser
 
 | | Repo 1 | Repo 2 |
 |---|---|---|
-| Repo | [phrazzld/vanity](https://github.com/phrazzld/vanity) (public) | [misty-step/chrondle](https://github.com/misty-step/chrondle) (public) |
+| Repo | [moomooskycow/vanity](https://github.com/moomooskycow/vanity) (public) | [misty-step/chrondle](https://github.com/misty-step/chrondle) (public) |
 | Layout | `backlog.d/` numbered specs | `.backlog.d/` **dot-dir** specs (different filename + section conventions: Priority/Status/Non-Goals/Oracle house format) |
 | Sync path | Runtime **repo switch in the feed** (`repo:` chip → `/api/repo`) from the default doomscrum sync | **Cold setup**: fresh root dir, `doomscrum init --repo …/chrondle`, one-line `backlog_dir = ".backlog.d"` edit, `doctor` green (see `chrondle-cold-init.txt`) |
 | Spec swiped | `backlog.d/009-colophon-pause-control.md` — WCAG 2.2.2 pause/stop control for the typewriter colophon | `.backlog.d/004-polish-recovery-and-motion-accessibility.md` — error-boundary link semantics + reduced-motion celebration |
 | Dispatch id | `687be905f1…` | `766744e5b5…` |
-| PR | [phrazzld/vanity#123](https://github.com/phrazzld/vanity/pull/123) (+401/−76) | [misty-step/chrondle#268](https://github.com/misty-step/chrondle/pull/268) (+124/−6) |
+| PR | [moomooskycow/vanity#123](https://github.com/moomooskycow/vanity/pull/123) (+401/−76) | [misty-step/chrondle#268](https://github.com/misty-step/chrondle/pull/268) (+124/−6) |
 | Wall clock (swipe → PR) | 15m29s (13:03:27Z → 13:18:56Z) | 9m57s (13:06:56Z → 13:16:53Z) |
 
 **An honest failure, kept in the packet:** a second chrondle dispatch,

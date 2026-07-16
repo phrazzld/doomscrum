@@ -33,26 +33,26 @@ fn clean_money(value: f64) -> f64 {
     }
 }
 
-/// Total estimated spend on real renders, summed from the durable cost
-/// record ([`crate::render::ledger::spend_entries`] — the ledger unioned with
+/// Total estimated spend on paid renders (any render with a non-zero cost),
+/// summed from the durable cost record ([`crate::render::ledger::spend_entries`] — the ledger unioned with
 /// any provenance it does not know about). Never read spend from surviving
 /// render JSONs alone: wiping `.doomscrum/renders` must not reset the meter.
 pub fn total_spend(entries: &[CostEntry]) -> f64 {
     let sum = entries
         .iter()
-        .filter(|e| e.provider == "fal")
+        .filter(|e| e.cost_usd > 0.0)
         .map(|e| e.cost_usd)
         .sum();
     clean_money(sum)
 }
 
-/// Spend on real renders whose recorded timestamp falls on the UTC date of
-/// `now`. The reset boundary is UTC so it is stable across operator machines.
+/// Spend on paid renders (any render with a non-zero cost) whose recorded
+/// timestamp falls on the UTC date of `now`. The reset boundary is UTC so it is stable across operator machines.
 pub fn daily_spend(entries: &[CostEntry], now: DateTime<Utc>) -> f64 {
     let today = now.date_naive();
     let sum = entries
         .iter()
-        .filter(|e| e.provider == "fal")
+        .filter(|e| e.cost_usd > 0.0)
         .filter(|e| {
             DateTime::parse_from_rfc3339(&e.created_at)
                 .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
@@ -206,5 +206,46 @@ impl Wallet {
 impl Default for Wallet {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn total_spend_counts_paid_renders_across_providers() {
+        let stills = CostEntry {
+            render_id: "r-stills".into(),
+            prd_id: "p".into(),
+            prd_sha256: "s".into(),
+            provider: "stills".into(),
+            model: "stills/ken-burns".into(),
+            cost_usd: 0.03,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let fal = CostEntry {
+            render_id: "r-fal".into(),
+            prd_id: "p".into(),
+            prd_sha256: "s".into(),
+            provider: "fal".into(),
+            model: "veo3.1/lite".into(),
+            cost_usd: 0.40,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        let free = CostEntry {
+            render_id: "r-free".into(),
+            prd_id: "p".into(),
+            prd_sha256: "s".into(),
+            provider: "fake-local".into(),
+            model: "fixture".into(),
+            cost_usd: 0.0,
+            created_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert!((total_spend(&[stills.clone(), fal.clone(), free.clone()]) - 0.43).abs() < 1e-9);
+        let now = DateTime::parse_from_rfc3339("2026-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!((daily_spend(&[stills, fal, free], now) - 0.43).abs() < 1e-9);
     }
 }

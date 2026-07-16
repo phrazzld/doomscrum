@@ -774,11 +774,18 @@ pub fn is_superseded(
         .is_some_and(|cur_sha| cur_sha != &receipt.prd_sha256)
 }
 
+fn spec_source_label(prd: &PrdSource) -> String {
+    prd.issue_number
+        .map(|n| format!("GitHub issue #{n}"))
+        .unwrap_or_else(|| prd.rel_path.clone())
+}
+
 fn build_prompt(kind: DispatchKind, prd: &PrdSource, branch: &str) -> String {
     // The spec body is untrusted (it can come from a foreign repo); fence it so
     // embedded directives can't hijack the agent. The trusted task instruction
     // stays outside the fence.
     let spec = crate::util::wrap_untrusted_spec(&prd.raw);
+    let source_label = spec_source_label(prd);
     match kind {
         DispatchKind::Implement => format!(
             "Implement the following spec completely.\n\n\
@@ -788,7 +795,7 @@ fn build_prompt(kind: DispatchKind, prd: &PrdSource, branch: &str) -> String {
              Commit all of your work to the current branch with clear messages. Do not push.\n\n\
              Source spec ({path}):\n\n{spec}",
             branch = branch,
-            path = prd.rel_path,
+            path = source_label,
             spec = spec,
         ),
         DispatchKind::Shape => format!(
@@ -801,7 +808,7 @@ fn build_prompt(kind: DispatchKind, prd: &PrdSource, branch: &str) -> String {
              Commit your changes to the current branch with a clear message. Do not push.\n\n\
              Current spec content:\n\n{spec}",
             branch = branch,
-            path = prd.rel_path,
+            path = source_label,
             spec = spec,
         ),
     }
@@ -812,7 +819,7 @@ fn pr_body(receipt: &DispatchReceipt, prd: &PrdSource) -> String {
         DispatchKind::Implement => "Implementation of",
         DispatchKind::Shape => "Spec shaping for",
     };
-    format!(
+    let mut body = format!(
         "{action} `{path}`.\n\n\
          Dispatched from DoomScrum (swipe feed).\n\n\
          - Spec: `{path}`\n\
@@ -824,7 +831,11 @@ fn pr_body(receipt: &DispatchReceipt, prd: &PrdSource) -> String {
         sha = receipt.prd_sha256,
         id = receipt.id,
         branch = receipt.branch,
-    )
+    );
+    if let Some(n) = prd.issue_number {
+        body.push_str(&format!("\nFixes #{n}\n"));
+    }
+    body
 }
 
 #[cfg(test)]
@@ -843,6 +854,7 @@ mod tests {
             title: "Demo Spec".into(),
             priority: 0,
             raw: raw.into(),
+            issue_number: None,
         }
     }
 
@@ -879,6 +891,68 @@ mod tests {
         let shape = build_prompt(DispatchKind::Shape, &p, "doomscrum/shape-x");
         assert!(shape.contains("Do not implement it"));
         assert!(shape.contains("backlog.d/demo.md"));
+    }
+
+    fn issue_prd(issue_number: u64) -> PrdSource {
+        let raw = "# Issue Title\n\nIssue body.\n";
+        PrdSource {
+            id: sha256_hex(raw.as_bytes()),
+            sha256: sha256_hex(raw.as_bytes()),
+            rel_path: format!("github-issues/{issue_number}.md"),
+            abs_path: PathBuf::from(format!("github-issues/{issue_number}.md")),
+            title: "Issue Title".into(),
+            priority: 0,
+            raw: raw.into(),
+            issue_number: Some(issue_number),
+        }
+    }
+
+    fn dispatch_receipt(kind: DispatchKind) -> DispatchReceipt {
+        DispatchReceipt {
+            id: "rid".into(),
+            prd_id: "pid".into(),
+            prd_sha256: "sha".into(),
+            prd_title: "T".into(),
+            prd_rel_path: "p".into(),
+            kind,
+            branch: "b".into(),
+            worktree: "/tmp/w".into(),
+            status: "queued".into(),
+            stages: Vec::new(),
+            diff_lines: None,
+            plan: None,
+            pr_url: None,
+            pr_state: None,
+            pr_state_at: None,
+            note: None,
+            agent_log: "/tmp/l".into(),
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        }
+    }
+
+    #[test]
+    fn pr_body_appends_fixes_for_issue_sourced_spec() {
+        let receipt = dispatch_receipt(DispatchKind::Implement);
+        let body = pr_body(&receipt, &issue_prd(42));
+        assert!(body.contains("Fixes #42"), "{body}");
+    }
+
+    #[test]
+    fn pr_body_omits_fixes_for_markdown_sourced_spec() {
+        let receipt = dispatch_receipt(DispatchKind::Implement);
+        let body = pr_body(&receipt, &prd());
+        assert!(!body.contains("Fixes #"), "{body}");
+    }
+
+    #[test]
+    fn prompt_names_issue_for_issue_sourced_spec() {
+        let p = issue_prd(99);
+        let implement = build_prompt(DispatchKind::Implement, &p, "doomscrum/impl-x");
+        assert!(implement.contains("GitHub issue #99"), "{implement}");
+        assert!(!implement.contains("github-issues/99.md"), "{implement}");
+        let shape = build_prompt(DispatchKind::Shape, &p, "doomscrum/shape-x");
+        assert!(shape.contains("GitHub issue #99"), "{shape}");
     }
 
     #[test]
@@ -1273,6 +1347,7 @@ mod tests {
             title: "Other Spec".into(),
             priority: 0,
             raw: other_raw.into(),
+            issue_number: None,
         };
         let mut done = dispatcher.create(&other, DispatchKind::Implement).unwrap();
         done.status = "pr_opened".into();

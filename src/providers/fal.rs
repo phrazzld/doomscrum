@@ -85,6 +85,10 @@ pub fn model_renders_native_captions(model: &str) -> bool {
 /// the next longer clip so the script never loses breathing room.
 /// (sora-2 takes 4/8/12, kling only 5/10, seedance any 4–15, veo 4/6/8.)
 pub fn clip_duration(model: &str, target: u32) -> u32 {
+    // Stills pipelines can render any requested duration.
+    if model.starts_with("stills/") {
+        return target;
+    }
     let snap_up = |allowed: &[u32]| {
         allowed
             .iter()
@@ -109,6 +113,11 @@ pub fn clip_duration(model: &str, target: u32) -> u32 {
 /// the model's per-second price. The wallet gates and /api/state both quote
 /// this, so the number shown is the number billed.
 pub fn unit_cost(cfg: &crate::config::VideoConfig) -> f64 {
+    // Stills model ids quote the configured per-image price; they are not
+    // billed by the second, but they still consume wallet budget.
+    if cfg.fal_model.starts_with("stills/") {
+        return cfg.stills.image_price_usd;
+    }
     f64::from(clip_duration(&cfg.fal_model, cfg.max_duration_sec))
         * model_price_per_second(&cfg.fal_model).unwrap_or(cfg.price_per_second_usd)
 }

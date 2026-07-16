@@ -751,6 +751,7 @@ mod tests {
             title: format!("Spec {id}"),
             priority: 0,
             raw: String::new(),
+            issue_number: None,
         }
     }
 

@@ -284,6 +284,7 @@ mod tests {
             title: title.into(),
             priority: 0,
             raw: String::new(),
+            issue_number: None,
         }
     }
 

@@ -15,7 +15,9 @@ use crate::backlog::{self, PrdSource};
 use crate::config::Config;
 use crate::dispatch::Dispatcher;
 use crate::events;
-use crate::providers::{fake::FakeProvider, fal::FalProvider, Provider, VideoRender};
+use crate::providers::{
+    fake::FakeProvider, fal::FalProvider, stills::StillsProvider, Provider, VideoRender,
+};
 use crate::render::ledger::{self, CostEntry};
 use crate::render::wallet::Wallet;
 use crate::secrets;
@@ -249,13 +251,19 @@ impl AppCtx {
     pub fn scan(&self) -> anyhow::Result<Vec<PrdSource>> {
         backlog::scan(
             &self.repo(),
+            &self.cfg.repo.source,
             &self.cfg.repo.backlog_dir,
             self.cfg.feed.max_items,
         )
     }
 
     pub fn scan_all(&self) -> anyhow::Result<Vec<PrdSource>> {
-        backlog::scan(&self.repo(), &self.cfg.repo.backlog_dir, usize::MAX)
+        backlog::scan(
+            &self.repo(),
+            &self.cfg.repo.source,
+            &self.cfg.repo.backlog_dir,
+            usize::MAX,
+        )
     }
 
     fn fal_key(&self) -> Option<String> {
@@ -313,7 +321,11 @@ impl AppCtx {
                 let key = self.fal_key().ok_or_else(|| {
                     anyhow::anyhow!("FAL_API_KEY or FAL_KEY not configured (env or ~/.secrets)")
                 })?;
-                Ok(Provider::Fal(FalProvider::from_config(video, key)))
+                if video.fal_model.starts_with("stills/") {
+                    Ok(Provider::Stills(StillsProvider::from_config(video, key)))
+                } else {
+                    Ok(Provider::Fal(FalProvider::from_config(video, key)))
+                }
             }
             other => anyhow::bail!("unknown video provider '{other}' (expected fake|fal)"),
         }
@@ -411,6 +423,7 @@ async fn api_repo_get(State(ctx): State<AppCtx>) -> Response {
         // The UI's empty-backlog on-ramp names the exact spec path; it reads
         // the configured dir here instead of hardcoding "backlog.d".
         "backlog_dir": ctx.cfg.repo.backlog_dir,
+        "source": ctx.cfg.repo.source,
     }))
     .into_response()
 }

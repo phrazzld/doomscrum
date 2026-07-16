@@ -29,4 +29,7 @@ direction call is ambiguous, that file decides — read it, don't guess.
 - Demo recuts: use the project `demo` skill (`.claude/skills/demo/`).
 - Dispatch is unbounded by design (owner call) — wallet protection is real,
   run-packet "bounds" are not. Don't re-introduce them.
-- Tickets live in `backlog.d/` (Goal + Oracle format; `_done/` archive).
+- Tickets are this repo's open GitHub issues (`repo.source =
+  "github-issues"` in doomscrum.toml, scanned via `gh issue list`). The
+  markdown adapter (`backlog.d/`, Goal + Oracle format) remains for repos
+  that keep specs in-tree.

@@ -1,7 +1,8 @@
 # DoomScrum
 
-Backlog triage as a TikTok feed. DoomScrum reads markdown specs from a repo's
-backlog, turns each one into a goofy shortform video, and lets you swipe:
+Backlog triage as a TikTok feed. DoomScrum reads specs from a repo's backlog —
+markdown files or open GitHub issues — turns each one into a goofy shortform
+video, and lets you swipe:
 
 | Gesture | Action |
 |---|---|
@@ -38,10 +39,10 @@ under two minutes:
 
 ```bash
 # macOS (Homebrew)
-brew install phrazzld/doomscrum/doomscrum
+brew install misty-step/doomscrum/doomscrum
 
 # or download directly (macOS arm64 / Linux x86_64) — checksummed
-# releases: https://github.com/phrazzld/doomscrum/releases/latest
+# releases: https://github.com/misty-step/doomscrum/releases/latest
 
 doomscrum init      # scaffold doomscrum.toml
 doomscrum doctor    # check your setup (agent auth, gh auth, git remote)
@@ -118,7 +119,7 @@ offline with zero external dependencies.
 
 ```
 src/
-  backlog.rs       spec scanning, hashing, priority cap
+  backlog.rs       spec scanning (markdown dir or GitHub issues via gh), hashing, priority cap
   distill.rs       markdown → brief → storyboard (the brainrot script)
   egress.rs        runtime data-egress disclosure (CLI + /api/egress + UI)
   providers/       fake (embedded fixture) and fal (real) video generation
@@ -128,7 +129,7 @@ src/
   server.rs        axum API + embedded UI
   main.rs          CLI: serve | generate | script | report | gc
 assets/index.html  the feed UI (single embedded file; the only non-Rust surface)
-backlog.d/         this repo's own sample specs
+backlog.d/         markdown spec dir (this repo now feeds from its own GitHub issues)
 docs/archive/      the original (superseded) MVP spec
 ```
 

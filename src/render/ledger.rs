@@ -83,7 +83,7 @@ pub fn spend_entries(ledger: Vec<CostEntry>, renders: &[VideoRender]) -> Vec<Cos
         ledger.iter().map(|e| e.render_id.as_str()).collect();
     let missing: Vec<CostEntry> = renders
         .iter()
-        .filter(|r| r.provider == "fal" && !known.contains(r.id.as_str()))
+        .filter(|r| r.cost_estimate_usd > 0.0 && !known.contains(r.id.as_str()))
         .map(CostEntry::from_render)
         .collect();
     let mut entries = ledger;

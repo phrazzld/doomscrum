@@ -186,6 +186,7 @@ mod tests {
             sha256: sha256_hex(raw.as_bytes()),
             rel_path: "backlog.d/spec.md".into(),
             abs_path: PathBuf::from("backlog.d/spec.md"),
+            issue_number: None,
             title: raw
                 .lines()
                 .next()
