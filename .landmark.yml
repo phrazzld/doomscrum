@@ -1,0 +1,26 @@
+product:
+  name: DoomScrum
+  description: Backlog triage as a TikTok feed that actually ships code — swipe right on a spec and a real coding agent opens a real PR.
+audience: developer
+voice: >-
+  Punchy and concrete. Name what shipped and what it lets an operator do.
+  The brainrot lives in the product, not the release notes — no slang,
+  no taglines, no anthropomorphizing.
+changelog:
+  source: auto
+artifacts:
+  markdown: docs/releases/{version}.md
+  plaintext: null
+  html: null
+  json: docs/releases/releases.json
+  rss: null
+release:
+  profile: synthesis-only
+model:
+  policy: balanced
+  primary: null
+  fallbacks: []
+budget:
+  max_input_tokens: 12000
+  max_output_tokens: 1200
+  max_usd: null

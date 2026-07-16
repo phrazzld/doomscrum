@@ -73,7 +73,7 @@ jobs:
       - name: Combined checksums
         run: |
           cd dist
-          cat *.sha256 > SHA256SUMS
+          cat ./*.sha256 > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create GitHub Release
@@ -84,6 +84,21 @@ jobs:
             dist/*.tar.gz.sha256
             dist/SHA256SUMS
           generate_release_notes: true
+
+      # Landmark (misty-step/landmark): release intelligence. Synthesizes a
+      # user-facing "What's New" section from the release's commit history
+      # and prepends it to the release body. Synthesis-only — version, tag,
+      # and release creation stay with this workflow. Ambient GITHUB_TOKEN
+      # suffices: nothing downstream triggers off a release-body edit.
+      - name: Synthesize release notes (Landmark)
+        uses: misty-step/landmark@v0
+        with:
+          mode: synthesis-only
+          release-tag: ${{ github.ref_name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          llm-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          changelog-source: auto
+          audience: developer
 
       - name: Update Homebrew tap formula
         if: env.HOMEBREW_TAP_TOKEN != ''
@@ -97,40 +112,15 @@ jobs:
           linux_sha=$(awk '{print $1}' dist/doomscrum-linux-x86_64.tar.gz.sha256)
           repo_url="https://github.com/${GITHUB_REPOSITORY}"
 
-          # This repo is private, so a plain browser download URL 404s for
-          # an unauthenticated `curl` (which is what a stock Homebrew `url`
-          # stanza does). Resolve each asset's numeric id and point the
-          # formula at the authenticated REST API download endpoint
-          # instead, via a custom download strategy that adds the bearer
-          # token from HOMEBREW_GITHUB_API_TOKEN. If/when this repo goes
-          # public, drop the custom strategy and use the plain release URL.
-          arm64_asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            --jq '.assets[] | select(.name == "doomscrum-macos-arm64.tar.gz") | .id')
-          linux_asset_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            --jq '.assets[] | select(.name == "doomscrum-linux-x86_64.tar.gz") | .id')
-
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/moomooskycow/homebrew-doomscrum.git" tap
+          # Repo is public since the 2026-07-16 misty-step transfer, so the
+          # formula uses plain release download URLs (the private-repo
+          # authenticated strategy was dropped per its own if-public note).
+          # If HOMEBREW_TAP_TOKEN is still scoped to the old personal tap,
+          # this clone fails loudly — re-issue it with write access to
+          # misty-step/homebrew-doomscrum.
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/misty-step/homebrew-doomscrum.git" tap
           mkdir -p tap/Formula
           cat > tap/Formula/doomscrum.rb <<EOF
-          require "download_strategy"
-
-          # doomscrum's source repo is private (docs/adoption/2026-07-07-installable-releases/);
-          # authenticate release-asset downloads with HOMEBREW_GITHUB_API_TOKEN.
-          # Same shape as Homebrew's own CurlGitHubPackagesDownloadStrategy:
-          # inject an Authorization header via meta[:headers] in the
-          # constructor so the inherited curl machinery picks it up.
-          class DoomscrumPrivateReleaseDownloadStrategy < CurlDownloadStrategy
-            def initialize(url, name, version, **meta)
-              token = Homebrew::EnvConfig.github_api_token
-              raise CurlDownloadStrategyError, "Set HOMEBREW_GITHUB_API_TOKEN (repo-scoped PAT) to install from this private-repo tap." if token.blank?
-
-              meta[:headers] ||= []
-              meta[:headers] << "Authorization: token #{token}"
-              meta[:headers] << "Accept: application/octet-stream"
-              super
-            end
-          end
-
           class Doomscrum < Formula
             desc "PRD brainrot triage: backlog specs as swipeable shortform video"
             homepage "${repo_url}"
@@ -139,16 +129,14 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${arm64_asset_id}",
-                    using: DoomscrumPrivateReleaseDownloadStrategy
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/doomscrum-macos-arm64.tar.gz"
                 sha256 "${arm64_sha}"
               end
             end
 
             on_linux do
               on_intel do
-                url "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${linux_asset_id}",
-                    using: DoomscrumPrivateReleaseDownloadStrategy
+                url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/doomscrum-linux-x86_64.tar.gz"
                 sha256 "${linux_sha}"
               end
             end
