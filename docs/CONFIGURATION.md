@@ -18,8 +18,9 @@ See "Render profiles" in [OPERATIONS.md](OPERATIONS.md#render-profiles-dev-vs-co
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `path` | string | `"."` | The repository DoomScrum is synced to. Backlog specs are read from `<path>/<backlog_dir>`, and agent worktrees are created from this repo. |
-| `backlog_dir` | string | `"backlog.d"` | Backlog directory inside the synced repo. One markdown file per spec; files starting with `_` are ignored (use for `_done/`-style archives). |
+| `path` | string | `"."` | The repository DoomScrum is synced to. Backlog specs are read from it (per `source` below), and agent worktrees are created from this repo. |
+| `source` | string | `"markdown"` | Backlog adapter: `"markdown"` reads `<path>/<backlog_dir>`; `"github-issues"` lists the repo's open GitHub issues via the `gh` CLI (needs `gh auth login` and a GitHub `origin` remote — `doomscrum doctor` checks both). Issue-sourced dispatches append `Fixes #N` to the PR body so the merged PR closes the issue; DoomScrum never mutates issues directly. Unknown values fail fast at config load. |
+| `backlog_dir` | string | `"backlog.d"` | Backlog directory inside the synced repo (`source = "markdown"` only). One markdown file per spec; files starting with `_` are ignored (use for `_done/`-style archives). |
 | `state_dir` | string | `".doomscrum"` | Runtime state: renders, events, dispatch receipts, worktrees. Deleting this directory destroys only generated state, never specs. |
 
 ## `[feed]`
@@ -50,18 +51,28 @@ When non-empty, each spec deterministically draws one `(model, duration)` pair b
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `model` | string | — (required) | fal.ai model id for this pipeline. |
+| `model` | string | — (required) | fal.ai model id for this pipeline, or the reserved `stills/ken-burns` id for the local stills pipeline (see `[video.stills]`). |
 | `duration_sec` | integer (u32) | — (required) | Clip duration in seconds for this pipeline. |
 | `weight` | integer (u32) | `1` | Relative draw weight — weight `3` is picked ~3x as often as weight `1`. |
 
 `[[video.mix]]` tables must come **after** the plain `[video]` keys in the file (TOML array-of-tables syntax requirement).
+
+### `[video.stills]`
+
+The stills pipeline (`model = "stills/ken-burns"` in the mix, or as `fal_model`): one AI keyframe image + local ffmpeg Ken Burns motion + deterministic TTS narration + estimated word-synced captions, ~$0.03/clip. Needs `FAL_API_KEY` (for the keyframe) plus `ffmpeg`/`ffprobe` on PATH (`doomscrum doctor` checks when a `stills/` id is configured).
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `image_model` | string | `"fal-ai/bytedance/seedream/v4/text-to-image"` | fal image model for the keyframe. |
+| `image_price_usd` | float | `0.03` | Cost of one keyframe image; quoted by the wallet gate for any `stills/` pipeline and recorded in the cost ledger. |
+| `tts_cmd` | array of strings | `["say", "-o", "{out}", "{text}"]` | Local TTS command template; `{text}` is the script, `{out}` the audio path (macOS `say` writes AIFF, which ffmpeg consumes). Empty array = silent clip. |
 
 ## `[script]`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `mode` | string | `"llm"` | `"llm"` sends the full raw spec to an OpenRouter chat-completions model to write the spoken script + visual scene (real renders refuse to fall back silently). `"templates"` is the deterministic, offline, free template planner — used automatically by the `fake` provider. |
-| `model` | string | `"openai/gpt-5.4-mini"` | OpenAI-compatible chat-completions model id, resolved via `base_url`. |
+| `model` | string | `"google/gemini-3.1-flash-lite"` | OpenAI-compatible chat-completions model id, resolved via `base_url`. Affordable-model pick 2026-07-16 (`docs/bench/20260716-script-bench.md`): only finalist with 12/12 Crucible contract checks, top-2 judged, ~$0.0008/script, cached per spec hash. |
 | `base_url` | string | `"https://openrouter.ai/api/v1"` | OpenAI-compatible API base. Key resolved from `OPENROUTER_API_KEY` (env or `~/.secrets`). |
 
 ## `[profiles.<name>]`

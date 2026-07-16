@@ -40,6 +40,9 @@ pub struct RepoConfig {
     /// The repository DoomScrum is synced to. Backlog is read from here and
     /// agent worktrees are created from here.
     pub path: String,
+    /// Source of backlog specs. "markdown" reads `<path>/<backlog_dir>`.
+    /// "github-issues" lists open issues via `gh issue list`.
+    pub source: String,
     /// Backlog directory inside the synced repo. One markdown file per spec.
     pub backlog_dir: String,
     /// Runtime state (renders, events, dispatch receipts, worktrees).
@@ -50,8 +53,22 @@ impl Default for RepoConfig {
     fn default() -> Self {
         Self {
             path: ".".into(),
+            source: "markdown".into(),
             backlog_dir: "backlog.d".into(),
             state_dir: ".doomscrum".into(),
+        }
+    }
+}
+
+impl RepoConfig {
+    /// Validate the source value is known.
+    pub fn validate(&self) -> Result<()> {
+        match self.source.as_str() {
+            "markdown" | "github-issues" => Ok(()),
+            other => anyhow::bail!(
+                "unknown repo source {:?}; expected \"markdown\" or \"github-issues\"",
+                other
+            ),
         }
     }
 }
@@ -109,6 +126,8 @@ pub struct VideoConfig {
     /// land on cheap/short pipelines, a weighted few on hero models, and
     /// the average cost drops without making every clip the same.
     pub mix: Vec<MixEntry>,
+    /// Stills-pipeline options (AI keyframe + local motion + TTS).
+    pub stills: StillsConfig,
 }
 
 /// One pipeline in the render mix.
@@ -125,6 +144,32 @@ fn default_weight() -> u32 {
     1
 }
 
+/// Configuration for the $0.05/clip stills pipeline: one AI keyframe plus
+/// local Ken Burns motion, deterministic TTS, and estimated captions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StillsConfig {
+    /// fal image model used for the keyframe.
+    pub image_model: String,
+    /// Cost of a single keyframe image. The wallet gate uses this for any
+    /// `stills/` mix entry or fal_model.
+    pub image_price_usd: f64,
+    /// Local TTS command template with `{text}` and `{out}` placeholders.
+    /// Default macOS `say` writes an AIFF that ffmpeg consumes. Empty =
+    /// silent clip.
+    pub tts_cmd: Vec<String>,
+}
+
+impl Default for StillsConfig {
+    fn default() -> Self {
+        Self {
+            image_model: "fal-ai/bytedance/seedream/v4/text-to-image".into(),
+            image_price_usd: 0.03,
+            tts_cmd: vec!["say".into(), "-o".into(), "{out}".into(), "{text}".into()],
+        }
+    }
+}
+
 impl Default for VideoConfig {
     fn default() -> Self {
         Self {
@@ -136,6 +181,7 @@ impl Default for VideoConfig {
             max_total_spend_usd: 25.0,
             max_daily_spend_usd: 5.0,
             mix: Vec::new(),
+            stills: StillsConfig::default(),
         }
     }
 }
@@ -163,6 +209,12 @@ impl VideoConfig {
         }
         cfg
     }
+
+    /// True when the active pipeline or any mix entry uses the stills provider.
+    pub fn uses_stills_pipeline(&self) -> bool {
+        self.fal_model.starts_with("stills/")
+            || self.mix.iter().any(|m| m.model.starts_with("stills/"))
+    }
 }
 
 /// How spoken scripts are written. Specs arrive in arbitrary shapes from
@@ -174,9 +226,10 @@ pub struct ScriptConfig {
     /// "llm" (default — real renders refuse to fall back silently) or
     /// "templates" (deterministic, offline, free).
     pub mode: String,
-    /// OpenAI-compatible chat-completions model id. gpt-5.4-mini won the
-    /// 2026-06-11 script bench (~$0.004/script); kimi-k2.5 is the budget
-    /// runner-up. Re-run scripts/script_bench.py before changing.
+    /// OpenAI-compatible chat-completions model id. Gemini 3.1 Flash Lite won
+    /// the 2026-07-16 affordable-model bench (~$0.0008/script, cached per spec
+    /// hash) with 12/12 deterministic contract checks and the best judged
+    /// clarity/energy balance among the finalists.
     pub model: String,
     /// OpenAI-compatible API base. OpenRouter by default (one key, any
     /// model); key resolved from OPENROUTER_API_KEY (env or ~/.secrets).
@@ -187,7 +240,7 @@ impl Default for ScriptConfig {
     fn default() -> Self {
         Self {
             mode: "llm".into(),
-            model: "openai/gpt-5.4-mini".into(),
+            model: "google/gemini-3.1-flash-lite".into(),
             base_url: "https://openrouter.ai/api/v1".into(),
         }
     }
@@ -322,6 +375,7 @@ impl Config {
             cfg.profile = name.to_string();
         }
         cfg.apply_active_profile()?;
+        cfg.repo.validate()?;
         Ok(cfg)
     }
 
@@ -390,10 +444,50 @@ mod tests {
         assert_eq!(cfg.video.provider, "fake");
         assert_eq!(cfg.video.max_daily_spend_usd, 5.0);
         assert_eq!(cfg.repo.backlog_dir, "backlog.d");
+        assert_eq!(cfg.repo.source, "markdown");
         assert!(cfg.agent.open_pr);
         assert_eq!(cfg.agent.max_concurrent_dispatches, 2);
         assert_eq!(cfg.agent.undo_window_sec, 5);
         assert_eq!(cfg.agent.implement_cmd[0], "opencode");
+    }
+
+    #[test]
+    fn default_repo_source_is_markdown() {
+        let cfg = RepoConfig::default();
+        assert_eq!(cfg.source, "markdown");
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn unknown_repo_source_is_rejected_at_load() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("doomscrum.toml"),
+            r#"
+[repo]
+source = "jira"
+"#,
+        )
+        .unwrap();
+        let err = Config::load(dir.path()).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("unknown repo source"), "{msg}");
+        assert!(msg.contains("jira"), "{msg}");
+    }
+
+    #[test]
+    fn github_issues_source_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("doomscrum.toml"),
+            r#"
+[repo]
+source = "github-issues"
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(dir.path()).unwrap();
+        assert_eq!(cfg.repo.source, "github-issues");
     }
 
     #[test]
@@ -623,5 +717,60 @@ provider = "fal"
             &[("worktree", "/tmp/wt"), ("prompt", "do the thing")],
         );
         assert_eq!(cmd, vec!["run", "--cd", "/tmp/wt", "do the thing"]);
+    }
+
+    #[test]
+    fn default_script_model_is_affordable_bench_winner() {
+        assert_eq!(
+            ScriptConfig::default().model,
+            "google/gemini-3.1-flash-lite"
+        );
+    }
+
+    #[test]
+    fn default_stills_config_values() {
+        let cfg = VideoConfig::default();
+        assert_eq!(
+            cfg.stills.image_model,
+            "fal-ai/bytedance/seedream/v4/text-to-image"
+        );
+        assert!((cfg.stills.image_price_usd - 0.03).abs() < 1e-9);
+        assert_eq!(cfg.stills.tts_cmd, vec!["say", "-o", "{out}", "{text}"]);
+    }
+
+    #[test]
+    fn stills_config_parses_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("doomscrum.toml"),
+            r#"
+[video.stills]
+image_model = "fal-ai/custom-image"
+image_price_usd = 0.025
+tts_cmd = ["echo", "{text}", "{out}"]
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(dir.path()).unwrap();
+        assert_eq!(cfg.video.stills.image_model, "fal-ai/custom-image");
+        assert!((cfg.video.stills.image_price_usd - 0.025).abs() < 1e-9);
+        assert_eq!(cfg.video.stills.tts_cmd, vec!["echo", "{text}", "{out}"]);
+    }
+
+    #[test]
+    fn uses_stills_pipeline_detects_model_or_mix_prefix() {
+        let mut cfg = VideoConfig::default();
+        assert!(!cfg.uses_stills_pipeline());
+
+        cfg.fal_model = "stills/ken-burns".into();
+        assert!(cfg.uses_stills_pipeline());
+
+        cfg.fal_model = "fal-ai/veo3.1/lite".into();
+        cfg.mix.push(MixEntry {
+            model: "stills/ken-burns".into(),
+            duration_sec: 8,
+            weight: 1,
+        });
+        assert!(cfg.uses_stills_pipeline());
     }
 }

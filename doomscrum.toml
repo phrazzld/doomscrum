@@ -7,8 +7,11 @@ profile = "dev"
 
 [repo]
 # The repository DoomScrum is synced to. Backlog specs are read from
-# `<path>/<backlog_dir>`, and agent worktrees are created from this repo.
+# `<path>/<backlog_dir>` (source = "markdown"), or from open GitHub issues
+# via `gh issue list` (source = "github-issues"). Agent worktrees are created
+# from this repo.
 path = "."
+source = "github-issues" # "markdown" | "github-issues"
 backlog_dir = "backlog.d"
 state_dir = ".doomscrum"
 
@@ -26,21 +29,20 @@ prefetch_depth = 3
 # "fal" generates real AI video — costs money and sends spec-derived
 # prompts to fal.ai. Needs FAL_API_KEY (env or ~/.secrets).
 provider = "fake"
-# Supported (all native-audio, 720p, prices verified 2026-06-10):
+# Supported (all native-audio, 720p, prices verified 2026-06-10; sora-2
+# re-checked 2026-07-15):
 #   fal-ai/veo3.1/lite                           $0.05/s  (durations 4/6/8)
-#   fal-ai/sora-2/text-to-video                  $0.10/s  (durations 4/8/12)
 #   fal-ai/kling-video/v2.6/pro/text-to-video    $0.14/s  (durations 5/10)
 #   fal-ai/veo3.1/fast                           $0.15/s  (durations 4/6/8)
 #   bytedance/seedance-2.0/fast/text-to-video    $0.2419/s (durations 4-15)
-# Default (bake-off 2026-06-10, hypermaximalist prompts): sora-2 at 12s
-# ($1.20/clip) — speaks title + goal + "Not done until <criterion>",
-# renders correctly-spelled word-synced captions, and delivers the
-# infomercial energy. seedance fast remains the premium tier ($2.90);
-# veo3.1/lite the budget tier ($0.40, 8s, captions garble, no criterion).
+# fal-ai/sora-2/text-to-video is DEPRECATED on fal (verified 2026-07-15:
+# model page banner "This endpoint is deprecated / no longer supported")
+# and was removed from the default model and the mix below. veo3.1/lite
+# carries the cheap weight; seedance fast stays the hero tier ($2.90).
 # fal_model/max_duration_sec apply when the mix below is empty or when
 # --model forces a single pipeline.
-fal_model = "fal-ai/sora-2/text-to-video"
-max_duration_sec = 12
+fal_model = "fal-ai/veo3.1/lite"
+max_duration_sec = 8
 # Fallback $/s for models not in the built-in price table; known models
 # use their verified price automatically.
 price_per_second_usd = 0.15
@@ -53,19 +55,20 @@ max_total_spend_usd = 70.0
 
 # Render portfolio (see docs/EFFICIENCY.md): each spec deterministically
 # draws one pipeline by content hash. Weighted toward cheap/short clips
-# with a hero sprinkle — average ≈ $0.94/clip vs $1.20 flat sora.
+# with a hero sprinkle — average ≈ $0.43/clip (was $0.94 with sora-2,
+# removed 2026-07-15: endpoint deprecated on fal; stills wired 2026-07-15).
 # NOTE: these [[video.mix]] tables must stay AFTER the plain [video] keys.
 # ltx-2.3 was VERIFIED BAD 2026-06-11 and removed: transcript gate caught
 # catastrophic diction ("no vibes merges, capiche" -> "No merges. Copy,
 # sheep."), one cutoff, plus two 422s and a queue timeout in one batch.
 [[video.mix]]
-model = "fal-ai/veo3.1/lite" # $0.05/s @720p, native audio, reliable diction
-duration_sec = 8             # $0.40/clip
-weight = 5
+model = "stills/ken-burns" # ~$0.03/clip: AI keyframe + Ken Burns + TTS + captions
+duration_sec = 8           # any duration; ffmpeg composes exactly
+weight = 6
 
 [[video.mix]]
-model = "fal-ai/sora-2/text-to-video" # $0.10/s, speaks the criterion at 12s
-duration_sec = 12                     # $1.20/clip
+model = "fal-ai/veo3.1/lite" # $0.05/s @720p, native audio, reliable diction
+duration_sec = 8             # $0.40/clip
 weight = 3
 
 [[video.mix]]
@@ -73,27 +76,46 @@ model = "bytedance/seedance-2.0/fast/text-to-video" # $0.2419/s showpiece
 duration_sec = 12                                   # $2.90/clip
 weight = 1
 
+# Stills pipeline (~$0.03/clip): one AI keyframe + local Ken Burns motion +
+# deterministic TTS narration + estimated word-synced captions. The heavy
+# weight in the mix above. Override any field; defaults are shown.
+# [video.stills]
+# image_model = "fal-ai/bytedance/seedream/v4/text-to-image"
+# image_price_usd = 0.03
+# tts_cmd = ["say", "-o", "{out}", "{text}"]  # macOS default; empty = silent
+
+
 [script]
 # Scripts are LLM-written from the FULL raw spec (any format, any repo) —
 # the deterministic template planner is only the offline fallback for the
-# fake provider. ~$0.002/script, cached by spec hash in .doomscrum/scripts.
+# fake provider. ~$0.0008/script, cached by spec hash in .doomscrum/scripts.
 # Preview before paying for video: `doomscrum script <title-substring>`.
 mode = "llm"                       # "llm" | "templates"
-# Bench winner 2026-06-11 (docs/bench/): persona-first prompt, mean 8.75/10
-# across 4 specs x 2 frontier judges. Budget runner-up: moonshotai/kimi-k2.5.
-model = "openai/gpt-5.4-mini"      # via OpenRouter, ~$0.004/script
-base_url = "https://openrouter.ai/api/v1"
+# Affordable-model pick 2026-07-16 (docs/bench/): Gemini 3.1 Flash Lite —
+# only finalist with all twelve Crucible contract checks green, and top-2
+# judged (7.50/10; energy 9.0, speakability 9.1 under the corrected
+# scene-carries-the-joke rubric; the gap to qwen3.5-flash is inside noise).
+# ~$0.0008/script at representative usage: one-third of gpt-5.4-mini and
+# roughly one-thirty-eighth of claude-fable-5. Dev profile never pays.
+model = "google/gemini-3.1-flash-lite"  # via OpenRouter
+# This checkout dogfoods the Mint credential broker (misty-step/mint):
+# calls egress via the tailnet proxy and `OPENROUTER_API_KEY` carries only
+# the non-secret placeholder `__mint.openrouter.default__` — the raw key
+# never touches this machine. Strangers: keep the coded default
+# (https://openrouter.ai/api/v1) and a real key in env or ~/.secrets.
+base_url = "http://mint.tail5f5eb4.ts.net:4949/proxy/https/openrouter.ai/api/v1"
 
 # ---- Render profiles -------------------------------------------------
 # Partial [video] overrides; unset fields keep the base values above.
 # dev: free offline fixtures — the everyday default for working on the
-# app itself. Once the stills pipeline (backlog 026) ships, dev should
-# point at it (~$0.05/clip bespoke) instead of the fixture.
+# app itself. The stills pipeline (~$0.03/clip, needs FAL_API_KEY + ffmpeg)
+# is in the content mix above — dev stays on the free fixture so everyday
+# iteration never spends or egresses.
 [profiles.dev]
 provider = "fake"
 mix = []
 
-# content: the real weighted render portfolio (avg ≈ $0.77/clip).
+# content: the real weighted render portfolio (avg ≈ $0.43/clip).
 # Use via `doomscrum generate --profile content --provider fal` or by
 # flipping the `profile` key while iterating on brainrot quality.
 [profiles.content]

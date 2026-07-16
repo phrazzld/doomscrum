@@ -58,11 +58,13 @@ pub fn parse_reply(content: &str, model: &str) -> Result<LlmScript> {
     })
 }
 
-/// Persona-first prompt: won the 2026-06-11 bench
-/// (scripts/script_bench.py, 7 models x 3 prompts x 4 specs, judged by
-/// gemini-3.1-pro + grok-4.3) — character voice carries both spec
-/// fidelity AND brainrot energy; coverage-first prompts score corporate,
-/// fragment-style prompts score low fidelity.
+/// Persona-first + plain-open comprehension contract: won the 2026-07-16
+/// bench (scripts/script_bench.py, 15 models x p3/p4 x 4 specs, judged by
+/// gemini-3.1-pro + grok-4.3, stranger-recall probed) — p4 beat the prior
+/// p3 persona prompt on 12/15 models by fixing the owner complaint that
+/// clips were funny but a viewer couldn't tell what the ticket asked for.
+/// Character voice still carries brainrot energy; the contract keeps the
+/// ask literal.
 fn system_prompt(duration_sec: u32) -> String {
     let budget = word_budget(duration_sec);
     format!(
@@ -73,9 +75,14 @@ fn system_prompt(duration_sec: u32) -> String {
          talking fruit in a soap opera, a 90s infomercial pitchman, a cryptid vlogger, an \
          Italian-brainrot hybrid creature, a year-3024 street interviewee, a deadpan gen-z \
          explainer, or something funnier you invent). THEN write the script as that \
-         character speaking IN VOICE — their verbal tics, their stakes, their drama — \
-         while still landing, unmistakably, WHAT the spec wants and (when stated) when it \
-         counts as done. The character serves the spec, never buries it.\n\
+         character speaking IN VOICE — their verbal tics, their stakes, their drama.\n\
+         THE COMPREHENSION CONTRACT, non-negotiable: a stranger who has never seen this \
+         backlog must be able to answer \"what does this ticket ask for?\" after one \
+         listen. The FIRST sentence names the ask in plain words — the character may \
+         say it in voice, but the subject and the want must be literal, never a riddle. \
+         Slang carries the delivery, never the content words: keep the spec's own \
+         concrete nouns (the feature, the artifact, the action). If a line doesn't help \
+         the stranger answer, cut it and spend the words on the ask.\n\
          Reply with STRICT JSON, no markdown fences, exactly two keys:\n\
          {{\"script\": \"...\", \"scene\": \"...\"}}\n\
          script: the complete spoken dialogue. HARD LIMIT {budget} words — it must be \
@@ -211,6 +218,7 @@ mod tests {
             title: "T".into(),
             priority: 0,
             raw: raw.into(),
+            issue_number: None,
         }
     }
 
@@ -229,6 +237,19 @@ mod tests {
         // the benched persona system prompt stays as-is
         let system = body["messages"][0]["content"].as_str().unwrap();
         assert!(system.contains("persona-first"), "{system}");
+    }
+    #[test]
+    fn system_prompt_carries_comprehension_contract() {
+        // p4-plain-open, bench winner 2026-07-16 (scripts/script_bench.py,
+        // 15 models x p3/p4 x 4 specs): the persona voice must never bury
+        // the ask — first sentence states it in plain words.
+        let system = system_prompt(12);
+        assert!(system.contains("persona-first"), "{system}");
+        assert!(system.contains("COMPREHENSION CONTRACT"), "{system}");
+        assert!(
+            system.contains("FIRST sentence names the ask in plain words"),
+            "{system}"
+        );
     }
 
     #[test]

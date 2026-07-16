@@ -15,21 +15,26 @@ multiplies the others.
    follow-up.
 2. **Render-mix portfolio** (shipped — `[[video.mix]]` in doomscrum.toml).
    Each spec deterministically draws a pipeline by content hash: most land
-   cheap/short, a weighted few land hero. Current default averages
-   **$0.77/clip** vs $1.20 flat sora. Mix entries are config — tuning the
-   average is a one-line change.
+   cheap/short, a weighted few land hero. Current default (stills 6 / veo
+   lite 3 / seedance 1) averages **$0.43/clip** vs $1.20 flat sora. Mix
+   entries are config — tuning the average is a one-line change.
    *Profiles (shipped 2026-06-10):* `[profiles.<name>]` tables override
    provider/model/mix per context; `profile = "dev"` keeps everyday local
    work on the free fixture provider, `--profile content` flips to the
-   paid mix only when iterating on generated media. Once 026 lands, the
-   dev profile should point at the stills pipeline instead of the fixture.
+   paid mix only when iterating on generated media. Dev deliberately stays
+   on the fixture (not stills): stills still spends $0.03/image and
+   egresses spec text, and everyday iteration must do neither.
 3. **Stills pipeline: image + Ken Burns + deterministic audio/captions**
-   (backlog 026). Keyframe image (~$0.03) + free parallax motion +
-   local/cheap TTS + forced-aligned caption overlay ≈ **$0.05/clip**,
-   fully bespoke per spec. Becomes the heaviest weight in the mix once
-   built. The script, audio, and captions become the controlled layer; video
-   models are only responsible for visuals unless a hero profile explicitly
-   opts into native audio. See docs/VIDEO_QUALITY_PIPELINE.md.
+   (shipped 2026-07-15 — `stills/ken-burns`, the heaviest weight in the
+   content mix). Keyframe image (seedream v4, $0.03) + local ffmpeg Ken
+   Burns motion + local TTS (macOS `say` by default, configurable
+   `tts_cmd`) + estimated word-synced caption artifact ≈ **$0.03/clip**,
+   fully bespoke per spec. The script, audio, and captions are the
+   controlled layer; video models are only responsible for visuals unless
+   a hero mix entry explicitly opts into native audio. Config:
+   `[video.stills]` (docs/CONFIGURATION.md). Forced alignment and an
+   engagement-promoted hero upgrade remain follow-ups. See
+   docs/VIDEO_QUALITY_PIPELINE.md.
 4. **Local open weights** (backlog 028). LTX-2 19B distilled FP8 runs on
    16GB consumer GPUs; Wan 1.3B does 5s/720p in ~45s on a 4090. Marginal
    cost ≈ electricity. The audience is developers — many own the
@@ -48,11 +53,11 @@ prices must still be quoted at render time.
 
 | Pipeline | $/clip | Notes |
 |---|---|---|
-| stills + Ken Burns + deterministic TTS/captions | ~0.05 | not built yet (026); fully bespoke |
+| stills + Ken Burns + deterministic TTS/captions | 0.03 | shipped 2026-07-15 (`stills/ken-burns`); fully bespoke |
 | cheap silent/visual video + deterministic TTS/captions | ~0.25-0.80 | motion upgrade; avoids native-audio transcript risk |
 | ltx-2.3 fast 8s 1080p | 0.32 | native audio; diction unverified |
 | veo3.1/lite 8s 720p | 0.40 | captions garble; no criterion at 8s |
-| sora-2 12s | 1.20 | speaks criterion; correct captions |
+| sora-2 12s | 1.20 | REMOVED 2026-07-15: endpoint deprecated on fal |
 | seedance-2.0/fast 12s | 2.90 | showpiece; native captions |
 | local LTX/Wan | ~0.00 | electricity; slow on consumer GPUs |
 

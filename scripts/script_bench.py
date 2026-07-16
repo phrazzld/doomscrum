@@ -10,7 +10,8 @@ Usage:
     python3 scripts/script_bench.py            # full run (~$0.60)
     python3 scripts/script_bench.py --judge-only <run-dir>   # re-judge
 
-Key: OPENROUTER_API_KEY (env or ~/.secrets). Never printed.
+Key: OPENROUTER_API_KEY (env or ~/.secrets). OPENROUTER_BASE_URL optionally
+points at an OpenAI-compatible proxy. Neither value is printed.
 """
 
 import json
@@ -23,32 +24,51 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE = "https://openrouter.ai/api/v1/chat/completions"
+BASE = os.environ.get(
+    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions"
+)
 DURATION = 12
 BUDGET = 20  # word_budget(12) in src/distill.rs
 ROOT = Path(__file__).resolve().parent.parent
 
 MODELS = [
-    "moonshotai/kimi-k2.6",        # current production default
+    "openai/gpt-5.4-mini",         # prior production default; contract baseline
+    "moonshotai/kimi-k2.6",        # 2026-06-11 bench winner, prior default
     "moonshotai/kimi-k2.5",        # cheaper sibling
     "deepseek/deepseek-v4-flash",  # price floor
     "google/gemini-3-flash-preview",
-    "openai/gpt-5.4-mini",
     "minimax/minimax-m2.5",
     "z-ai/glm-5",
+    # 2026-07-16 owner-requested candidates; slugs verified against the live
+    # OpenRouter /models catalog that day. Leaderboard reputation is signal,
+    # not verdict — only this bench (spec_fidelity/clarity/brainrot_energy/
+    # stranger_recall on real tickets) decides adoption.
+    "anthropic/claude-fable-5",    # $10/$50 — EQ-bench creative #1, best comedic voice
+    "anthropic/claude-sonnet-5",   # $2/$10 — Anthropic mid-tier
+    "openai/gpt-5.6-luna",         # $1/$6 — cheap 5.6 variant
+    "openai/gpt-5.6-sol",          # $5/$30 — 5.6 flagship, structured/punchy humor
+    "x-ai/grok-4.5",               # $2/$6 — rep: weaker creative tone; sibling of judge grok-4.3
+    "meta/muse-spark-1.1",         # $1.25/$4.25 — quirky, coherent
+    "moonshotai/kimi-k3",          # $3/$15 — unverified rep, RP-leaning
+    "aion-labs/aion-3.0",          # $3/$6 — owner-named lab
+    # 2026-07-16 affordable finalists from Crucible doomscrum-script-v0.
+    "mistralai/mistral-small-2603",        # $0.15/$0.60 — 11/12 deterministic
+    "google/gemini-3.1-flash-lite",        # production default; judged affordable winner
+    "qwen/qwen3.5-flash-02-23",            # $0.065/$0.26 — 11/12 deterministic
+    "bytedance-seed/seed-2.0-mini",        # $0.10/$0.40 — 11/12 deterministic
+    "openai/gpt-5.4-nano",                 # $0.20/$1.25 — 11/12 deterministic
 ]
 
 JUDGES = ["google/gemini-3.1-pro-preview", "x-ai/grok-4.3"]
 
 SPECS = [
-    ("doomscrum-006-throttle", ROOT / "backlog.d/006-throttle-every-money-path.md"),
-    ("doomscrum-005-vibe-meter", ROOT / "backlog.d/005-brainrot-vibe-meter.md"),
-    ("doomscrum-016-arbitrary-repos", ROOT / "backlog.d/016-multi-repo-sync.md"),
-    (
-        "olympus-072-pi-openrouter",
-        Path.home()
-        / "Development/adminifi/olympus/backlog.d/072-pi-openrouter-runtime-transition.md",
-    ),
+    # In-repo fixture copies of real specs (the four behind the 2026-07-15
+    # launch clips the owner flagged as hard to understand). The live
+    # backlog moved to GitHub issues, so the bench pins these snapshots.
+    ("joke-046-meme-audit", ROOT / "docs/bench/fixtures/046-meme-product-greatness-audit.md"),
+    ("qa-013-persona-agent", ROOT / "docs/bench/fixtures/013-persona-qa-agent.md"),
+    ("goblin-028-open-weights", ROOT / "docs/bench/fixtures/028-local-open-weights-provider.md"),
+    ("janitor-038-purge-artifacts", ROOT / "docs/bench/fixtures/038-purge-orphaned-artifacts.md"),
 ]
 
 SHARED_RULES = f"""Reply with STRICT JSON, no markdown fences, exactly two keys:
@@ -96,6 +116,24 @@ that character speaking IN VOICE — their verbal tics, their stakes, their \
 drama — while still landing, unmistakably, WHAT the spec wants and (if stated) \
 when it counts as done. The character serves the spec, never buries it.
 {SHARED_RULES}""",
+    # P4: persona-first + plain-open comprehension contract. Candidate fix
+    # for the 2026-07-16 owner complaint: clips were funny but a viewer
+    # couldn't tell what the ticket actually asked for.
+    "p4-plain-open": f"""You create {DURATION}-second vertical brainrot videos that communicate software \
+backlog specs (the user input is one raw spec, any format).
+Work persona-first: FIRST invent one absurd character with a strong voice (a \
+talking fruit in a soap opera, a 90s pitchman, a cryptid vlogger, an \
+Italian-brainrot hybrid creature, a year-3024 street interviewee, a deadpan \
+gen-z explainer, or something funnier you invent). THEN write the script as \
+that character speaking IN VOICE — their verbal tics, their stakes, their drama.
+THE COMPREHENSION CONTRACT, non-negotiable: a stranger who has never seen this \
+backlog must be able to answer "what does this ticket ask for?" after one \
+listen. The FIRST sentence names the ask in plain words — the character may \
+say it in voice, but the subject and the want must be literal, never a riddle. \
+Slang carries the delivery, never the content words: keep the spec's own \
+concrete nouns (the feature, the artifact, the action). If a line doesn't help \
+the stranger answer, cut it and spend the words on the ask.
+{SHARED_RULES}""",
 }
 
 JUDGE_PROMPT = """You are judging a script for a {duration}-second vertical brainrot video whose \
@@ -109,14 +147,28 @@ THE SPEC (ground truth):
 THE SCRIPT (spoken words): "{script}"
 THE SCENE (visual concept): "{scene}"
 
+A STRANGER (a developer who never saw the spec) watched the clip and said the \
+ticket asks for: "{stranger}"
+
 Score 0-10 on each dimension and reply with STRICT JSON only:
-{{"spec_fidelity": n, "clarity": n, "brainrot_energy": n, "speakability": n, "overall": n, "verdict": "<one sentence>"}}
+{{"spec_fidelity": n, "clarity": n, "brainrot_energy": n, "speakability": n, "stranger_recall": n, "overall": n, "verdict": "<one sentence>"}}
 
 spec_fidelity: does the script state what the spec actually wants, without inventing claims? A script that could describe any ticket scores low.
 clarity: would the scrolling developer know what this ticket IS after one listen?
-brainrot_energy: is it actually funny/unhinged short-form content, or corporate copy with a costume?
+brainrot_energy: does the SCENE + character delivery land as unhinged short-form content? The spoken words are SUPPOSED to state the ask literally — the scene, the character, and the delivery carry the joke. Never penalize the script for plain content words; penalize a boring scene, a characterless delivery, or a scene that fights the message.
 speakability: does it sound like natural speech a character could deliver in {duration}s (max {budget} words), or fragment soup?
-overall: your holistic quality call — weight spec_fidelity and clarity highest; brainrot is the delivery, the spec is the content."""
+stranger_recall: does the stranger's takeaway match the spec's actual ask? 10 = they could file the same ticket; 0 = they got it wrong or vague.
+overall: your holistic quality call — weight spec_fidelity, clarity, and stranger_recall highest; brainrot is the delivery, the spec is the content."""
+
+STRANGER_MODEL = "openai/gpt-5.4-mini"
+STRANGER_PROMPT = """You are a developer scrolling a shortform feed. You just watched a {duration}-second \
+video. You have NEVER seen the backlog it came from.
+
+The spoken words were: "{script}"
+The visuals showed: "{scene}"
+
+In ONE plain sentence: what does this backlog ticket ask for? If you honestly \
+can't tell, say exactly what remains unclear. No hedging boilerplate."""
 
 
 def get_key():
@@ -211,6 +263,7 @@ def judge_cell(key, gen, spec_text):
                     spec=spec_text,
                     script=gen["script"],
                     scene=gen["scene"],
+                    stranger=gen.get("stranger", "(no probe run)"),
                 ),
                 0.0,
             )
@@ -218,6 +271,21 @@ def judge_cell(key, gen, spec_text):
         except Exception as e:  # noqa: BLE001
             scores[judge] = {"error": str(e)[:200]}
     return scores
+
+
+def probe_cell(key, gen):
+    """Stranger test: a model that never saw the spec reconstructs the ask."""
+    try:
+        gen["stranger"] = chat(
+            key,
+            STRANGER_MODEL,
+            "Answer in one sentence.",
+            STRANGER_PROMPT.format(duration=DURATION, script=gen["script"], scene=gen["scene"]),
+            0.0,
+        ).strip()
+    except Exception as e:  # noqa: BLE001
+        gen["stranger"] = f"(probe failed: {str(e)[:120]})"
+    return gen
 
 
 def slug(*parts):
@@ -236,8 +304,9 @@ def write_report(run_dir, gens, judgments):
     lines = [
         f"# Script bench {run_dir.name}",
         "",
-        f"{len(gens)} generations · models={len(MODELS)} prompts={len(PROMPTS)} "
-        f"specs={len(SPECS)} · judges: {', '.join(JUDGES)}",
+        f"{len(gens)} generations · models={len({g['model'] for g in gens})} "
+        f"prompts={len({g['prompt'] for g in gens})} "
+        f"specs={len({g['spec'] for g in gens})} · judges: {', '.join(JUDGES)}",
         "",
         "## Leaderboard (mean overall, both judges, all specs)",
         "",
@@ -298,11 +367,17 @@ def main():
         run_dir = ROOT / ".doomscrum/bench" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         run_dir.mkdir(parents=True)
         specs = {name: path.read_text() for name, path in SPECS}
+        # Focused A/B runs: comma-separated substring filters, e.g.
+        #   SCRIPT_BENCH_MODELS=gpt-5.4-mini SCRIPT_BENCH_PROMPTS=p3,p4
+        model_f = [m for m in os.environ.get("SCRIPT_BENCH_MODELS", "").split(",") if m]
+        prompt_f = [p for p in os.environ.get("SCRIPT_BENCH_PROMPTS", "").split(",") if p]
+        models = [m for m in MODELS if not model_f or any(f in m for f in model_f)]
+        prompts = [p for p in PROMPTS if not prompt_f or any(f in p for f in prompt_f)]
         cells = [
             (name, specs[name], model, prompt)
             for name in specs
-            for model in MODELS
-            for prompt in PROMPTS
+            for model in models
+            for prompt in prompts
         ]
         print(f"generating {len(cells)} cells -> {run_dir}")
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -315,6 +390,12 @@ def main():
 
     specs = {name: path.read_text() for name, path in SPECS}
     ok = [g for g in gens if g["ok"]]
+    print(f"stranger-probing {len(ok)} results")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        ok = list(pool.map(lambda g: probe_cell(key, g), ok))
+    with open(run_dir / "generations.jsonl", "w") as f:
+        for g in gens:
+            f.write(json.dumps(g) + "\n")
     print(f"judging {len(ok)} results x {len(JUDGES)} judges")
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda g: judge_cell(key, g, specs[g["spec"]]), ok))

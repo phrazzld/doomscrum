@@ -1,0 +1,159 @@
+{
+  "schema_version": "crucible.eval_spec.v1",
+  "id": "doomscrum-script-v0",
+  "title": "DoomScrum scriptwriter contract battery",
+  "context": "doomscrum",
+  "task": "script-contract",
+  "inputs": "Real DoomScrum backlog spec excerpts plus scriptwriter contract instructions.",
+  "outputs": "Short brainrot script lines / JSON payloads graded by deterministic rubrics (ask-naming, format, constraints, budget, style).",
+  "graders": {
+    "graders": [
+      {
+        "id": "deterministic_rubric",
+        "kind": "deterministic"
+      }
+    ]
+  },
+  "aggregation": "proportion",
+  "uncertainty": {
+    "method": "wilson",
+    "confidence": 0.95
+  },
+  "decision": "Which affordable OpenRouter model replaces claude-fable-5 as the DoomScrum scriptwriter default.",
+  "runner": {
+    "kind": "prompt_benchmark",
+    "corpus": {
+      "source": "prompt_benchmark",
+      "config": {
+        "provider": "open_router",
+        "model": "openai/gpt-5.4-mini",
+        "system_prompt": "You write spoken lines for eight-second vertical brainrot videos about software backlog tickets. THE COMPREHENSION CONTRACT, non-negotiable: your FIRST sentence names the ticket's ask in plain words - a stranger who never saw the ticket must be able to answer 'what does this ticket ask for?' after one listen. Keep the spec's own concrete nouns (the feature, the artifact, the action). Slang carries delivery, never the content words. Spell every number as a word; never use digits. Follow the user's format instructions EXACTLY - they override style.",
+        "credential_env": "OPENROUTER_API_KEY",
+        "max_tokens": 4000,
+        "temperature": 0
+      },
+      "tasks": [
+        {
+          "task_id": "ask-joke-046",
+          "class": "ask_naming",
+          "summary": "First sentence must name the meme-audit ask with a concrete noun.",
+          "prompt": "Ticket: 'Audit whether the core brainrot joke actually lands.' Goal: determine, with evidence rather than vibes, whether DoomScrum's spec-to-brainrot-video mechanic is actually funny/shareable as implemented, and close the sharpest gap the evidence surfaces. Reply with ONLY the first spoken sentence of the script - one line, nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "[Jj]oke|[Ff]unny|[Hh]umor|[Ll]augh|[Ss]hareable"
+          }
+        },
+        {
+          "task_id": "ask-qa-013",
+          "class": "ask_naming",
+          "summary": "First sentence must name the QA-agent ask with a concrete noun.",
+          "prompt": "Ticket: 'Autonomous persona QA agent that files tickets.' Goal: a scheduled agent walks the running app as a skeptical first-time user and files structured tickets into the backlog when it finds friction or breakage \u2014 with severity and evidence, never duplicating an open ticket. Reply with ONLY the first spoken sentence of the script - one line, nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "[Tt]icket|[Ii]ssue|QA|[Qq]uality"
+          }
+        },
+        {
+          "task_id": "ask-goblin-028",
+          "class": "ask_naming",
+          "summary": "First sentence must name the local-render ask with a concrete noun.",
+          "prompt": "Ticket: 'Local open-weights video provider (electricity-priced renders).' Goal: provider local renders feed clips on the operator's own GPU via open-weight models (LTX-2 distilled / Wan), making the wallet cap irrelevant for self-hosters. Falls back to the paid fal mix when no local endpoint is reachable. Reply with ONLY the first spoken sentence of the script - one line, nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "GPU|[Gg]pu|[Ll]ocal|[Ee]lectricity|[Oo]pen[- ]weight|[Ss]elf[- ]host"
+          }
+        },
+        {
+          "task_id": "ask-janitor-038",
+          "class": "ask_naming",
+          "summary": "First sentence must name the cleanup ask with a concrete noun.",
+          "prompt": "Ticket: 'Purge orphaned artifacts and one dead function.' Goal: remove regenerable/orphaned weight \u2014 an orphaned state directory, forty-one megabytes of regenerable fixtures, one dead function nothing calls \u2014 without touching live behavior. Deletions require owner ratification first. Reply with ONLY the first spoken sentence of the script - one line, nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "[Oo]rphan|[Pp]urge|[Cc]lean|[Dd]ead|[Dd]elet|[Jj]unk"
+          }
+        },
+        {
+          "task_id": "fmt-json-046",
+          "class": "format_adherence",
+          "summary": "Strict two-key JSON, no fences.",
+          "prompt": "Ticket: 'Audit whether the core brainrot joke actually lands.' Goal: determine, with evidence rather than vibes, whether DoomScrum's spec-to-brainrot-video mechanic is actually funny/shareable as implemented, and close the sharpest gap the evidence surfaces. Reply with STRICT JSON only: exactly two keys, \"script\" and \"scene\", each a single-line string. No markdown fences, no commentary, nothing before or after the JSON object.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "(?s)^\\s*\\{\\s*\"script\"\\s*:\\s*\".+?\"\\s*,\\s*\"scene\"\\s*:\\s*\".+?\"\\s*\\}\\s*$"
+          }
+        },
+        {
+          "task_id": "fmt-json-013",
+          "class": "format_adherence",
+          "summary": "Strict two-key JSON, no fences.",
+          "prompt": "Ticket: 'Autonomous persona QA agent that files tickets.' Goal: a scheduled agent walks the running app as a skeptical first-time user and files structured tickets into the backlog when it finds friction or breakage \u2014 with severity and evidence, never duplicating an open ticket. Reply with STRICT JSON only: exactly two keys, \"script\" and \"scene\", each a single-line string. No markdown fences, no commentary, nothing before or after the JSON object.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "(?s)^\\s*\\{\\s*\"script\"\\s*:\\s*\".+?\"\\s*,\\s*\"scene\"\\s*:\\s*\".+?\"\\s*\\}\\s*$"
+          }
+        },
+        {
+          "task_id": "digits-028",
+          "class": "constraint_following",
+          "summary": "Numbers spelled as words; zero digits allowed.",
+          "prompt": "Ticket: 'Local open-weights video provider (electricity-priced renders).' Goal: provider local renders feed clips on the operator's own GPU via open-weight models (LTX-2 distilled / Wan), making the wallet cap irrelevant for self-hosters. Falls back to the paid fal mix when no local endpoint is reachable. Write one spoken line saying local renders cost 0 dollars and need a 24 GB GPU - but spell every number as a word (zero, twenty-four); digits are forbidden in your reply. One line only.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "^[^0-9]*$"
+          }
+        },
+        {
+          "task_id": "digits-038",
+          "class": "constraint_following",
+          "summary": "Numbers spelled as words; zero digits allowed.",
+          "prompt": "Ticket: 'Purge orphaned artifacts and one dead function.' Goal: remove regenerable/orphaned weight \u2014 an orphaned state directory, forty-one megabytes of regenerable fixtures, one dead function nothing calls \u2014 without touching live behavior. Deletions require owner ratification first. Write one spoken line mentioning the 41 megabytes of fixtures and the 1 dead function - but spell every number as a word (forty-one, one); digits are forbidden in your reply. One line only.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "^[^0-9]*$"
+          }
+        },
+        {
+          "task_id": "budget-046",
+          "class": "budget",
+          "summary": "At most twelve words, one line.",
+          "prompt": "Ticket: 'Audit whether the core brainrot joke actually lands.' Goal: determine, with evidence rather than vibes, whether DoomScrum's spec-to-brainrot-video mechanic is actually funny/shareable as implemented, and close the sharpest gap the evidence surfaces. Reply with the opening hook only: AT MOST TWELVE WORDS, on a single line. Nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "^\\s*\\S+(?:[ \\t]+\\S+){0,11}\\s*$"
+          }
+        },
+        {
+          "task_id": "budget-013",
+          "class": "budget",
+          "summary": "At most ten words, one line.",
+          "prompt": "Ticket: 'Autonomous persona QA agent that files tickets.' Goal: a scheduled agent walks the running app as a skeptical first-time user and files structured tickets into the backlog when it finds friction or breakage \u2014 with severity and evidence, never duplicating an open ticket. Reply with the opening hook only: AT MOST TEN WORDS, on a single line. Nothing else.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "^\\s*\\S+(?:[ \\t]+\\S+){0,9}\\s*$"
+          }
+        },
+        {
+          "task_id": "style-noexclaim-028",
+          "class": "style",
+          "summary": "High energy without exclamation marks.",
+          "prompt": "Ticket: 'Local open-weights video provider (electricity-priced renders).' Goal: provider local renders feed clips on the operator's own GPU via open-weight models (LTX-2 distilled / Wan), making the wallet cap irrelevant for self-hosters. Falls back to the paid fal mix when no local endpoint is reachable. Write the first two spoken sentences. Make them high-energy - but you MUST NOT use any exclamation mark anywhere in your reply.",
+          "expectation": {
+            "kind": "regex",
+            "pattern": "^[^!]*$"
+          }
+        },
+        {
+          "task_id": "style-secondperson-038",
+          "class": "style",
+          "summary": "Speak to the viewer in second person.",
+          "prompt": "Ticket: 'Purge orphaned artifacts and one dead function.' Goal: remove regenerable/orphaned weight \u2014 an orphaned state directory, forty-one megabytes of regenerable fixtures, one dead function nothing calls \u2014 without touching live behavior. Deletions require owner ratification first. Write the first two spoken sentences, addressed directly to the viewer in second person.",
+          "expectation": {
+            "kind": "case_insensitive_contains",
+            "value": "you"
+          }
+        }
+      ]
+    }
+  }
+}

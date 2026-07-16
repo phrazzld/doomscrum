@@ -2,6 +2,13 @@
 
 84 generations · models=7 prompts=3 specs=4 · judges: google/gemini-3.1-pro-preview, x-ai/grok-4.3
 
+> **Rerun 2026-07-16 — superseded.** The p3-vs-p4 decision ran with an
+> expanded 15-model roster: `docs/bench/20260716-script-bench.md`. Verdict:
+> `p4-plain-open` (persona-first + plain-first-sentence comprehension
+> contract) beat p3 on 12/15 models and is now production in
+> `scriptwriter.rs::system_prompt`; the script model moved from
+> `openai/gpt-5.4-mini` to `anthropic/claude-fable-5`.
+
 ## Leaderboard (mean overall, both judges, all specs)
 
 | model | prompt | mean overall | fidelity | clarity | energy | speak | budget viol |
