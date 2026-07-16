@@ -11,3 +11,4 @@ demo/out/
 demo/public/*.mp4
 demo/public/sfx/*.wav
 demo/public/vo/
+scripts/__pycache__/
