@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>DoomScrum — Backlog triage as a TikTok feed that actually ships code</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="DoomScrum turns the markdown specs rotting in your backlog into a swipeable video feed. Swipe right and a real coding agent opens a real pull request. Swipe left to skip — nothing mutates until you say so.">
+<meta name="description" content="DoomScrum turns backlog specs — Markdown files or open GitHub issues — into a swipeable video feed. Swipe right and a real coding agent opens a real pull request. Swipe left to skip — nothing mutates until you say so.">
 <meta name="theme-color" content="#121212">
 <link rel="icon" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/icon-512.png">
@@ -66,15 +66,15 @@
   .proof-note{text-align:center;color:var(--dead);font-size:12.5px;max-width:56ch;margin:18px auto 0}
   .proof-note a{color:var(--muted);text-decoration:underline}
 
-  /* Hero loop */
+  /* Hero loop — square/brutalist, 16:9, no soft shadow */
   .loop-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
-  .phone{width:220px;border-radius:22px;overflow:hidden;border:1px solid var(--line);background:#000;box-shadow:0 20px 60px -20px rgba(182,255,46,.15)}
-  .phone video{width:100%;display:block}
+  .loop-frame{width:min(640px,100%);border:1px solid var(--line);background:#000;overflow:hidden}
+  .loop-frame video{width:100%;display:block;aspect-ratio:16/9}
   .loop-caption{color:var(--muted);font-size:13.5px;text-align:center;max-width:40ch}
 
-  /* Demo video */
-  .demo-frame{max-width:520px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000}
-  .demo-frame video{width:100%;display:block;aspect-ratio:9/16}
+  /* Demo video — square/brutalist, 16:9, no soft shadow */
+  .demo-frame{max-width:720px;margin:0 auto;border:1px solid var(--line);background:#000;overflow:hidden}
+  .demo-frame video{width:100%;display:block;aspect-ratio:16/9}
   .demo-caption{text-align:center;color:var(--muted);font-size:13.5px;margin-top:14px}
 
   /* Gestures */
@@ -143,7 +143,7 @@
   <section class="hero" style="border-top:none;padding-top:20px">
     <p class="eyebrow">backlog-to-PR pipeline</p>
     <h1>Backlog triage as a <span class="accent">TikTok feed</span> that actually ships code.</h1>
-    <p class="sub">DoomScrum reads the markdown specs rotting in your backlog and turns each one into a goofy shortform video. Swipe right and a real coding agent opens a fresh worktree, implements the spec, and opens a real pull request. Swipe left to skip — nothing mutates until you say so.</p>
+    <p class="sub">DoomScrum reads backlog specs — Markdown files or open GitHub issues — and turns each one into a goofy shortform video. Swipe right and a real coding agent opens a fresh worktree, implements the spec, and opens a real pull request. Swipe left to skip — nothing mutates until you say so.</p>
     <div class="cta-row">
       <span class="code-pill"><svg class="icon" viewBox="0 0 24 24"><use href="#i-download"/></svg>brew install misty-step/doomscrum/doomscrum</span>
     </div>
@@ -178,8 +178,8 @@
   <section aria-labelledby="loop-label">
     <p class="label" id="loop-label">the moment a swipe becomes a PR</p>
     <div class="loop-wrap">
-      <div class="phone">
-        <video autoplay muted loop playsinline preload="auto" width="220" height="391" aria-label="Looping clip of a real pull request card, opened by a swipe">
+      <div class="loop-frame">
+        <video id="hero-loop" muted loop playsinline preload="auto" poster="assets/demo-poster.jpg" aria-label="Looping clip of a real pull request card, opened by a swipe">
           <source src="assets/hero-loop.mp4" type="video/mp4">
         </video>
       </div>
@@ -190,11 +190,11 @@
   <section id="demo" aria-labelledby="demo-label">
     <p class="label" id="demo-label"><svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-right"/></svg>watch the whole loop</p>
     <div class="demo-frame">
-      <video controls preload="none" poster="assets/demo-poster.jpg" playsinline aria-label="60-second demo: the pitch, the swipe, the pull request">
+      <video controls preload="none" poster="assets/demo-poster.jpg" playsinline aria-label="64-second narrated demo: the pitch, the swipe, the receipts">
         <source src="assets/demo.mp4" type="video/mp4">
       </video>
     </div>
-    <p class="demo-caption">60 seconds. The pitch, the swipe formats, the receipts.</p>
+    <p class="demo-caption">~64 seconds. The pitch, the swipe formats, the receipts — narrated.</p>
   </section>
 
   <section aria-labelledby="gestures-label">
@@ -240,7 +240,7 @@ brew install misty-step/doomscrum/doomscrum
 <span class="fn">doomscrum doctor</span>    <span class="c"># check your setup</span>
 <span class="fn">doomscrum serve</span>     <span class="c"># 127.0.0.1:4173 — sample videos play immediately</span></pre>
     </div>
-    <p class="qs-note">Bundled sample videos play with zero keys and zero config edits. Run <code>doomscrum generate</code> afterward to render your own repo's specs against real providers.</p>
+    <p class="qs-note">Bundled samples play with zero keys. Run <code>doomscrum generate</code> for spec-branded local previews, then opt into real providers only when you want paid media.</p>
   </section>
 
   <section aria-labelledby="legal-label">
@@ -248,9 +248,10 @@ brew install misty-step/doomscrum/doomscrum
     <div class="disclosure">
       <ul>
         <li><span>Videos are <b>AI-generated</b>, derived from backlog spec text. Not verified fact, not real people, not real events.</span></li>
-        <li><span>Real rendering costs money and sends spec-derived text to OpenRouter and fal.ai. DoomScrum quotes the cost first and enforces hard spend caps. The fixture provider is free and never leaves your machine.</span></li>
+        <li><span>Real rendering costs money and sends spec-derived text to OpenRouter and fal.ai. DoomScrum quotes the cost first and enforces hard spend caps. The local preview provider is free and never leaves your machine.</span></li>
         <li><span>Right swipes launch real agents that modify real code and open real pull requests — there is no sandbox theater beyond what your agent CLI provides.</span></li>
         <li><span>MIT licensed. Full disclosure, data-egress enumeration, and the pre-launch legal checklist: <a href="https://github.com/misty-step/doomscrum/blob/master/docs/LEGAL.md" target="_blank" rel="noopener">docs/LEGAL.md</a>.</span></li>
+        <li><span>DoomScrum is not affiliated with or endorsed by id Software, ZeniMax, or Microsoft. “Doom” is used only as part of the descriptive compound name.</span></li>
       </ul>
     </div>
   </section>
@@ -266,5 +267,22 @@ brew install misty-step/doomscrum/doomscrum
   <p>MIT licensed. Built as a real backlog-to-PR pipeline, not a demo.</p>
 </footer>
 
+<script>
+  // Reduced-motion: no autoplay attribute on the hero loop — the script
+  // calls play() only when the user has NOT opted out, and pauses when
+  // reduced. The narrated demo requires an explicit tap and is unaffected.
+  (function () {
+    var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var v = document.getElementById('hero-loop');
+    if (!v) return;
+    function apply(prefs) {
+      if (prefs.matches) { v.pause(); }
+      else { v.play().catch(function () {}); }
+    }
+    apply(mq);
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+    else if (mq.addListener) mq.addListener(apply);
+  })();
+</script>
 </body>
 </html>

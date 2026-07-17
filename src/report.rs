@@ -237,6 +237,7 @@ pub fn render(inputs: &ReportInputs) -> String {
 mod tests {
     use super::*;
     use crate::dispatch::{DispatchKind, DispatchReceipt};
+    use crate::providers::VideoRender;
     use std::path::PathBuf;
 
     fn entry(render_id: &str, prd_id: &str, model: &str, cost: f64, at: &str) -> CostEntry {
@@ -360,6 +361,42 @@ mod tests {
         // recent failures are named, both render- and dispatch-side
         assert!(report.contains("fal job failed"), "{report}");
         assert!(report.contains("stage 'agent' failed"), "{report}");
+    }
+
+    #[test]
+    fn report_counts_degraded_fake_render() {
+        let degraded = VideoRender {
+            id: "render-degraded".into(),
+            prd_id: "prd-a".into(),
+            prd_sha256: "sha-prd-a".into(),
+            storyboard_id: "story-a".into(),
+            provider: "fake-local".into(),
+            model: "embedded-fixture".into(),
+            native_audio: true,
+            status: "ready".into(),
+            asset_url: "/media/sha-prd-a/render-degraded.mp4".into(),
+            asset_file: "render-degraded.mp4".into(),
+            caption_artifact_file: None,
+            degraded_reason: Some("spec-branded free preview unavailable: encoder failed".into()),
+            provider_job_id: Some("fake-render-degraded".into()),
+            cost_estimate_usd: 0.0,
+            latency_ms: 10,
+            created_at: "2026-07-17T00:00:00Z".into(),
+        };
+        let report = render(&ReportInputs {
+            specs: &[],
+            entries: &[],
+            renders: &[degraded],
+            receipts: &[],
+            events: &[],
+            video: &VideoConfig::default(),
+            max_concurrent_dispatches: 1,
+            now: Utc::now(),
+        });
+        assert!(
+            report.contains("renders=1 ready=1 failed=0 degraded=1"),
+            "{report}"
+        );
     }
 
     #[test]

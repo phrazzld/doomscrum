@@ -57,6 +57,26 @@ struct StatusResponse {
     status: Option<String>,
 }
 
+struct StillsWorkDirGuard {
+    path: PathBuf,
+}
+
+impl StillsWorkDirGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for StillsWorkDirGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 impl StillsProvider {
     pub fn from_config(cfg: &crate::config::VideoConfig, api_key: String) -> Self {
         Self {
@@ -85,13 +105,16 @@ impl StillsProvider {
             "stills-work-{}",
             cache_distinct_render_id(&storyboard.id)
         ));
-        std::fs::create_dir_all(&work_dir)?;
+        let work_dir_guard = StillsWorkDirGuard::new(work_dir);
+        std::fs::create_dir_all(work_dir_guard.path())?;
 
         // 1. Bespoke keyframe image via the fal queue API.
-        let keyframe = self.generate_keyframe(storyboard, &work_dir).await?;
+        let keyframe = self
+            .generate_keyframe(storyboard, work_dir_guard.path())
+            .await?;
 
         // 2. Deterministic TTS from the exact expected script.
-        let audio = self.render_tts(storyboard, &work_dir).await?;
+        let audio = self.render_tts(storyboard, work_dir_guard.path()).await?;
         let audio_duration = match &audio {
             Some(path) => ffprobe_duration(path).await.unwrap_or(0.0),
             None => 0.0,
@@ -150,8 +173,6 @@ impl StillsProvider {
         save_caption_artifact(renders_dir, &render, &artifact)?;
         save_render(renders_dir, &render)?;
 
-        // Best-effort cleanup of the temporary work dir; failures are not fatal.
-        let _ = std::fs::remove_dir_all(&work_dir);
         Ok(render)
     }
 

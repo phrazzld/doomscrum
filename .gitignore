@@ -12,3 +12,4 @@ demo/public/*.mp4
 demo/public/sfx/*.wav
 demo/public/vo/
 scripts/__pycache__/
+audit-evidence/

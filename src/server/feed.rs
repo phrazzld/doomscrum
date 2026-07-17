@@ -15,7 +15,7 @@ use crate::backlog::PrdSource;
 use crate::dispatch::DispatchKind;
 use crate::events;
 use crate::providers::{compare_render_freshness, load_renders, VideoRender};
-use crate::render::pipeline::render_spec;
+use crate::render::pipeline::{render_spec, render_spec_degraded};
 use crate::render::wallet::{
     self, cap_breach, pending_daily_spend, pending_total_spend, render_plan, CapBreach, RenderPlan,
 };
@@ -150,7 +150,13 @@ fn spawn_render_job(
             let ctx = bg.clone();
             let provider = provider.clone();
             let prd = prd.clone();
-            tokio::spawn(async move { render_spec(&ctx, &provider, &prd).await })
+            let reason = degraded_reason.clone();
+            tokio::spawn(async move {
+                match reason.as_deref() {
+                    Some(reason) => render_spec_degraded(&ctx, &provider, &prd, reason).await,
+                    None => render_spec(&ctx, &provider, &prd).await,
+                }
+            })
         };
         let outcome = await_render_task(task).await;
         {
@@ -186,13 +192,6 @@ fn spawn_render_job(
                 "render_failed",
                 Some(format!("{err:#}")),
             );
-        }
-        // Tag a degraded substitute so the feed badges it (overwrites the render
-        // JSON the provider just wrote at the same path).
-        if let (Ok(render), Some(reason)) = (&outcome, &degraded_reason) {
-            let mut tagged = render.clone();
-            tagged.degraded_reason = Some(reason.clone());
-            let _ = crate::providers::save_render(&bg.renders_dir(), &tagged);
         }
         bg.release_render_reservation(reservation_id.as_deref())
             .await;

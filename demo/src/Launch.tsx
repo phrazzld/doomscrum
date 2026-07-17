@@ -15,15 +15,14 @@ import {
   Boom,
   Flash,
   Hit,
+  Karaoke,
   Riser,
   Starburst,
   usePunchIn,
   useShake,
   VhsTag,
-  SegmentKaraoke,
-  SegmentStarburstFlash,
 } from "./fx";
-import { CAPTIONS, SEGMENTS } from "./captions_launch";
+import { CAPTIONS } from "./captions_launch";
 
 export const FPS = 30;
 const sec = (s: number) => Math.round(s * FPS);
@@ -36,19 +35,20 @@ export const LAUNCH_T = {
   title: 1.0, // tight instrumental punch, no VO
   product2: 5.0,
   tapSpec: 4.0, // silent beat: tap ripple -> spec sheet slide-up -> lockup
-  clipJoke: 7.6, // speech_end 6.83 + 0.77
-  clipQA: 6.3,   // speech_end 5.57 + 0.73
-  clipGoblin: 7.3, // speech_end 6.51 + 0.79
-  clipJanitor: 4.7, // speech_end 3.97 + 0.73
+  proofJoke: 6.0, // honest-failure beat — native card, no clip
+  proofQA: 5.0,
+  proofGoblin: 5.5,
+  proofJanitor: 4.5,
   swipe: 6.5,
   price: 5.5,
   cta: 8.0,
 };
+// Total: 64.3s
 
-export const PR_TITLE = "Plug DoomScrum into arbitrary repos — backlog contract docs";
+export const PR_TITLE = "DoomScrum impl: Plug DoomScrum into arbitrary repos (epic: picker, contract, MCP source)";
 export const PR_NUMBER = "45";
-export const PR_REPO_PATH = "misty-step/doomscrum → main";
-export const PR_STATS = "+235 −2 · 6 files · opened by a swipe, 11 min, zero humans typing";
+export const PR_REPO_PATH = "misty-step/doomscrum → master";
+export const PR_STATS = "+235 −2 · 6 files · Fixes #43 · opened by a swipe";
 export const LAUNCH_ORDER: (keyof typeof LAUNCH_T)[] = [
   "hook",
   "problem",
@@ -56,10 +56,10 @@ export const LAUNCH_ORDER: (keyof typeof LAUNCH_T)[] = [
   "title",
   "product2",
   "tapSpec",
-  "clipJoke",
-  "clipQA",
-  "clipGoblin",
-  "clipJanitor",
+  "proofJoke",
+  "proofQA",
+  "proofGoblin",
+  "proofJanitor",
   "swipe",
   "price",
   "cta",
@@ -123,14 +123,49 @@ const INK = "#e8ffe0";
 const BG = "#07090b";
 const IMPACT = "Impact, 'Arial Black', sans-serif";
 const MONO = "ui-monospace, 'SF Mono', Menlo, monospace";
-// ----- asset mapping --------------------------------------------------------
-const REAL_CLIPS = {
-  joke: "joke.mp4",
-  qa: "qa.mp4",
-  goblin: "goblin.mp4",
-  janitor: "janitor.mp4",
+
+// ----- real issue data (live-verified 2026-07-17 via gh) -------------------
+// Creative headlines are the brainrot-format titles; issue numbers/titles are real.
+type ProofIssue = {
+  issue: string;
+  realTitle: string;
+  headline: string;
+  sticker: string;
+  badge: string;
+  honestFailure?: string;
 };
 
+const PROOF_ISSUES: Record<string, ProofIssue> = {
+  joke: {
+    issue: "#36",
+    realTitle: "Audit whether the core brainrot joke actually lands",
+    headline: "AUDIT BRAINROT JOKE",
+    sticker: "ISSUE #36",
+    badge: "OPEN",
+    honestFailure: "EVIDENCE SAYS NO.",
+  },
+  qa: {
+    issue: "#40",
+    realTitle: "Autonomous persona QA agent that files tickets",
+    headline: "QA WALKS, FILES ISSUES",
+    sticker: "ISSUE #40",
+    badge: "OPEN",
+  },
+  goblin: {
+    issue: "#39",
+    realTitle: "Local open-weights video provider (electricity-priced renders)",
+    headline: "BUDGET GOBLIN GPU",
+    sticker: "ISSUE #39",
+    badge: "OPEN",
+  },
+  janitor: {
+    issue: "#44",
+    realTitle: "[PROPOSAL — needs ratification] Purge orphaned artifacts and one dead fn",
+    headline: "RATIFICATION RACCOON",
+    sticker: "ISSUE #44",
+    badge: "OPEN",
+  },
+};
 
 // ----- utility layout blocks -----------------------------------------------
 const Scanlines: React.FC = () => (
@@ -203,7 +238,7 @@ const Sticker: React.FC<{
   </div>
 );
 
-/** Widescreen Phone Frame Frame for 9:16 overlay */
+/** Widescreen Phone Frame for 9:16 overlay */
 const PhoneFrame: React.FC<{
   children: React.ReactNode;
   scale?: number;
@@ -244,36 +279,37 @@ const PhoneFrame: React.FC<{
   );
 };
 
-const ClipEcho: React.FC<{ clipKey: keyof typeof REAL_CLIPS }> = ({ clipKey }) => {
+/** Opaque scrim masking baked caption zones in phone-frame clip B-roll. */
+const CaptionScrim: React.FC<{ height?: string }> = ({ height = "18%" }) => (
+  <div
+    style={{
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height,
+      background: "rgba(7,9,11,0.96)",
+      borderTop: "2px solid #222",
+      zIndex: 15,
+      pointerEvents: "none",
+    }}
+  />
+);
+
+/** Animated gradient backdrop — replaces ClipEcho (no unmapped clip footage) */
+const PulseBg: React.FC<{ hue?: string }> = ({ hue = PINK }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const drift = 1 + (frame / Math.max(1, durationInFrames)) * 0.08;
+  const pulse = Math.sin(frame * 0.06) * 0.5 + 0.5;
   return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        overflow: "hidden",
-        zIndex: 0,
-        opacity: 0.42,
-      }}
-    >
-      <div
+    <AbsoluteFill style={{ zIndex: 0 }}>
+      <AbsoluteFill style={{ background: BG }} />
+      <AbsoluteFill
         style={{
-          position: "absolute",
-          inset: "-6%",
-          transform: `scale(${drift})`,
-          filter: "blur(50px) brightness(0.34)",
+          background: `radial-gradient(circle at 30% 40%, ${hue}22, transparent 60%), radial-gradient(circle at 70% 70%, ${ACID}11, transparent 50%)`,
+          opacity: 0.5 + pulse * 0.3,
         }}
-      >
-        <OffthreadVideo
-          muted
-          src={staticFile(REAL_CLIPS[clipKey])}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      </div>
-      <AbsoluteFill style={{ background: "rgba(0,0,0,0.55)" }} />
-    </div>
+      />
+    </AbsoluteFill>
   );
 };
 
@@ -306,7 +342,7 @@ const PrCard: React.FC<{ scale?: number }> = ({ scale = 1 }) => (
       boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
     }}
   >
-    <div style={{ fontSize: 38, fontWeight: 600 }}>
+    <div style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2 }}>
       {PR_TITLE} <span style={{ color: "#8b949e" }}>#{PR_NUMBER}</span>
     </div>
     <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 20 }}>
@@ -339,6 +375,16 @@ const HookScene: React.FC = () => {
   const frame = useCurrentFrame();
   const enter = spring({ fps, frame, config: { damping: 10, stiffness: 220 } });
   const shake = useShake(6);
+  // Hold the outcomes-first PR cold open, then swipe the recognizable feed in
+  // immediately after the 2.39s hook line without changing scene timing.
+  const feedReveal = interpolate(frame, [70, 76], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const feedX = interpolate(frame, [70, 76], [260, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
   return (
     <AbsoluteFill
       style={{
@@ -360,6 +406,31 @@ const HookScene: React.FC = () => {
           Opened by a swipe.
         </MemeText>
       </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 44,
+          top: 150,
+          zIndex: 12,
+          transform: `translateX(${feedX}px)`,
+        }}
+      >
+        <PhoneFrame scale={0.82 * feedReveal}>
+          <div style={{ width: "100%", height: "100%", position: "relative" }}>
+            <OffthreadVideo
+              src={staticFile("infomercial.mp4")}
+              muted
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+            <CaptionScrim />
+            <Sticker style={{ top: 20, right: 20 }}>FEED</Sticker>
+            <Sticker bg={PINK} color="#fff" rotate={-4} style={{ bottom: 30, left: 20 }}>
+              ISSUE #36
+            </Sticker>
+          </div>
+        </PhoneFrame>
+      </div>
+      <Karaoke words={CAPTIONS.hook} bottom={40} size={64} color={INK} />
       <VhsTag label="COLD OPEN" />
       <Flash />
     </AbsoluteFill>
@@ -373,11 +444,12 @@ const ProblemScene: React.FC = () => {
   const shake = useShake(5);
   const scale = usePunchIn(1.02);
 
+  // Real issue titles (live-verified via gh, 2026-07-17)
   const issues = [
-    { id: "#36", title: "Audit the brainrot joke option in video render", age: "rotting 14d", col: PINK },
-    { id: "#40", title: "QA walks across client and logs issue ticket", age: "rotting 11d", col: PINK },
-    { id: "#39", title: "Budget goblin local-GPU render queue limits", age: "rotting 9d", col: PINK },
-    { id: "#43", title: "Plug DoomScrum into arbitrary repos — backlog contract", age: "rotting 6d", col: PINK },
+    { id: "#36", title: "Audit whether the core brainrot joke actually lands", age: "OPEN", col: PINK },
+    { id: "#40", title: "Autonomous persona QA agent that files tickets", age: "OPEN", col: PINK },
+    { id: "#39", title: "Local open-weights video provider (electricity-priced renders)", age: "OPEN", col: PINK },
+    { id: "#43", title: "Plug DoomScrum into arbitrary repos (epic: picker, contract, MCP)", age: "OPEN", col: PINK },
   ];
 
   return (
@@ -393,7 +465,8 @@ const ProblemScene: React.FC = () => {
     >
       <Boom volume={0.55} />
       <MemeText size={64} color={PINK}>YOUR BACKLOG IS ROTTING.</MemeText>
-      
+      <Karaoke words={CAPTIONS.problem} bottom={40} size={58} color={INK} />
+
       {/* GitHub Issue backlog native layout */}
       <div
         style={{
@@ -435,7 +508,7 @@ const ProblemScene: React.FC = () => {
               <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
                 <span style={{ color: "#3fb950", fontSize: 22 }}>☉</span>
                 <span style={{ fontWeight: 600, fontSize: 22, marginRight: 8, color: "#8b949e" }}>{issue.id}</span>
-                <span style={{ fontSize: 22, color: "#e6edf3" }}>{issue.title}</span>
+                <span style={{ fontSize: 20, color: "#e6edf3" }}>{issue.title}</span>
               </div>
               <div
                 style={{
@@ -461,7 +534,7 @@ const ProblemScene: React.FC = () => {
   );
 };
 
-/** 3. Product1 (7.8s - 12.8ss): Feed reveal. */
+/** 3. Product1 (7.8s - 12.8s): Feed reveal. Uses waived infomercial.mp4 as feed B-roll. */
 const Product1Scene: React.FC = () => {
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
@@ -501,21 +574,23 @@ const Product1Scene: React.FC = () => {
           </div>
         </div>
 
-        {/* 9:16 Phone frame inset */}
+        {/* 9:16 Phone frame inset — waived clip as feed B-roll */}
         <PhoneFrame scale={scale}>
           <div style={{ width: "100%", height: "100%", position: "relative" }}>
             <OffthreadVideo
-              src={staticFile("fruit_drama.mp4")}
+              src={staticFile("infomercial.mp4")}
               muted
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
-            <Sticker style={{ top: 20, right: 20 }}>PRIO #36</Sticker>
+            <CaptionScrim />
+            <Sticker style={{ top: 20, right: 20 }}>FEED</Sticker>
             <Sticker bg={PINK} color="#fff" rotate={-4} style={{ bottom: 30, left: 20 }}>
-              ROTTING 14d
+              ISSUE #36
             </Sticker>
           </div>
         </PhoneFrame>
       </div>
+      <Karaoke words={CAPTIONS.product1} bottom={50} size={56} color={INK} />
       <Scanlines />
       <Flash />
     </AbsoluteFill>
@@ -545,12 +620,12 @@ const TitleScene: React.FC = () => {
   );
 };
 
-/** 5. Product2 (14.8s - 19.8s): Gestures. */
+/** 5. Product2 (14.8s - 19.8s): Gestures. Uses waived cryptid_vlog.mp4. */
 const Product2Scene: React.FC = () => {
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
   const shake = useShake(5);
-  
+
   // Swipe right motion inside the phone frame
   const cardSlid = interpolate(frame, [fps * 1.5, fps * 3.0], [0, 500], {
     easing: Easing.in(Easing.cubic),
@@ -620,7 +695,7 @@ const Product2Scene: React.FC = () => {
                 SWIPE RIGHT ➔
               </div>
             </div>
-            <Sticker style={{ top: 20, right: 20 }}>COAXING</Sticker>
+            <Sticker style={{ top: 20, right: 20 }}>SWIPING</Sticker>
           </div>
         </PhoneFrame>
 
@@ -631,6 +706,7 @@ const Product2Scene: React.FC = () => {
           <MemeText size={64} color={PINK} style={{ marginTop: 24, textAlign: "left" }}>
             SWIPE LEFT TO SKIP.
           </MemeText>
+          {/* karaoke moved to scene level (see below) */}
           <div style={{ fontFamily: MONO, fontSize: 32, color: "#fff", marginTop: 40, background: "#161b22", padding: 24, border: "2px solid #30363d", borderRadius: 8 }}>
             $ doomscrum list<br />
             &gt; swipe right: real agent implements, opens a real PR<br />
@@ -639,6 +715,7 @@ const Product2Scene: React.FC = () => {
           </div>
         </div>
       </div>
+      <Karaoke words={CAPTIONS.product2} bottom={50} size={52} color={INK} />
       <Scanlines />
       <Flash />
     </AbsoluteFill>
@@ -646,7 +723,8 @@ const Product2Scene: React.FC = () => {
 };
 
 /** 5b. Tap-to-spec (19.8s - 23.8s): silent consent/transparency beat. No VO —
- *  on-screen text + SFX carry it. Backing loop stays up, no duck. */
+ *  on-screen text + SFX carry it. Backing loop stays up, no duck.
+ *  Feed card is a native Remotion UI composition (no third-party clip). */
 const TapSpecScene: React.FC = () => {
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
@@ -689,12 +767,20 @@ const TapSpecScene: React.FC = () => {
       >
         <PhoneFrame scale={scale}>
           <AbsoluteFill>
-            {/* Feed card underneath — issue #36, the same clip proven later */}
-            <OffthreadVideo
-              muted
-              src={staticFile(REAL_CLIPS.joke)}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
+            {/* Native feed card — issue #36 as a Remotion UI composition */}
+            <div style={{ width: "100%", height: "100%", background: "#0d1117", display: "flex", flexDirection: "column", padding: "40px 20px 20px" }}>
+              <div style={{ fontSize: 12, color: "#8b949e", fontFamily: MONO, marginBottom: 8 }}>github-issues/36.md</div>
+              <div style={{ fontFamily: IMPACT, fontSize: 28, lineHeight: 1.1, color: "#fff", textTransform: "uppercase", textShadow: "2px 2px 0 #000" }}>
+                Audit whether the core brainrot joke actually lands
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <span style={{ background: "#238636", borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 600, color: "#fff" }}>✓ Open</span>
+                <span style={{ border: "1px solid #30363d", borderRadius: 999, padding: "3px 10px", fontSize: 13, color: "#8b949e" }}>#36</span>
+              </div>
+              <div style={{ marginTop: 16, fontFamily: MONO, fontSize: 12, color: "#c8d0c0", lineHeight: 1.6, flex: 1, overflow: "hidden" }}>
+                {`## Goal\nDetermine, with evidence rather than\nvibes, whether DoomScrum's core\nmechanic is actually funny/shareable\nas implemented today.\n\n## Oracle\n[ ] Evidence table built\n[ ] Failure pattern quantified`}
+              </div>
+            </div>
             <Sticker style={{ top: 20, right: 20 }}>ISSUE #36</Sticker>
             <Sticker bg={ACID} color="#000" rotate={-4} style={{ top: 20, left: 20 }}>
               FRESH
@@ -795,20 +881,25 @@ const TapSpecScene: React.FC = () => {
                 </div>
                 <div style={{ fontSize: 10.5, color: "#8b949e", lineHeight: 1.5, textAlign: "right" }}>
                   github-issues/36.md
-                  <br />· sha256 ba2696…
-                </div>
+                  <br />· sha256 bb55b067…
+              </div>
               </div>
               <div style={{ borderTop: "1px solid #2a2a2a", margin: "12px 0" }} />
               <div style={{ fontSize: 11.5, lineHeight: 1.6, color: "#c8d0c0", whiteSpace: "pre-wrap" }}>
 {`## Goal
-Determine, with evidence not vibes,
-whether the core mechanic actually
-lands as shipped today.
+Determine, with evidence rather than
+vibes, whether DoomScrum's core
+mechanic — spec-to-brainrot-video —
+is actually funny/shareable as
+implemented today.
 
 ## Oracle
-[ ] evidence table built from bench data
-[ ] failure pattern quantified,
-    not just noted`}
+- [ ] Evidence table built from the
+      existing bench data plus a fresh
+      sample of >=10 renders
+- [ ] The specific failure pattern
+      already visible in the bench is
+      quantified, not just noted`}
               </div>
             </div>
           </AbsoluteFill>
@@ -848,22 +939,20 @@ lands as shipped today.
   );
 };
 
-/** Re-usable Clip scene helper */
-const ProofClipScene: React.FC<{
-  clipKey: "joke" | "qa" | "goblin" | "janitor";
-  caption: string;
-  sticker: string;
-  badge: string;
-  extraLeft?: React.ReactNode;
-}> = ({ clipKey, caption, sticker, badge, extraLeft }) => {
+/** Re-usable native proof-card scene — first-party Remotion UI, no unmapped clips.
+ *  Each shows a real GitHub issue rendered as a DoomScrum feed card. */
+const ProofCardScene: React.FC<{
+  issueKey: keyof typeof PROOF_ISSUES;
+}> = ({ issueKey }) => {
+  const { fps } = useVideoConfig();
+  const frame = useCurrentFrame();
   const scale = usePunchIn(1.02);
   const shake = useShake(4);
-  const segments = SEGMENTS[clipKey];
-  const hasNativeCaptions = clipKey === "joke";
+  const data = PROOF_ISSUES[issueKey];
 
   return (
     <AbsoluteFill style={{ background: BG, justifyContent: "center", alignItems: "center" }}>
-      <ClipEcho clipKey={clipKey} />
+      <PulseBg hue={issueKey === "joke" ? PINK : ACID} />
       <Boom volume={0.5} />
       <div
         style={{
@@ -881,32 +970,68 @@ const ProofClipScene: React.FC<{
         <div style={{ width: 880, height: "100%", position: "relative", zIndex: 3 }}>
           <div style={{ textAlign: "left" }}>
             <MemeText size={72} color={ACID} style={{ textAlign: "left" }}>
-              {caption}
+              {data.headline}
             </MemeText>
           </div>
-          {extraLeft}
-          {!hasNativeCaptions && (
-            <>
-              <SegmentKaraoke
-                segments={segments}
-                size={72}
+          <div style={{ marginTop: 20 }}>
+            <MemeText size={64} color={ACID} style={{ textAlign: "left" }} delay={5}>
+              {data.issue}
+            </MemeText>
+          </div>
+          <div style={{ marginTop: 18, maxWidth: 760 }}>
+            <MemeText
+              size={40}
+              color={INK}
+              delay={10}
+              style={{ textAlign: "left", WebkitTextStroke: "2px #000" }}
+            >
+              {data.realTitle}
+            </MemeText>
+          </div>
+          {data.honestFailure && (
+            <div style={{ marginTop: 28, maxWidth: 720 }}>
+              <MemeText
+                size={56}
                 color={PINK}
-                bottom={80}
-              />
-              <SegmentStarburstFlash segments={segments} />
-            </>
+                delay={20}
+                style={{ textAlign: "left" }}
+              >
+                {data.honestFailure}
+              </MemeText>
+              <MemeText
+                size={40}
+                color={INK}
+                delay={32}
+                style={{ textAlign: "left", marginTop: 10, WebkitTextStroke: "2px #000" }}
+              >
+                Free path needs demo cartridge, not dry cards.
+              </MemeText>
+            </div>
           )}
+          {issueKey === "joke" && <HitBurst />}
         </div>
 
+        {/* Phone showing a native feed card for the issue */}
         <PhoneFrame scale={scale} shake={shake}>
           <AbsoluteFill>
-            <OffthreadVideo
-              src={staticFile(REAL_CLIPS[clipKey])}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-            <Sticker style={{ top: 20, right: 20 }}>{sticker}</Sticker>
+            <div style={{ width: "100%", height: "100%", background: "#0d1117", display: "flex", flexDirection: "column", padding: "40px 20px 20px" }}>
+              <div style={{ fontSize: 12, color: "#8b949e", fontFamily: MONO, marginBottom: 8 }}>
+                github-issues/{data.issue.replace("#", "")}.md
+              </div>
+              <div style={{ fontFamily: IMPACT, fontSize: 26, lineHeight: 1.1, color: "#fff", textTransform: "uppercase", textShadow: "2px 2px 0 #000" }}>
+                {data.realTitle}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <span style={{ background: "#238636", borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 600, color: "#fff" }}>✓ Open</span>
+                <span style={{ border: "1px solid #30363d", borderRadius: 999, padding: "3px 10px", fontSize: 13, color: "#8b949e" }}>{data.issue}</span>
+              </div>
+              <div style={{ marginTop: 16, fontFamily: MONO, fontSize: 12, color: "#c8d0c0", lineHeight: 1.6, flex: 1, overflow: "hidden" }}>
+                {`## ${data.headline}\n\nReal GitHub issue.\nSwipe right → agent ships it.\nSwipe left → skip, spec untouched.\nTap → read the exact spec.`}
+              </div>
+            </div>
+            <Sticker style={{ top: 20, right: 20 }}>{data.sticker}</Sticker>
             <Sticker bg={PINK} color="#fff" rotate={-6} style={{ bottom: 30, left: 20 }}>
-              {badge}
+              {data.badge}
             </Sticker>
           </AbsoluteFill>
         </PhoneFrame>
@@ -917,67 +1042,19 @@ const ProofClipScene: React.FC<{
   );
 };
 
-/** 6. Clip Joke */
-const ClipJokeScene: React.FC = () => (
-  <ProofClipScene
-    clipKey="joke"
-    caption="AUDIT BRAINROT JOKE"
-    sticker="ISSUE #36"
-    badge="ROTTING 14d"
-    extraLeft={
-      <>
-        <div style={{ marginTop: 20 }}>
-          <MemeText size={64} color={ACID} style={{ textAlign: "left" }}>
-            ISSUE #36
-          </MemeText>
-        </div>
-        <div style={{ marginTop: 14, maxWidth: 720 }}>
-          <MemeText
-            size={48}
-            color={INK}
-            delay={5}
-            style={{ textAlign: "left", WebkitTextStroke: "2px #000" }}
-          >
-            DOES THE JOKE ACTUALLY LAND?
-          </MemeText>
-        </div>
-        <HitBurst />
-      </>
-    }
-  />
-);
+/** 6. Proof: Joke (honest-failure beat — native card) */
+const ProofJokeScene: React.FC = () => <ProofCardScene issueKey="joke" />;
 
-/** 7. Clip QA */
-const ClipQAScene: React.FC = () => (
-  <ProofClipScene
-    clipKey="qa"
-    caption="QA WALKS, FILES ISSUES"
-    sticker="ISSUE #40"
-    badge="ROTTING 11d"
-  />
-);
+/** 7. Proof: QA */
+const ProofQAScene: React.FC = () => <ProofCardScene issueKey="qa" />;
 
-/** 8. Clip Goblin */
-const ClipGoblinScene: React.FC = () => (
-  <ProofClipScene
-    clipKey="goblin"
-    caption="BUDGET GOBLIN GPU"
-    sticker="ISSUE #39"
-    badge="ROTTING 9d"
-  />
-);
+/** 8. Proof: Goblin */
+const ProofGoblinScene: React.FC = () => <ProofCardScene issueKey="goblin" />;
 
-/** 9. Clip Janitor */
-const ClipJanitorScene: React.FC = () => (
-  <ProofClipScene
-    clipKey="janitor"
-    caption="RATIFICATION RACCOON"
-    sticker="ISSUE #44"
-    badge="ROTTING 6d"
-  />
-);
+/** 9. Proof: Janitor */
+const ProofJanitorScene: React.FC = () => <ProofCardScene issueKey="janitor" />;
 
-/** 10. Swipe action -> cook -> PR open (6.5s) */
+/** 10. Swipe action -> cook -> PR open (6.5s). Uses waived italian_brainrot.mp4. */
 const SwipeScene: React.FC = () => {
   const { fps } = useVideoConfig();
   const frame = useCurrentFrame();
@@ -998,15 +1075,14 @@ const SwipeScene: React.FC = () => {
   const showLogs = frame >= fps * 1.5 && frame < fps * 4.0;
   const showPR = frame >= fps * 4.0;
 
+  // Real: PR #45 opened against misty-step/doomscrum, issue #43
   const logs = [
-    "[SYS] Cooking ticket arbitrary repos support #43",
-    "[AI ] Scanning source trees for git integration...",
-    "[AI ] Resolving multi-repo workspace context...",
-    "[AI ] Generating documentation for backlog contract...",
-    "[SYS] Code compiles successfully! (1.2s)",
-    "[SYS] Running integration test harness: 12 passed",
-    "[GIT] Pushing moomooskycow/arbitrary-repos → main",
-    "[GIT] Created Pull Request #43! Closed by a swipe.",
+    "[SYS] Cooking: github-issues/43.md",
+    "[SYS] Spec sha256: 9b960b22c649…",
+    "[AI ] Generating backlog contract docs...",
+    "[GIT] Branch: doomscrum/impl-…0fdfc3ac09",
+    "[GIT] Pushing misty-step/doomscrum → master",
+    "[GIT] Created Pull Request #45! Fixes #43.",
   ];
 
   return (
@@ -1063,6 +1139,7 @@ const SwipeScene: React.FC = () => {
             <MemeText size={64} color={ACID} style={{ textAlign: "left" }}>SWIPE RIGHT.</MemeText>
             <MemeText size={64} color={PINK} style={{ marginTop: 12, textAlign: "left" }}>AGENT COOKS IT.</MemeText>
             <MemeText size={64} style={{ marginTop: 12, textAlign: "left" }}>PR CARD OPENS.</MemeText>
+            {/* karaoke moved to scene level (see below) */}
           </div>
         </div>
       ) : (
@@ -1081,6 +1158,7 @@ const SwipeScene: React.FC = () => {
         </div>
       )}
 
+      <Karaoke words={CAPTIONS.swipe} bottom={50} size={50} color={INK} />
       <Scanlines />
       <Flash at={fps * 4} />
     </AbsoluteFill>
@@ -1106,12 +1184,13 @@ const PriceScene: React.FC = () => {
     >
       <Boom volume={0.55} />
       <MemeText size={64} color={PINK}>PRICED TO BEAT ALL OTHERS.</MemeText>
-      
+      <Karaoke words={CAPTIONS.price} bottom={30} size={56} color={INK} />
+
       <div style={{ display: "flex", gap: 30, alignItems: "center", height: 400, position: "relative" }}>
         <Starburst size={380} bg="#ffd400" color="#c00" style={{ transform: "rotate(-6deg)" }}>
           $0.03 A CLIP!
         </Starburst>
-        
+
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 20, alignItems: "baseline" }}>
             <span style={{ fontSize: 34, color: "#8b949e", textDecoration: "line-through", textDecorationColor: "#c00" }}>$1.20/clip</span>
@@ -1123,7 +1202,7 @@ const PriceScene: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       <MemeText size={52} color={ACID} delay={Math.round(2.0 * fps)}>
         OPERATORS ARE STANDING BY.
       </MemeText>
@@ -1153,7 +1232,8 @@ const CtaScene: React.FC = () => {
     >
       <Riser volume={0.5} />
       <MemeText size={84} color={ACID}>GET DOOMSCRUM NOW.</MemeText>
-      
+      <Karaoke words={CAPTIONS.cta} bottom={30} size={56} color={INK} />
+
       {/* Cool animated Terminal shell */}
       <div
         style={{
@@ -1231,20 +1311,20 @@ export const Launch: React.FC = () => {
         <TapSpecScene />
       </Sequence>
 
-      <Sequence from={startOf("clipJoke")} durationInFrames={sec(LAUNCH_T.clipJoke)}>
-        <ClipJokeScene />
+      <Sequence from={startOf("proofJoke")} durationInFrames={sec(LAUNCH_T.proofJoke)}>
+        <ProofJokeScene />
       </Sequence>
 
-      <Sequence from={startOf("clipQA")} durationInFrames={sec(LAUNCH_T.clipQA)}>
-        <ClipQAScene />
+      <Sequence from={startOf("proofQA")} durationInFrames={sec(LAUNCH_T.proofQA)}>
+        <ProofQAScene />
       </Sequence>
 
-      <Sequence from={startOf("clipGoblin")} durationInFrames={sec(LAUNCH_T.clipGoblin)}>
-        <ClipGoblinScene />
+      <Sequence from={startOf("proofGoblin")} durationInFrames={sec(LAUNCH_T.proofGoblin)}>
+        <ProofGoblinScene />
       </Sequence>
 
-      <Sequence from={startOf("clipJanitor")} durationInFrames={sec(LAUNCH_T.clipJanitor)}>
-        <ClipJanitorScene />
+      <Sequence from={startOf("proofJanitor")} durationInFrames={sec(LAUNCH_T.proofJanitor)}>
+        <ProofJanitorScene />
       </Sequence>
 
       <Sequence from={startOf("swipe")} durationInFrames={sec(LAUNCH_T.swipe)}>

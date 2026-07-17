@@ -12,6 +12,26 @@ pub async fn render_spec(
     provider_name: &str,
     prd: &PrdSource,
 ) -> anyhow::Result<VideoRender> {
+    render_spec_with_reason(ctx, provider_name, prd, None).await
+}
+
+/// Render a free substitute whose first persisted provenance record already
+/// carries the reason it replaced a paid render.
+pub async fn render_spec_degraded(
+    ctx: &AppCtx,
+    provider_name: &str,
+    prd: &PrdSource,
+    reason: &str,
+) -> anyhow::Result<VideoRender> {
+    render_spec_with_reason(ctx, provider_name, prd, Some(reason)).await
+}
+
+async fn render_spec_with_reason(
+    ctx: &AppCtx,
+    provider_name: &str,
+    prd: &PrdSource,
+    degraded_reason: Option<&str>,
+) -> anyhow::Result<VideoRender> {
     let vcfg = ctx.cfg.video.with_pipeline(&prd.sha256);
     let provider = ctx.provider_with(provider_name, &vcfg)?;
     let script_key = crate::secrets::get(&["OPENROUTER_API_KEY"]);
@@ -31,7 +51,14 @@ pub async fn render_spec(
         storyboards_dir.join(format!("{}.json", prd.sha256)),
         serde_json::to_string_pretty(&storyboard).unwrap_or_default(),
     );
-    let render = provider.render(&storyboard, &ctx.renders_dir()).await?;
+    let render = match degraded_reason {
+        Some(reason) => {
+            provider
+                .render_degraded(&storyboard, &ctx.renders_dir(), reason)
+                .await?
+        }
+        None => provider.render(&storyboard, &ctx.renders_dir()).await?,
+    };
     // Paid spend is recorded in the durable append-only cost ledger the
     // moment provenance exists. Best-effort by design: if this append fails,
     // `ledger::spend_entries` still counts the render from its provenance

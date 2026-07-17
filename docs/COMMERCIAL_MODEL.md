@@ -1,17 +1,18 @@
 # DoomScrum commercial model decision
 
-Status: **UNDER REVIEW (reopened 2026-06-24).** The staged path below was
-previously ratified, but the owner has reopened the commercial model as a live
-question — treat this file as the options analysis, not a settled plan. The
-canonical north star (`../VISION.md`) lists "how it's distributed and sold" as
-an explicit open bet. Local-first-free is real and shipping today; everything
-beyond it (OSS self-host · BYO-key · cloud render credits · hosted SaaS) is
-undecided. Re-ratify here before the backlog sequences against it again.
+Status: **RATIFIED for launch (2026-07-17).** DoomScrum launches as a
+local-first, BYO-keys tool with a truthful free-preview path. Cloud render
+credits remain the next reversible commercial experiment; hosted multi-tenant
+agent dispatch remains explicitly deferred.
 
-## Decision (proposed — pending re-ratification)
+The canonical north star (`../VISION.md`) still treats later distribution and
+sales mechanics as an open bet. This decision settles only the launch
+sequence, not a permanent business model.
 
-DoomScrum should ship first as a local-first BYO-keys tool with a free fixture
-path, then add paid cloud-render credits only after onboarding and distribution
+## Decision
+
+DoomScrum ships first as a local-first BYO-keys tool with a free preview path,
+then may add paid cloud-render credits only after onboarding and distribution
 prove that strangers can reach value without help.
 
 Do not start with a hosted multi-tenant SaaS. The product's sharp edge is that
@@ -32,9 +33,9 @@ The staged path is:
 
 | Option | Wallet risk surface | Infra burden | Privacy story | Pricing sanity | Marketing/onboarding |
 |---|---|---|---|---|---|
-| Local-first BYO-keys free tool | Lowest for DoomScrum; operator owns fal/GitHub/agent spend. Wallet caps still protect the operator. | Small: binary, docs, CI, release packaging. No hosted queue or billing. | Strongest: specs stay local unless the operator explicitly uses fal; dispatch runs on the operator machine. | Free fixture path is $0. Paid renders use the operator's key; current premium COGS around $1.20/render is disclosed but not DoomScrum's margin problem. | Clear developer pitch: funny local tool, real PRs, no account required. Must disclose right-swipe consequences before first dispatch. |
-| Paid cloud-render credits | Medium: DoomScrum owns render spend and must enforce prepaid balances and daily caps. Dispatch can stay local. | Moderate: payment, credit ledger, render queue, artifact storage, support for failed jobs. | Mixed: spec-derived prompts and generated media leave the machine for the render service; code/repo access can remain local. | Works only after cheaper pipelines land. $1.20/render is too high for casual free usage; stills/JIT/render-mix can make credits sane. | Easier nontechnical onboarding: no fal key. Marketing can sell "credits for brainrot backlog clips" while preserving local agent dispatch. |
-| Hosted multi-tenant SaaS | Highest: DoomScrum owns render spend, dispatch abuse, PR credentials, rate limits, tenant isolation, and incident response. | Highest: auth, org/repo permissions, worker queues, storage, billing, webhooks, secrets, audit logs, support. | Weakest unless carefully scoped: specs, generated prompts, repo metadata, and possibly agent outputs live in DoomScrum infrastructure. | Needs tiering and quota discipline from day one. $1.20/render COGS plus support makes broad free usage irrational without JIT/stills/local-provider savings. | Cleanest sales motion, but onboarding copy must explain repo permissions, AI content movement, and real code-changing agents. Too much trust to ask before the product has pull. |
+| Local-first BYO-keys free tool | Lowest for DoomScrum; operator owns fal/GitHub/agent spend. Wallet caps still protect the operator. | Small: binary, docs, CI, release packaging. No hosted queue or billing. | Strongest: specs stay local unless the operator explicitly uses fal; dispatch runs on the operator machine. | Free preview path is $0. Paid renders use the operator's key; the current curated mix averages about $0.43/clip and is disclosed, not DoomScrum margin. | Clear developer pitch: funny local tool, real PRs, no account required. Must disclose right-swipe consequences before first dispatch. |
+| Paid cloud-render credits | Medium: DoomScrum owns render spend and must enforce prepaid balances and daily caps. Dispatch can stay local. | Moderate: payment, credit ledger, render queue, artifact storage, support for failed jobs. | Mixed: spec-derived prompts and generated media leave the machine for the render service; code/repo access can remain local. | Plausible only after demand: the current $0.43 average is materially better than the retired $1.20 Sora baseline, but support/failure/refund costs are still unknown. | Easier nontechnical onboarding: no fal key. Marketing can sell render convenience while preserving local agent dispatch. |
+| Hosted multi-tenant SaaS | Highest: DoomScrum owns render spend, dispatch abuse, PR credentials, rate limits, tenant isolation, and incident response. | Highest: auth, org/repo permissions, worker queues, storage, billing, webhooks, secrets, audit logs, support. | Weakest unless carefully scoped: specs, generated prompts, repo metadata, and possibly agent outputs live in DoomScrum infrastructure. | Needs tiering and quota discipline from day one; the risk is auth/support/abuse, not just render COGS. | Cleanest sales motion, but asks for too much trust before the product has pull. |
 | Staged path | Starts low, adds risk only when a step pays for itself. | Incremental: release/distribution first, credits second, SaaS last. | Starts with the strongest privacy story and only weakens it behind explicit paid features. | Lets efficiency work prove unit economics before DoomScrum carries spend. | Best story now: "runs locally, makes real PRs; pay later only if you want hosted rendering convenience." |
 
 ## Implications

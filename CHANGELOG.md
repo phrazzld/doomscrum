@@ -1,15 +1,50 @@
 # Changelog
 
 All notable changes to DoomScrum are documented here, in
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style. No versioned
-release has tagged yet — everything below is `[Unreleased]`. Once the first
-`vX.Y.Z` tag is pushed, `.github/workflows/release.yml` builds signed binaries
-for macOS arm64 and Linux x86_64 and creates the GitHub Release with
-`generate_release_notes: true`, so every future tagged release carries its
-own auto-generated notes going forward; this file stays the durable,
-hand-curated summary of *why*, not just *what*.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style. Tagged
+releases publish checksummed macOS arm64 and Linux x86_64 binaries plus
+generated GitHub release notes; this file stays the durable, hand-curated
+summary of *why*, not just *what*.
 
 ## [Unreleased]
+
+### Added
+
+- A canonical 64-second launch film built from the live product loop: real
+  GitHub issues, three scoped/waived feed clips, an honest failed-quality beat,
+  a real swipe-opened PR, current economics, and the public Homebrew install.
+  The project site now carries a readable poster, a silent first-party hero
+  loop, and a compressed narrated cut; full and share encodes are delivered to
+  the Desktop.
+
+### Changed
+
+- Launch model ratified: local-first, BYO keys, truthful free previews, and
+  operator-owned GitHub/agent credentials. Hosted multi-tenant dispatch stays
+  deferred; cloud render credits remain a reversible later experiment.
+- The checked-in dogfood config now uses public defaults (OpenRouter endpoint,
+  $25 wallet cap) while continuing to read this repo's open GitHub issues.
+  Fleet credential brokers and historical content-batch limits no longer leak
+  into the public checkout.
+- Legal preflight refreshed against current fal.ai, OpenRouter, and Gemini API
+  terms plus a preliminary name search. Project-site use remains a dated WARN;
+  paid promotion stays blocked until every clip has exact model provenance and
+  formal review.
+
+### Fixed
+
+- The free provider now rasterizes each spec's extracted title, goal, and
+  acceptance criterion into a portable PPM frame, then encodes it with the
+  standard Homebrew ffmpeg path. Missing encoder capability degrades explicitly
+  to the bundled sample and `doctor` verifies the required capability set.
+- Budget-exhausted previews persist their degradation reason in the provider's
+  first provenance write, removing a race where the feed briefly exposed an
+  unbadged substitute.
+- Stills rendering removes its per-render scratch directory on success and
+  every error return. Failed TTS, composition, persistence, and queue jobs no
+  longer leave generated `stills-work-*` trees behind.
+
+## [0.2.2] - 2026-07-16
 
 ### Added
 
@@ -66,27 +101,15 @@ hand-curated summary of *why*, not just *what*.
   formula uses plain public release URLs instead of the authenticated
   private-repo download strategy. Captured agent logs/receipts under
   `docs/adoption/` keep their original verbatim URLs.
-- Scriptwriter reevaluated twice on 2026-07-16
-  (`docs/bench/20260716-script-bench.md`). The system prompt gains the
-  `p4-plain-open` comprehension contract (first sentence names the ask in
-  plain words; slang carries delivery, never content words), fixing clips
-  that were funny but incomprehensible. An affordable-model follow-up moves
-  the default from `anthropic/claude-fable-5` to
-  `google/gemini-3.1-flash-lite`: the only affordable finalist passing all
-  twelve Crucible contract checks, top-2 in the judged final (7.50/10 under
-  the corrected scene-carries-the-joke rubric; gap to qwen3.5-flash inside
-  noise), and ~$0.0008/script—roughly one-thirty-eighth of Fable.
-- OpenRouter egress in this checkout is brokered by Mint (misty-step/mint):
-  `[script].base_url` points at the tailnet credential proxy and
-  `OPENROUTER_API_KEY` carries only the non-secret
-  `__mint.openrouter.default__` placeholder — the raw key never enters the
-  machine's env or `~/.secrets`. Coded defaults are unchanged for external
-  users (real key + `https://openrouter.ai/api/v1`).
-- Release intelligence via Landmark (misty-step/landmark): `.landmark.yml`
-  manifest added and the release workflow gains a synthesis-only step that
-  prepends an LLM-synthesized "What's New" section to each GitHub Release
-  body after this workflow creates it (needs the `OPENROUTER_API_KEY`
-  repo secret; GitHub runners are off-tailnet so CI cannot ride Mint).
+- Scriptwriter reevaluated on 2026-07-16
+  (`docs/bench/20260716-script-bench.md`). The prompt now requires the first
+  sentence to name the ask plainly while slang carries delivery, never content
+  words. The default moved to `google/gemini-3.1-flash-lite`, the affordable
+  finalist that satisfied the full comprehension contract at roughly
+  $0.0008/script.
+- Release intelligence via Landmark: `.landmark.yml` declares the release
+  contract and the tag workflow prepends a user-facing “What’s New” section
+  after creating each GitHub Release.
 
 ### Removed
 

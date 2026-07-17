@@ -2,497 +2,69 @@ import { Word, Segment } from "./fx";
 
 export const CAPTIONS: Record<string, Word[]> = {
   "hook": [
-    {
-      "text": "This",
-      "timestamp": [
-        0,
-        0.336
-      ]
-    },
-    {
-      "text": "pull",
-      "timestamp": [
-        0.336,
-        0.672
-      ]
-    },
-    {
-      "text": "request",
-      "timestamp": [
-        0.672,
-        1.008
-      ]
-    },
-    {
-      "text": "was",
-      "timestamp": [
-        1.008,
-        1.343
-      ]
-    },
-    {
-      "text": "opened",
-      "timestamp": [
-        1.343,
-        1.679
-      ]
-    },
-    {
-      "text": "by",
-      "timestamp": [
-        1.679,
-        2.015
-      ]
-    },
-    {
-      "text": "a",
-      "timestamp": [
-        2.015,
-        2.351
-      ]
-    },
-    {
-      "text": "swipe",
-      "timestamp": [
-        2.351,
-        2.687
-      ]
-    }
+    { "text": "this", "timestamp": [0.0, 0.32] },
+    { "text": "pull", "timestamp": [0.32, 0.64] },
+    { "text": "request", "timestamp": [0.64, 0.96] },
+    { "text": "was", "timestamp": [0.96, 1.2] },
+    { "text": "opened", "timestamp": [1.2, 1.44] },
+    { "text": "by", "timestamp": [1.44, 1.68] },
+    { "text": "a", "timestamp": [1.68, 1.84] },
+    { "text": "swipe", "timestamp": [1.84, 2.24] },
   ],
   "problem": [
-    {
-      "text": "Your",
-      "timestamp": [
-        0,
-        0.44
-      ]
-    },
-    {
-      "text": "backlog",
-      "timestamp": [
-        0.44,
-        0.879
-      ]
-    },
-    {
-      "text": "is",
-      "timestamp": [
-        0.879,
-        1.319
-      ]
-    },
-    {
-      "text": "rotting",
-      "timestamp": [
-        1.319,
-        1.759
-      ]
-    }
+    { "text": "your", "timestamp": [0.0, 0.4] },
+    { "text": "backlog", "timestamp": [0.4, 0.96] },
+    { "text": "is", "timestamp": [0.96, 1.36] },
+    { "text": "rotting", "timestamp": [1.36, 1.84] },
   ],
   "product1": [
-    {
-      "text": "DoomScrum",
-      "timestamp": [
-        0,
-        0.418
-      ]
-    },
-    {
-      "text": "turns",
-      "timestamp": [
-        0.418,
-        0.836
-      ]
-    },
-    {
-      "text": "it",
-      "timestamp": [
-        0.836,
-        1.255
-      ]
-    },
-    {
-      "text": "into",
-      "timestamp": [
-        1.255,
-        1.673
-      ]
-    },
-    {
-      "text": "a",
-      "timestamp": [
-        1.673,
-        2.091
-      ]
-    },
-    {
-      "text": "feed",
-      "timestamp": [
-        2.091,
-        2.509
-      ]
-    }
+    { "text": "doomscrum", "timestamp": [0.0, 0.8] },
+    { "text": "turns", "timestamp": [0.8, 1.2] },
+    { "text": "it", "timestamp": [1.2, 1.36] },
+    { "text": "into", "timestamp": [1.36, 1.6] },
+    { "text": "a", "timestamp": [1.6, 1.76] },
+    { "text": "feed", "timestamp": [1.76, 2.08] },
   ],
   "product2": [
-    {
-      "text": "Swipe",
-      "timestamp": [
-        0,
-        0.41
-      ]
-    },
-    {
-      "text": "right",
-      "timestamp": [
-        0.41,
-        0.82
-      ]
-    },
-    {
-      "text": "to",
-      "timestamp": [
-        0.82,
-        1.23
-      ]
-    },
-    {
-      "text": "ship",
-      "timestamp": [
-        1.23,
-        1.639
-      ]
-    },
-    {
-      "text": "Swipe",
-      "timestamp": [
-        1.639,
-        2.049
-      ]
-    },
-    {
-      "text": "left",
-      "timestamp": [
-        2.049,
-        2.459
-      ]
-    },
-    {
-      "text": "to",
-      "timestamp": [
-        2.459,
-        2.869
-      ]
-    },
-    {
-      "text": "skip",
-      "timestamp": [
-        2.869,
-        3.279
-      ]
-    }
-  ],
-  "clipJanitor": [
-    {
-      "text": "I\u2019m",
-      "timestamp": [
-        0.2,
-        0.551
-      ]
-    },
-    {
-      "text": "the",
-      "timestamp": [
-        0.551,
-        0.902
-      ]
-    },
-    {
-      "text": "Ratification",
-      "timestamp": [
-        0.902,
-        1.253
-      ]
-    },
-    {
-      "text": "Raccoon:",
-      "timestamp": [
-        1.253,
-        1.604
-      ]
-    },
-    {
-      "text": "first",
-      "timestamp": [
-        1.604,
-        1.955
-      ]
-    },
-    {
-      "text": "approve,",
-      "timestamp": [
-        1.955,
-        2.306
-      ]
-    },
-    {
-      "text": "then",
-      "timestamp": [
-        2.306,
-        2.657
-      ]
-    },
-    {
-      "text": "delete",
-      "timestamp": [
-        2.657,
-        3.008
-      ]
-    },
-    {
-      "text": "the",
-      "timestamp": [
-        3.008,
-        3.359
-      ]
-    },
-    {
-      "text": "dead",
-      "timestamp": [
-        3.359,
-        3.71
-      ]
-    },
-    {
-      "text": "stuff.",
-      "timestamp": [
-        3.71,
-        4.07
-      ]
-    }
+    { "text": "swipe", "timestamp": [0.16, 0.56] },
+    { "text": "right", "timestamp": [0.56, 0.88] },
+    { "text": "to", "timestamp": [0.88, 1.04] },
+    { "text": "ship", "timestamp": [1.04, 1.68] },
+    { "text": "swipe", "timestamp": [1.68, 2.16] },
+    { "text": "left", "timestamp": [2.16, 2.72] },
+    { "text": "to", "timestamp": [2.72, 2.96] },
+    { "text": "skip", "timestamp": [2.96, 3.52] },
   ],
   "swipe": [
-    {
-      "text": "Swipe",
-      "timestamp": [
-        0,
-        0.487
-      ]
-    },
-    {
-      "text": "right",
-      "timestamp": [
-        0.487,
-        0.974
-      ]
-    },
-    {
-      "text": "Agent",
-      "timestamp": [
-        0.974,
-        1.461
-      ]
-    },
-    {
-      "text": "cooks",
-      "timestamp": [
-        1.461,
-        1.948
-      ]
-    },
-    {
-      "text": "it",
-      "timestamp": [
-        1.948,
-        2.435
-      ]
-    },
-    {
-      "text": "Pull",
-      "timestamp": [
-        2.435,
-        2.922
-      ]
-    },
-    {
-      "text": "request",
-      "timestamp": [
-        2.922,
-        3.409
-      ]
-    },
-    {
-      "text": "opened",
-      "timestamp": [
-        3.409,
-        3.896
-      ]
-    }
+    { "text": "swipe", "timestamp": [0.16, 0.64] },
+    { "text": "right", "timestamp": [0.64, 1.28] },
+    { "text": "agent", "timestamp": [1.6, 1.92] },
+    { "text": "cooks", "timestamp": [1.92, 2.4] },
+    { "text": "it", "timestamp": [2.4, 2.88] },
+    { "text": "pull", "timestamp": [3.12, 3.52] },
+    { "text": "request", "timestamp": [3.52, 4.0] },
+    { "text": "opened", "timestamp": [4.0, 4.48] },
   ],
   "price": [
-    {
-      "text": "Three",
-      "timestamp": [
-        0,
-        0.421
-      ]
-    },
-    {
-      "text": "cents",
-      "timestamp": [
-        0.421,
-        0.842
-      ]
-    },
-    {
-      "text": "a",
-      "timestamp": [
-        0.842,
-        1.264
-      ]
-    },
-    {
-      "text": "clip",
-      "timestamp": [
-        1.264,
-        1.685
-      ]
-    },
-    {
-      "text": "Operators",
-      "timestamp": [
-        1.685,
-        2.106
-      ]
-    },
-    {
-      "text": "are",
-      "timestamp": [
-        2.106,
-        2.527
-      ]
-    },
-    {
-      "text": "standing",
-      "timestamp": [
-        2.527,
-        2.948
-      ]
-    },
-    {
-      "text": "by",
-      "timestamp": [
-        2.948,
-        3.37
-      ]
-    }
+    { "text": "three", "timestamp": [0.0, 0.32] },
+    { "text": "cents", "timestamp": [0.32, 0.64] },
+    { "text": "a", "timestamp": [0.64, 0.8] },
+    { "text": "clip", "timestamp": [0.8, 1.36] },
+    { "text": "operators", "timestamp": [1.44, 2.0] },
+    { "text": "are", "timestamp": [2.0, 2.24] },
+    { "text": "standing", "timestamp": [2.24, 2.56] },
+    { "text": "by", "timestamp": [2.56, 2.88] },
   ],
   "cta": [
-    {
-      "text": "Brew",
-      "timestamp": [
-        0,
-        0.406
-      ]
-    },
-    {
-      "text": "install",
-      "timestamp": [
-        0.406,
-        0.812
-      ]
-    },
-    {
-      "text": "Doom",
-      "timestamp": [
-        0.812,
-        1.219
-      ]
-    },
-    {
-      "text": "Scrum.",
-      "timestamp": [
-        1.219,
-        1.625
-      ]
-    },
-    {
-      "text": "Your",
-      "timestamp": [
-        1.625,
-        2.031
-      ]
-    },
-    {
-      "text": "backlog",
-      "timestamp": [
-        2.031,
-        2.438
-      ]
-    },
-    {
-      "text": "is",
-      "timestamp": [
-        2.438,
-        2.844
-      ]
-    },
-    {
-      "text": "waiting.",
-      "timestamp": [
-        2.844,
-        3.251
-      ]
-    }
-  ]
+    { "text": "brew", "timestamp": [0.0, 0.4] },
+    { "text": "install", "timestamp": [0.4, 0.8] },
+    { "text": "doom", "timestamp": [0.8, 1.2] },
+    { "text": "scrum", "timestamp": [1.2, 1.84] },
+    { "text": "your", "timestamp": [1.84, 2.16] },
+    { "text": "backlog", "timestamp": [2.16, 2.48] },
+    { "text": "is", "timestamp": [2.48, 2.72] },
+    { "text": "waiting", "timestamp": [2.72, 3.04] },
+  ],
 };
 
-export const SEGMENTS: Record<string, Segment[]> = {
-  "joke": [
-    {
-      "start": 1.55,
-      "end": 3.05,
-      "text": "Evidence says no."
-    },
-    {
-      "start": 3.95,
-      "end": 6.83,
-      "text": "Free path needs demo cartridge, not dry cards."
-    }
-  ],
-  "qa": [
-    {
-      "start": 1.65,
-      "end": 2.87,
-      "text": "QA walks."
-    },
-    {
-      "start": 2.87,
-      "end": 4.33,
-      "text": "Files GitHub issues."
-    },
-    {
-      "start": 4.33,
-      "end": 5.57,
-      "text": "No duplicates."
-    }
-  ],
-  "goblin": [
-    {
-      "start": 0.03,
-      "end": 6.51,
-      "text": "Budget goblin reports: local GPU, zero wallet panic, fallback if unreachable."
-    }
-  ],
-  "janitor": [
-    {
-      "start": 0.03,
-      "end": 1.41,
-      "text": "I'm the ratification raccoon."
-    },
-    {
-      "start": 1.67,
-      "end": 3.97,
-      "text": "First approve, then delete the dead stuff."
-    }
-  ]
-};
+export const SEGMENTS: Record<string, Segment[]> = {};

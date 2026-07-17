@@ -55,8 +55,8 @@ repo has a push remote — so a swipe can actually open a PR. `serve` bootstraps
 the bundled sample brainrot videos into `.doomscrum/renders/` on first run, so
 the feed has real (pre-rendered) video with zero keys and zero config edits —
 tap the splash screen (sound gate), then swipe. Run `doomscrum generate`
-afterward to render your own repo's specs (offline fixture provider by
-default; see "Keys you need" below for real generation).
+afterward to render spec-branded previews locally with the free `fake`
+provider; see "Keys you need" below for real generation.
 
 ### Building from source (contributors)
 
@@ -75,7 +75,7 @@ cargo run --release -- gc --dry-run
 
 | What you're doing | Keys required |
 |---|---|
-| Fixture videos (`fake` provider) | None |
+| Local spec previews (`fake` provider) | None; ffmpeg recommended, disclosed embedded fallback otherwise |
 | Dispatch (right-swipe an agent) | `opencode auth login` + `gh auth login` |
 | Paid script (`script.mode = "llm"`) | `OPENROUTER_API_KEY` |
 | Paid render (`--provider fal` or cook with AI) | `FAL_API_KEY` + `OPENROUTER_API_KEY` |
@@ -84,7 +84,7 @@ Set keys as env vars or in `~/.secrets` (`FAL_API_KEY=...`,
 `OPENROUTER_API_KEY=...`). Real generation costs money per render and sends
 spec-derived prompt text to fal.ai and OpenRouter — treat it as a disclosure
 event; DoomScrum quotes the estimated batch cost first and enforces spend
-caps. The fixture provider (`fake`) is the default and never leaves the
+caps. The local preview provider (`fake`) is the default and never leaves the
 machine. Full cost model, render profiles, and the exact data-egress
 enumeration: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
@@ -94,10 +94,12 @@ DoomScrum is MIT-licensed (see [LICENSE](LICENSE)). **Videos are
 AI-generated** and derived from backlog spec text, not verified fact. When a
 real provider is used, spec-derived text leaves the machine — `doomscrum
 egress` prints the live, code-verified enumeration of exactly what and where.
-Full disclosure prose and the pre-launch legal checklist:
+Current provider-terms and preliminary name-risk review:
 [docs/OPERATIONS.md#data-egress](docs/OPERATIONS.md#data-egress) and
-[docs/LEGAL.md](docs/LEGAL.md) (**not yet reviewed** — complete before
-redistributing generated clips in marketing).
+[docs/LEGAL.md](docs/LEGAL.md). Project-site display is covered by a dated,
+scoped waiver; paid promotion and third-party redistribution remain blocked
+until every clip is mapped to its exact model terms. DoomScrum is not
+affiliated with id Software, ZeniMax, or Microsoft.
 
 ## Development
 
@@ -122,14 +124,13 @@ src/
   backlog.rs       spec scanning (markdown dir or GitHub issues via gh), hashing, priority cap
   distill.rs       markdown → brief → storyboard (the brainrot script)
   egress.rs        runtime data-egress disclosure (CLI + /api/egress + UI)
-  providers/       fake (embedded fixture) and fal (real) video generation
+  providers/       fake (local spec preview), stills, and fal video generation
   dispatch.rs      swipe → worktree → agent → commit → push → PR
   events.rs        durable NDJSON decision ledger
   gc.rs            generated-state lifecycle and dry-run reporting
   server.rs        axum API + embedded UI
   main.rs          CLI: serve | generate | script | report | gc
 assets/index.html  the feed UI (single embedded file; the only non-Rust surface)
-backlog.d/         markdown spec dir (this repo now feeds from its own GitHub issues)
 docs/archive/      the original (superseded) MVP spec
 ```
 

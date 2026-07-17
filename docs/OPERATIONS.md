@@ -13,8 +13,8 @@ partial `[video]` override from `[profiles.*]`:
 
 | Profile | `[video]` override | Cost |
 |---|---|---|
-| `dev` (default) | `provider = "fake"`, `mix = []` | free — offline fixtures, the everyday default for working on DoomScrum itself |
-| `content` | `provider = "fal"` | real money — the weighted render portfolio (`[[video.mix]]`), roughly $0.77/clip average at the built-in mix |
+| `dev` (default) | `provider = "fake"`, `mix = []` | free — deterministic local spec previews, the everyday default for working on DoomScrum itself |
+| `content` | `provider = "fal"` | real money — the weighted render portfolio (`[[video.mix]]`), roughly $0.43/clip average at the built-in mix |
 
 Unset fields in a profile keep the base `[video]` values, so `content` still
 inherits `script.mode`, spend caps, etc. from the top-level config. Switch
@@ -38,7 +38,7 @@ DoomScrum is MIT-licensed (see [LICENSE](../LICENSE)). **Videos are
 AI-generated** — they do not depict real events, and the spoken content is
 derived from backlog spec text, not verified fact.
 
-When a real provider is used (not the default `fake` fixture), spec-derived
+When a real provider is used (not the default local `fake` preview),
 text leaves the machine via exactly two payloads. The runtime is the source
 of truth — `doomscrum egress` prints the live enumeration, `GET /api/egress`
 returns it as JSON, and the feed UI surfaces it in a disclosure panel (the
@@ -58,12 +58,11 @@ list (`src/egress.rs`):
    tokens — no shell injection). Source: `src/distill.rs`
    (`compile_with_format` → `format_prompt`), sent by `src/providers/fal.rs`.
 
-The `fake` fixture provider and `templates` script mode never egress.
-`doomscrum doctor` checks keys and config before a paid run. Provider terms
-(fal.ai, OpenRouter, and the underlying video models) and the trademark check
-are tracked as a pre-launch checklist in [LEGAL.md](LEGAL.md) — **not yet
-reviewed**; complete them before redistributing generated clips in
-marketing.
+The local `fake` provider and `templates` script mode never egress.
+`doomscrum doctor` checks keys and config before a paid run. Current provider
+terms and preliminary name-risk findings are recorded in [LEGAL.md](LEGAL.md):
+project-site use is WARN/scoped; paid promotion remains blocked pending exact
+clip provenance and formal review.
 
 ## Provenance
 
@@ -194,7 +193,7 @@ starting with `_` are ignored (use `_done/`-style prefixes for archives).
 
 Real renders happen just-in-time: serving the feed renders at most
 `feed.prefetch_depth` (default 3) specs ahead of your viewport, so a long
-backlog costs a handful of clips, not one per spec. Specs deeper in the feed
-stay free until you scroll toward them, and if the wallet cap is exhausted a
-spec degrades to a free fixture (badged "render budget exhausted") instead of
-breaking the feed.
+backlog costs a handful of clips, not one per spec. Deeper cards stay free
+until you scroll toward them. The local preview provider never leaves the
+machine; if a paid wallet cap is exhausted, the card degrades to a free
+preview (badged “render budget exhausted”) instead of breaking the feed.

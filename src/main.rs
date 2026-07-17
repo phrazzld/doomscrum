@@ -433,10 +433,12 @@ fn gather_facts(root: &std::path::Path, cfg: &Config) -> Facts {
         repo_is_git: command_ok_in(Some(&repo), "git", &["rev-parse", "--is-inside-work-tree"]),
         repo_has_remote: git_has_remote(&repo),
         provider_is_fal: cfg.video.provider == "fal",
+        provider_is_fake: cfg.video.provider == "fake",
         fal_key: secrets::get(&["FAL_API_KEY", "FAL_KEY"]).is_some(),
         stills_pipeline_required: cfg.video.uses_stills_pipeline(),
         ffmpeg_on_path: command_ok_in(None, "ffmpeg", &["-version"]),
         ffprobe_on_path: command_ok_in(None, "ffprobe", &["-version"]),
+        fake_preview_capable: ffmpeg_fake_preview_capable(),
         repo_source: cfg.repo.source.clone(),
         repo_has_github_remote: git_origin_is_github(&repo),
     }
@@ -460,6 +462,41 @@ fn opencode_has_stored_openrouter() -> bool {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.contains("openrouter"))
         .unwrap_or(false)
+}
+
+/// True when the local ffmpeg lists every capability used by the free preview.
+fn ffmpeg_fake_preview_capable() -> bool {
+    [
+        ("-demuxers", "image2"),
+        ("-decoders", "ppm"),
+        ("-formats", "lavfi"),
+        ("-filters", "sine"),
+        ("-encoders", "libx264"),
+        ("-encoders", "aac"),
+    ]
+    .into_iter()
+    .all(|(listing, capability)| {
+        std::process::Command::new("ffmpeg")
+            .args(["-hide_banner", listing])
+            .output()
+            .map(|out| {
+                out.status.success()
+                    && (ffmpeg_listing_has(&out.stdout, capability)
+                        || ffmpeg_listing_has(&out.stderr, capability))
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn ffmpeg_listing_has(output: &[u8], capability: &str) -> bool {
+    String::from_utf8_lossy(output).lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        let _flags = fields.next();
+        let first_name_field = fields.next();
+        first_name_field.is_some_and(|name| name == capability)
+            || (first_name_field.is_some_and(|field| field.len() == 1)
+                && fields.next().is_some_and(|name| name == capability))
+    })
 }
 
 /// Run `bin args` (optionally in `dir`), discarding output; true on exit 0.
@@ -496,5 +533,26 @@ fn git_origin_is_github(dir: &std::path::Path) -> bool {
             url.contains("github.com") || url.contains("github.com:")
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ffmpeg_listing_has;
+
+    #[test]
+    fn ffmpeg_capability_match_uses_the_exact_name_column() {
+        let listing = b" D  image2       image2 sequence\n D  image2pipe   piped image2 sequence\n D d lavfi       Libavfilter virtual input device\n A..... libfdk_aac   Fraunhofer AAC\n A..... aac          AAC\n";
+        assert!(ffmpeg_listing_has(listing, "image2"));
+        assert!(ffmpeg_listing_has(listing, "lavfi"));
+        assert!(ffmpeg_listing_has(listing, "aac"));
+        assert!(!ffmpeg_listing_has(
+            b" D  image2pipe   piped image2 sequence\n",
+            "image2"
+        ));
+        assert!(!ffmpeg_listing_has(
+            b" A..... libfdk_aac   Fraunhofer AAC\n",
+            "aac"
+        ));
     }
 }

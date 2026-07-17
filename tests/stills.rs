@@ -146,6 +146,44 @@ async fn image_keyframe_stage_polls_and_downloads_from_queue() {
 }
 
 #[tokio::test]
+async fn failed_render_cleans_work_dir() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/test-image"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("synthetic failure"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let prd = sample_prd();
+    let storyboard = compile_storyboard(&prd, &distill(&prd), 8);
+    let dir = tempfile::tempdir().unwrap();
+    let result = provider(server.uri(), "test-key")
+        .render(&storyboard, dir.path())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "the queue-stage failure must reach the caller"
+    );
+    let prd_dir = dir.path().join(&storyboard.prd_sha256);
+    let leaked_work_dirs: Vec<_> = std::fs::read_dir(prd_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("stills-work-")
+        })
+        .collect();
+    assert!(
+        leaked_work_dirs.is_empty(),
+        "failed stills render leaked scratch dirs: {leaked_work_dirs:?}"
+    );
+}
+
+#[tokio::test]
 async fn end_to_end_render_produces_9_16_mp4_and_captions() {
     if !ffmpeg_available() {
         eprintln!("skipping ffmpeg composition test: ffmpeg/ffprobe not on PATH");

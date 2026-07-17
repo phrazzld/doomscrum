@@ -122,21 +122,22 @@ campaign or third-party redistribution.
 **Waiver (recorded, dated, scoped — not silent):**
 
 - **Provider-terms TODO — waived for the `site/` launch only.** The
-  Remotion demo cartridge (`demo/out/doomscrum-demo.mp4`, embedded at
-  `site/assets/demo.mp4`) splices in three real fal.ai-rendered brainrot
-  clips (`infomercial.mp4`, `cryptid_vlog.mp4`, `italian_brainrot.mp4`) to
+  canonical Remotion launch cut (`demo/out/doomscrum-launch.mp4`, web-encoded
+  at `site/assets/demo.mp4`) splices in exactly three real fal.ai-rendered
+  brainrot clips (`infomercial.mp4`, `cryptid_vlog.mp4`,
+  `italian_brainrot.mp4`) to
   show the actual product output — showing the brainrot format honestly is
   core to the pitch (VISION.md: "the brainrot is load-bearing, not
   decoration"). Given the no-explicit-prohibition finding above, AI
   generation is disclosed on the site itself (not just README/LEGAL.md),
   and there is no separate paid marketing campaign, this specific use is
   waived. **Re-open before any paid ad spend, sponsored post, or
-  third-party redistribution** — that scenario needs the full per-model
-  (sora-2 / veo3.1 / seedance / ltx-2.3) terms check this file has always
-  called for. The site's autoplay hero loop
-  (`site/assets/hero-loop.mp4`) was deliberately re-cut to the `prHook`
-  beat only (0–3.2s, a Remotion UI composition of a real PR card) — it
-  contains zero third-party model output, so it carries none of this risk.
+  third-party redistribution** — that scenario needs exact receipt/model
+  mapping and the applicable per-model terms review. The site's autoplay
+  hero loop (`site/assets/hero-loop.mp4`) was deliberately re-cut to the
+  first 2.3s of the master — it contains only the Remotion UI composition of
+  the PR card and zero third-party model output, so it carries none of this
+  risk.
 - **Trademark TODO — waived for the `site/` launch, unaffected.** The
   clearance requirement above is scoped to "commercial registration or
   branding spend" (filing, paid campaigns). A GitHub Pages site for an
@@ -147,3 +148,58 @@ campaign or third-party redistribution.
 This still is not legal advice; both waivers are scoped to the specific
 `site/` launch described in Powder `doomscrum-902` and do not extend to
 future commercial use.
+
+## 2026-07-17 pre-launch refresh — v0.2.2 and launch video
+
+This is a preliminary risk review, not legal advice or formal trademark
+clearance.
+
+### Product name
+
+Searches for exact `"DoomScrum"` and `"Doom Scrum"` matches returned no USPTO
+records or discoverable competing software product. That lowers direct
+collision risk, but it does not clear the name: **DOOM** is a live, famous id
+Software mark (US Reg. 2050083), and famous marks can reach beyond their
+registered classes. The project therefore:
+
+- makes no use of DOOM logos, fonts, characters, trade dress, or game imagery;
+- states on the project site and README that it is not affiliated with or
+  endorsed by id Software, ZeniMax, or Microsoft; and
+- keeps formal clearance open before registration, paid branding, or material
+  commercial promotion.
+
+Verdict: **WARN** for the open-source project/site and unpaid launch;
+**BLOCKED** for registration or paid branding until counsel performs a real
+clearance search.
+
+### Generated-output terms and launch-video scope
+
+Primary terms read on 2026-07-17:
+
+- fal.ai Terms of Service (updated 2026-03-03), sections 4(c), 16–18:
+  <https://fal.ai/legal/terms-of-service>. fal does not expressly prohibit
+  displaying output, but does not warrant originality or non-infringement and
+  requires compliance with model-specific restrictions.
+- OpenRouter Terms (updated 2026-07-06), sections 5.1, 6.1, 15–16:
+  <https://openrouter.ai/terms>. Output ownership and allowed use flow through
+  to each underlying model's terms.
+- Gemini API Additional Terms (effective 2026-03-23):
+  <https://ai.google.dev/gemini-api/terms>. Google says it will not claim
+  ownership of generated content; the user remains responsible for use and
+  sharing. Unpaid-service prompts/responses may be used for improvement and
+  reviewed by humans; do not send sensitive material.
+
+The nine clips under `demo/public/` have no retained receipt that maps each
+friendly filename to its exact provider/model. That missing provenance means
+the 2026-07-07 project-site waiver remains narrow: it does **not** silently
+authorize sponsored posts, paid ads, or third-party redistribution.
+
+Verdict:
+
+- **Project site:** WARN / permitted under the existing dated waiver, with
+  AI-content disclosure and retained source assets.
+- **Unpaid social launch:** WARN; publish only after mapping every included
+  clip to exact model terms, or use a cut containing only first-party Remotion
+  UI/proof footage.
+- **Paid promotion / sponsored distribution:** BLOCKED pending exact clip
+  provenance, underlying-model terms review, and counsel.

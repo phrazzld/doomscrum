@@ -36,7 +36,7 @@ See "Render profiles" in [OPERATIONS.md](OPERATIONS.md#render-profiles-dev-vs-co
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `provider` | string | `"fake"` | `"fake"` renders an embedded fixture (offline, free, deterministic). `"fal"` generates real AI video via fal.ai — costs money, needs `FAL_API_KEY`. |
+| `provider` | string | `"fake"` | `"fake"` renders a deterministic spec-branded preview locally with ffmpeg (offline/free; a disclosed embedded fallback is used when ffmpeg is absent). `"fal"` generates real AI video via fal.ai — costs money, needs `FAL_API_KEY`. |
 | `fal_model` | string | `"fal-ai/veo3.1/fast"` | The fal.ai model id used when `mix` is empty or `--model` forces a single pipeline. |
 | `fal_base_url` | string | `"https://queue.fal.run"` | fal.ai queue API base URL. |
 | `max_duration_sec` | integer (u32) | `8` | Clip duration in seconds for the single-pipeline path. |

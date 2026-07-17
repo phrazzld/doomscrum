@@ -45,6 +45,8 @@ pub struct Facts {
     pub repo_has_remote: bool,
     /// `video.provider == "fal"` (real paid renders).
     pub provider_is_fal: bool,
+    /// `video.provider == "fake"` (free spec-branded preview).
+    pub provider_is_fake: bool,
     /// FAL key resolvable from env or `~/.secrets`.
     pub fal_key: bool,
     /// Any configured pipeline or mix entry starts with `stills/`.
@@ -53,6 +55,8 @@ pub struct Facts {
     pub ffmpeg_on_path: bool,
     /// ffprobe binary on PATH.
     pub ffprobe_on_path: bool,
+    /// The ffmpeg executable can consume PPM/lavfi inputs and encode the free preview.
+    pub fake_preview_capable: bool,
     /// `repo.source` value (e.g. "markdown" or "github-issues").
     pub repo_source: String,
     /// The synced repo's `origin` remote points to GitHub.
@@ -132,7 +136,7 @@ pub fn evaluate(f: &Facts) -> Vec<Check> {
     checks.push(if !f.provider_is_fal {
         ok(
             "render provider",
-            "using the free offline fixture provider (no FAL key needed)",
+            "using the free local preview provider (no FAL key needed)",
         )
     } else if f.fal_key {
         ok("render provider", "provider=fal and a FAL key is set")
@@ -161,6 +165,22 @@ pub fn evaluate(f: &Facts) -> Vec<Check> {
                     "a stills/ pipeline is configured but ffmpeg or ffprobe was not found on PATH"
                         .into(),
                 fix: Some("install ffmpeg (brew install ffmpeg)".into()),
+            }
+        });
+    }
+
+    if f.provider_is_fake {
+        checks.push(if f.fake_preview_capable {
+            ok(
+                "fake preview (ffmpeg)",
+                "ffmpeg can encode the deterministic spec-branded free preview",
+            )
+        } else {
+            Check {
+                name: "fake preview (ffmpeg)",
+                status: Status::Warn,
+                detail: "provider=\"fake\" will use the embedded degraded fixture because ffmpeg is absent or lacks the required PPM/lavfi/libx264/AAC path".into(),
+                fix: Some("install ffmpeg (brew install ffmpeg) for a spec-branded preview".into()),
             }
         });
     }
@@ -252,10 +272,12 @@ mod tests {
             repo_is_git: true,
             repo_has_remote: true,
             provider_is_fal: false,
+            provider_is_fake: false,
             fal_key: false,
             stills_pipeline_required: false,
             ffmpeg_on_path: true,
             ffprobe_on_path: true,
+            fake_preview_capable: true,
             repo_source: "markdown".into(),
             repo_has_github_remote: true,
         }
@@ -405,6 +427,57 @@ mod tests {
             .iter()
             .any(|c| { c.name == "stills pipeline (ffmpeg)" && c.status == Status::Ok }));
         assert_eq!(worst(&checks), Status::Ok);
+    }
+
+    #[test]
+    fn fake_provider_without_ffmpeg_warns_but_does_not_fail() {
+        let f = Facts {
+            provider_is_fake: true,
+            ffmpeg_on_path: false,
+            fake_preview_capable: false,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        let check = checks
+            .iter()
+            .find(|check| check.name == "fake preview (ffmpeg)")
+            .expect("fake preview check");
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("degraded fixture"));
+        assert_eq!(worst(&checks), Status::Warn);
+    }
+
+    #[test]
+    fn fake_provider_with_ffmpeg_has_no_preview_warning() {
+        let f = Facts {
+            provider_is_fake: true,
+            ffmpeg_on_path: true,
+            fake_preview_capable: true,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        assert!(checks
+            .iter()
+            .any(|check| check.name == "fake preview (ffmpeg)" && check.status == Status::Ok));
+        assert_eq!(worst(&checks), Status::Ok);
+    }
+
+    #[test]
+    fn fake_provider_without_encoder_capability_warns_but_does_not_fail() {
+        let f = Facts {
+            provider_is_fake: true,
+            ffmpeg_on_path: true,
+            fake_preview_capable: false,
+            ..all_good()
+        };
+        let checks = evaluate(&f);
+        let check = checks
+            .iter()
+            .find(|check| check.name == "fake preview (ffmpeg)")
+            .expect("fake preview check");
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("libx264/AAC"));
+        assert_eq!(worst(&checks), Status::Warn);
     }
 
     #[test]

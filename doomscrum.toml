@@ -1,4 +1,5 @@
-# DoomScrum configuration. Every field is optional; these are the defaults.
+# DoomScrum's dogfood configuration. `doomscrum init` writes portable defaults;
+# this checkout intentionally reads its own open GitHub issues.
 
 # Active render profile (see [profiles.*] at the bottom). "dev" keeps all
 # local iteration FREE (fake provider); switch to "content" — or run with
@@ -21,11 +22,12 @@ max_items = 10
 # Just-in-time rendering (docs/EFFICIENCY.md strategy 1): serving the feed
 # renders at most this many specs ahead of the viewport cursor. Specs deeper
 # in the feed cost nothing until you scroll toward them; an exhausted wallet
-# degrades to a free fixture instead of failing the feed. 0 disables JIT.
+# degrades to a free local preview instead of failing the feed. 0 disables JIT.
 prefetch_depth = 3
 
 [video]
-# "fake" renders an embedded fixture (offline, free).
+# "fake" renders a deterministic spec-branded preview locally with ffmpeg
+# (offline and free; a clearly badged embedded fallback remains playable).
 # "fal" generates real AI video — costs money and sends spec-derived
 # prompts to fal.ai. Needs FAL_API_KEY (env or ~/.secrets).
 provider = "fake"
@@ -46,12 +48,10 @@ max_duration_sec = 8
 # Fallback $/s for models not in the built-in price table; known models
 # use their verified price automatically.
 price_per_second_usd = 0.15
-# Wallet guard: real renders refused once estimated total spend would
-# exceed this. Raise deliberately. (25 -> 40 for the seedance hero
-# re-render; 40 -> 60 on 2026-06-10 for the hypermaximalist regen;
-# 60 -> 70 on 2026-06-11 for the demo-readiness batch: full feed on the
-# render mix with LLM scripts, ~$7.7 planned + re-roll headroom.)
-max_total_spend_usd = 70.0
+# Wallet guard: refuse real renders once durable spend would exceed this.
+# Keep the repository config at the coded public default; raise deliberately
+# for a bounded content batch, then lower it again.
+max_total_spend_usd = 25.0
 
 # Render portfolio (see docs/EFFICIENCY.md): each spec deterministically
 # draws one pipeline by content hash. Weighted toward cheap/short clips
@@ -98,19 +98,16 @@ mode = "llm"                       # "llm" | "templates"
 # ~$0.0008/script at representative usage: one-third of gpt-5.4-mini and
 # roughly one-thirty-eighth of claude-fable-5. Dev profile never pays.
 model = "google/gemini-3.1-flash-lite"  # via OpenRouter
-# This checkout dogfoods the Mint credential broker (misty-step/mint):
-# calls egress via the tailnet proxy and `OPENROUTER_API_KEY` carries only
-# the non-secret placeholder `__mint.openrouter.default__` — the raw key
-# never touches this machine. Strangers: keep the coded default
-# (https://openrouter.ai/api/v1) and a real key in env or ~/.secrets.
-base_url = "http://mint.tail5f5eb4.ts.net:4949/proxy/https/openrouter.ai/api/v1"
+# Public OpenRouter endpoint. Set OPENROUTER_API_KEY in the environment or
+# ~/.secrets. Fleet-specific brokers belong in a separate runtime config,
+# never in this committed dogfood config.
+base_url = "https://openrouter.ai/api/v1"
 
 # ---- Render profiles -------------------------------------------------
 # Partial [video] overrides; unset fields keep the base values above.
-# dev: free offline fixtures — the everyday default for working on the
-# app itself. The stills pipeline (~$0.03/clip, needs FAL_API_KEY + ffmpeg)
-# is in the content mix above — dev stays on the free fixture so everyday
-# iteration never spends or egresses.
+# dev: free local previews — the everyday default for working on DoomScrum
+# itself. The stills pipeline (~$0.03/clip, needs FAL_API_KEY + ffmpeg) is in
+# the content mix above; dev never spends or egresses spec text.
 [profiles.dev]
 provider = "fake"
 mix = []
@@ -122,8 +119,9 @@ mix = []
 provider = "fal"
 
 [agent]
-# Right swipe runs implement_cmd in a fresh worktree; left swipe runs
-# shape_cmd. Placeholders: {worktree} {prompt} {branch} {spec_path} {title} {model}.
+# Right swipe runs implement_cmd in a fresh worktree. Left swipe only skips;
+# shape_cmd is available through the explicit backend/control action.
+# Placeholders: {worktree} {prompt} {branch} {spec_path} {title} {model}.
 # Default: the opencode CLI on OpenRouter. Run `opencode auth login` once to store
 # your OpenRouter key. Swap the model on the next line; swap the agent here.
 agent_model = "openrouter/z-ai/glm-5.2"

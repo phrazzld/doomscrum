@@ -157,12 +157,13 @@ make-it-safe-for-strangers.
 These are deliberately undecided. Named here so they get *chosen*, not drifted
 into:
 
-- **How it's distributed and sold — reopened.** Local-first-free is real today,
-  but the path beyond it (OSS self-host · BYO-key · cloud render *credits* ·
-  hosted SaaS) is a live question, not a settled plan. `docs/COMMERCIAL_MODEL.md`
-  holds the options analysis and is **under review** — it is no longer a ratified
-  decision. The one hard constraint: *trivial to start on your own backlog,* and
-  no rationing before strangers can reach the free wedge.
+- **What comes after the local-first launch.** The launch sequence is decided:
+  public binary, truthful free preview, BYO provider keys, user-owned GitHub
+  and agent credentials. The path beyond it — cloud render credits, hosted
+  SaaS, or staying a local tool done beautifully — remains open.
+  `docs/COMMERCIAL_MODEL.md` records that launch decision and the reversal
+  conditions. The hard constraint remains: *trivial to start on your own
+  backlog,* with no rationing before strangers reach the free wedge.
 - **Where it ultimately runs** — a perfected single-operator local tool vs. a
   cloud, multi-repo product. The local CLI is the seed; whether it stays the
   whole thing done beautifully or grows a hosted feed is open.
@@ -176,10 +177,11 @@ into:
 
 ## Companions
 
-- `docs/COMMERCIAL_MODEL.md` — distribution & pricing options *(under review; the
-  staged path is no longer ratified — see Open bets)*.
-- `docs/EFFICIENCY.md` — the cost north-star: drive $/clip from ~$1.20 flat
-  toward ~$0.05 (stills) and ~$0 (local GPU) via a stacking strategy ladder.
+- `docs/COMMERCIAL_MODEL.md` — ratified local-first launch sequence and the
+  still-open distribution/pricing bets beyond it.
+- `docs/EFFICIENCY.md` — the cost north-star: drive $/clip from the retired
+  ~$1.20 baseline toward ~$0.03 (stills) and ~$0 (local GPU) via a stacking
+  strategy ladder.
 - `docs/FIVE_FACES.md` — application-floor surface ledger, the repo-local skill
   face, and the v1 MCP waiver.
 - `docs/VIDEO_QUALITY_PIPELINE.md` — how renders become bespoke-per-spec and

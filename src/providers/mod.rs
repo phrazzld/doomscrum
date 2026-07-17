@@ -152,6 +152,20 @@ impl Provider {
         }
     }
 
+    pub async fn render_degraded(
+        &self,
+        storyboard: &Storyboard,
+        renders_dir: &Path,
+        reason: &str,
+    ) -> Result<VideoRender> {
+        match self {
+            Provider::Fake(p) => p.render_degraded(storyboard, renders_dir, reason),
+            Provider::Fal(_) | Provider::Stills(_) => {
+                anyhow::bail!("only the free preview provider can render a degraded substitute")
+            }
+        }
+    }
+
     /// The clip length this provider will actually produce for a requested
     /// duration. Storyboards must be compiled with this value so the script's
     /// word budget and "finish by second N" pacing match the real clip.
